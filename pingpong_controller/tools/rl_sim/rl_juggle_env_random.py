@@ -134,6 +134,7 @@ class JuggleConfig:
     camera_box_penalty_weight: float = 0.0
     camera_visible_penalty_weight: float = 0.0
     camera_top_margin_penalty_weight: float = 0.0
+    camera_dense_penalty_clip: float = 20.0
     camera_box_half_width: float = 0.35
     camera_box_half_height: float = 0.35
     camera_box_depth_min: float = 0.20
@@ -1635,19 +1636,23 @@ class JuggleEnv(gym.Env):
         dense_reward -= self.cfg.arm_acc_limit_penalty_weight * arm_acc_limit_pen
         dense_reward -= self.cfg.arm_limiter_penalty_weight * arm_limiter_pen
 
+        camera_dense_penalty = 0.0
         _cam_mode = self.cfg.camera_visibility_mode
         if _cam_mode == "box":
-            dense_reward -= self.cfg.camera_box_penalty_weight * camera_metrics["camera_box_pen"]
+            camera_dense_penalty += self.cfg.camera_box_penalty_weight * camera_metrics["camera_box_pen"]
         elif _cam_mode == "frustum":
-            dense_reward -= self.cfg.camera_visibility_penalty_weight * camera_metrics["camera_frustum_pen"]
-            dense_reward -= self.cfg.camera_depth_penalty_weight * camera_metrics["camera_depth_pen"]
+            camera_dense_penalty += self.cfg.camera_visibility_penalty_weight * camera_metrics["camera_frustum_pen"]
+            camera_dense_penalty += self.cfg.camera_depth_penalty_weight * camera_metrics["camera_depth_pen"]
         elif _cam_mode == "pixel":
-            dense_reward -= self.cfg.camera_center_weight * camera_metrics["camera_pixel_center_pen"]
-            dense_reward -= self.cfg.camera_visibility_penalty_weight * camera_metrics["camera_pixel_margin_pen"]
-            dense_reward -= self.cfg.camera_depth_penalty_weight * camera_metrics["camera_depth_pen"]
-            dense_reward -= self.cfg.camera_top_margin_penalty_weight * camera_metrics["camera_top_margin_pen"]
+            camera_dense_penalty += self.cfg.camera_center_weight * camera_metrics["camera_pixel_center_pen"]
+            camera_dense_penalty += self.cfg.camera_visibility_penalty_weight * camera_metrics["camera_pixel_margin_pen"]
+            camera_dense_penalty += self.cfg.camera_depth_penalty_weight * camera_metrics["camera_depth_pen"]
+            camera_dense_penalty += self.cfg.camera_top_margin_penalty_weight * camera_metrics["camera_top_margin_pen"]
             if self.cfg.camera_visible_penalty_weight > 0.0 and not camera_metrics["camera_visible"]:
-                dense_reward -= self.cfg.camera_visible_penalty_weight
+                camera_dense_penalty += self.cfg.camera_visible_penalty_weight
+        if self.cfg.camera_dense_penalty_clip > 0.0:
+            camera_dense_penalty = min(camera_dense_penalty, float(self.cfg.camera_dense_penalty_clip))
+        dense_reward -= camera_dense_penalty
 
         reward = dense_reward * self.dt
         if new_hit and rewardable_hit:
@@ -1813,6 +1818,7 @@ class JuggleEnv(gym.Env):
             "camera_in_image": bool(camera_metrics["camera_in_image"]),
             "camera_in_margin": bool(camera_metrics["camera_in_margin"]),
             "camera_visible": bool(camera_metrics["camera_visible"]),
+            "camera_reward_dense": float(-camera_dense_penalty * self.dt),
             "camera_pixel_center_pen": float(camera_metrics["camera_pixel_center_pen"]),
             "camera_pixel_margin_pen": float(camera_metrics["camera_pixel_margin_pen"]),
             "camera_top_margin_pen": float(camera_metrics["camera_top_margin_pen"]),
