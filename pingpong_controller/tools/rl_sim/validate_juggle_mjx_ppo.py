@@ -25,7 +25,19 @@ if str(RL_SIM_DIR) not in sys.path:
     sys.path.insert(0, str(RL_SIM_DIR))
 
 from mjx_juggle_env import MjxJuggleConfig, MjxJuggleEnv
+from rl_juggle_env_random import RIGHT_ARM_JOINTS
 from train_juggle_mjx_ppo import policy_value
+
+
+JOINT_PLOT_COLORS = {
+    "RightArm-0": "#005AB5",  # blue
+    "RightArm-1": "#DC3220",  # red
+    "RightArm-2": "#00A08A",  # teal
+    "RightArm-3": "#F2AD00",  # gold
+    "RightArm-4": "#7A3E9D",  # purple
+    "RightArm-5": "#00B7EB",  # cyan
+    "RightArm-6": "#5D4037",  # dark brown
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -64,6 +76,9 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional MuJoCo camera name/id for video rendering. Defaults to the free camera.",
     )
+    p.add_argument("--trace-env", type=int, default=0, help="Environment index to save in the action/joint trace.")
+    p.add_argument("--action-trace-csv", type=Path, default=None, help="Save per-control-step policy action and joint trace CSV.")
+    p.add_argument("--action-plot-out", type=Path, default=None, help="Save a PNG plot of policy action and joint trajectories.")
     return p.parse_args()
 
 
@@ -78,6 +93,16 @@ def load_checkpoint(path: Path) -> dict:
 
 
 def save_episode_rows(path: Path, rows: list[dict[str, float]]) -> None:
+    if not rows:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def save_trace_rows(path: Path, rows: list[dict[str, float]]) -> None:
     if not rows:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -140,9 +165,27 @@ def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float):
             raw_action = mean + jnp.exp(log_std) * jax.random.normal(action_key, mean.shape)
         action = jnp.clip(raw_action * float(action_gain), -1.0, 1.0)
 
+        prev_arm_qvel = env_state.data.qvel[:, env.arm_vadr]
         next_env_state, next_obs, reward, done, metrics = env.step(env_state, action)
         completed_return = running_return + reward
         completed_length = running_length + 1
+        effective_action = next_env_state.prev_action
+        arm_q = next_env_state.data.qpos[:, env.arm_qadr]
+        arm_qvel = next_env_state.data.qvel[:, env.arm_vadr]
+        arm_qacc = (arm_qvel - prev_arm_qvel) / max(env.dt, 1e-6)
+        arm_qacc_mj = next_env_state.data.qacc[:, env.arm_vadr]
+        arm_cmd_q = next_env_state.arm_cmd_q
+        arm_cmd_qvel = next_env_state.arm_cmd_qvel
+        desired_qdd_raw = (
+            effective_action
+            * env.arm_acc_limit_rad_s2[None, :]
+            * float(env.cfg.action_acc_scale)
+            * next_env_state.action_scale_mult[:, None]
+        )
+        if bool(env.cfg.arm_action_limiter):
+            desired_qdd = jnp.clip(desired_qdd_raw, -env.arm_acc_limit_rad_s2[None, :], env.arm_acc_limit_rad_s2[None, :])
+        else:
+            desired_qdd = desired_qdd_raw
 
         reset_keys = jax.random.split(reset_key, env.n_envs)
         next_env_state, next_obs = env.reset_done(next_env_state, next_obs, done, reset_keys)
@@ -164,6 +207,19 @@ def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float):
             "terminated": metrics["terminated"],
             "truncated": metrics["truncated"],
             "episode_step": metrics["episode_step"],
+            "policy_mean": mean,
+            "raw_action": raw_action,
+            "applied_action": action,
+            "effective_action": effective_action,
+            "desired_qdd_raw": desired_qdd_raw,
+            "desired_qdd": desired_qdd,
+            "arm_cmd_q": arm_cmd_q,
+            "arm_cmd_qvel": arm_cmd_qvel,
+            "arm_cmd_qdd": desired_qdd,
+            "arm_q": arm_q,
+            "arm_qvel": arm_qvel,
+            "arm_qacc": arm_qacc,
+            "arm_qacc_mj": arm_qacc_mj,
         }
         for key, value in metrics.items():
             if key.startswith("done/") or key.startswith("reward/"):
@@ -209,6 +265,180 @@ def row_done_reasons(row: dict[str, float]) -> str:
     return ",".join(reasons) if reasons else "none"
 
 
+def trace_row_from_host(
+    host: dict[str, np.ndarray],
+    *,
+    env_i: int,
+    step_idx: int,
+    episode_idx: int,
+    dt: float,
+) -> dict[str, float]:
+    row: dict[str, float] = {
+        "step": int(step_idx),
+        "time_sec": float(step_idx * dt),
+        "env": int(env_i),
+        "episode": int(episode_idx),
+        "episode_step": float(host["episode_step"][env_i]),
+        "reward": float(host["reward"][env_i]),
+        "return": float(host["episode_return"][env_i]),
+        "hits": float(host["hit_count"][env_i]),
+        "done": float(host["done"][env_i]),
+        "terminated": float(host["terminated"][env_i]),
+        "truncated": float(host["truncated"][env_i]),
+        "ball_z": float(host["ball_z"][env_i]),
+        "racket_z": float(host["racket_z"][env_i]),
+        "racket_z_rel": float(host["racket_z_rel"][env_i]),
+        "action_norm": float(host["action_norm"][env_i]),
+    }
+    vector_keys = [
+        "policy_mean",
+        "raw_action",
+        "applied_action",
+        "effective_action",
+        "desired_qdd_raw",
+        "desired_qdd",
+        "arm_cmd_q",
+        "arm_cmd_qvel",
+        "arm_cmd_qdd",
+        "arm_q",
+        "arm_qvel",
+        "arm_qacc",
+        "arm_qacc_mj",
+    ]
+    for i, joint in enumerate(RIGHT_ARM_JOINTS):
+        safe_joint = joint.replace("/", "_")
+        for key in vector_keys:
+            value = float(host[key][env_i, i])
+            row[f"{key}/{safe_joint}"] = value
+            if key in {"arm_cmd_q", "arm_q"}:
+                row[f"{key}_deg/{safe_joint}"] = float(np.rad2deg(value))
+            elif key in {"arm_cmd_qvel", "arm_qvel"}:
+                row[f"{key}_deg_s/{safe_joint}"] = float(np.rad2deg(value))
+            elif key in {"desired_qdd_raw", "desired_qdd", "arm_cmd_qdd", "arm_qacc", "arm_qacc_mj"}:
+                row[f"{key}_deg_s2/{safe_joint}"] = float(np.rad2deg(value))
+    for key, value in host.items():
+        if key.startswith("done/"):
+            row[key] = float(value[env_i])
+    return row
+
+
+def plot_trace_rows(path: Path, rows: list[dict[str, float]]) -> None:
+    if not rows:
+        return
+    try:
+        import matplotlib.pyplot as plt
+    except ModuleNotFoundError as exc:
+        raise SystemExit("matplotlib is required for --action-plot-out. Install with: python -m pip install matplotlib") from exc
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    t = np.asarray([row["time_sec"] for row in rows], dtype=float)
+    done_t = [row["time_sec"] for row in rows if float(row.get("done", 0.0)) > 0.5]
+    fig, axes = plt.subplots(5, 1, figsize=(15, 15), sharex=True)
+
+    for joint in RIGHT_ARM_JOINTS:
+        name = joint.replace("/", "_")
+        color = JOINT_PLOT_COLORS.get(joint)
+        axes[0].plot(
+            t,
+            [row[f"applied_action/{name}"] for row in rows],
+            linewidth=1.25,
+            color=color,
+            label=joint,
+        )
+    axes[0].set_ylabel("policy action")
+    axes[0].set_title("Applied normalized joint acceleration actions")
+    axes[0].set_ylim(-1.05, 1.05)
+    axes[0].grid(True, alpha=0.25)
+    axes[0].legend(loc="upper right", ncol=2, fontsize=8)
+
+    for joint in RIGHT_ARM_JOINTS:
+        name = joint.replace("/", "_")
+        color = JOINT_PLOT_COLORS.get(joint)
+        axes[1].plot(
+            t,
+            [row[f"desired_qdd_deg_s2/{name}"] for row in rows],
+            linewidth=1.25,
+            color=color,
+            label=joint,
+        )
+        qacc_key = f"arm_qacc_deg_s2/{name}"
+        if qacc_key in rows[0]:
+            axes[1].plot(
+                t,
+                [row[qacc_key] for row in rows],
+                linewidth=0.9,
+                color=color,
+                linestyle="--",
+                alpha=0.75,
+            )
+    axes[1].set_ylabel("desired qdd deg/s^2")
+    axes[1].set_title("Mapped desired joint acceleration (solid) vs finite-difference simulated acceleration (dashed)")
+    axes[1].grid(True, alpha=0.25)
+    axes[1].legend(loc="upper right", ncol=2, fontsize=8)
+
+    for joint in RIGHT_ARM_JOINTS:
+        name = joint.replace("/", "_")
+        color = JOINT_PLOT_COLORS.get(joint)
+        axes[2].plot(
+            t,
+            [row[f"arm_cmd_qvel_deg_s/{name}"] for row in rows],
+            linewidth=1.25,
+            color=color,
+            label=joint,
+        )
+        axes[2].plot(
+            t,
+            [row[f"arm_qvel_deg_s/{name}"] for row in rows],
+            linewidth=0.9,
+            color=color,
+            linestyle="--",
+            alpha=0.75,
+        )
+    axes[2].set_ylabel("joint velocity deg/s")
+    axes[2].set_title("Commanded joint velocities (solid) vs simulated joint velocities (dashed)")
+    axes[2].grid(True, alpha=0.25)
+    axes[2].legend(loc="upper right", ncol=2, fontsize=8)
+
+    for joint in RIGHT_ARM_JOINTS:
+        name = joint.replace("/", "_")
+        color = JOINT_PLOT_COLORS.get(joint)
+        axes[3].plot(
+            t,
+            [row[f"arm_cmd_q_deg/{name}"] for row in rows],
+            linewidth=1.25,
+            color=color,
+            label=joint,
+        )
+        axes[3].plot(
+            t,
+            [row[f"arm_q_deg/{name}"] for row in rows],
+            linewidth=0.9,
+            color=color,
+            linestyle="--",
+            alpha=0.75,
+        )
+    axes[3].set_ylabel("joint angle deg")
+    axes[3].set_title("Commanded joint targets (solid) vs simulated joint angles (dashed)")
+    axes[3].grid(True, alpha=0.25)
+    axes[3].legend(loc="upper right", ncol=2, fontsize=8)
+
+    axes[4].plot(t, [row["ball_z"] for row in rows], label="ball_z", linewidth=1.4, color="#D55E00")
+    axes[4].plot(t, [row["racket_z"] for row in rows], label="racket_z", linewidth=1.4, color="#0072B2")
+    axes[4].plot(t, [row["racket_z_rel"] for row in rows], label="racket_z_rel", linewidth=1.2, color="#009E73")
+    axes[4].set_xlabel("time sec")
+    axes[4].set_ylabel("height m")
+    axes[4].set_title("Ball/racket height")
+    axes[4].grid(True, alpha=0.25)
+    axes[4].legend(loc="upper right", fontsize=8)
+
+    for ax in axes:
+        for x in done_t:
+            ax.axvline(x, color="black", alpha=0.15, linewidth=0.8)
+    fig.tight_layout()
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
 def main() -> None:
     args = parse_args()
     payload = load_checkpoint(args.checkpoint)
@@ -221,6 +451,9 @@ def main() -> None:
 
     if (args.render or args.video_out is not None) and args.n_envs != 1:
         print("[validate_mjx] render/video shows env 0 only; use --n-envs 1 for smoother visual validation.")
+    trace_enabled = args.action_trace_csv is not None or args.action_plot_out is not None
+    if trace_enabled and not (0 <= int(args.trace_env) < int(args.n_envs)):
+        raise SystemExit(f"--trace-env must be in [0, {args.n_envs - 1}]")
 
     env = MjxJuggleEnv(xml_path, n_envs=args.n_envs, cfg=cfg)
     print(f"[validate_mjx] JAX devices: {jax.devices()}")
@@ -300,6 +533,7 @@ def main() -> None:
         )
 
     episode_rows: list[dict[str, float]] = []
+    trace_rows: list[dict[str, float]] = []
     env_episode_counts = np.zeros((args.n_envs,), dtype=np.int32)
     max_steps = args.max_env_steps
     if max_steps <= 0:
@@ -319,6 +553,17 @@ def main() -> None:
             )
             host = jax.device_get(metrics)
             done = np.asarray(host["done"], dtype=bool)
+            if trace_enabled:
+                trace_env = int(args.trace_env)
+                trace_rows.append(
+                    trace_row_from_host(
+                        host,
+                        env_i=trace_env,
+                        step_idx=step_idx,
+                        episode_idx=int(env_episode_counts[trace_env]) + 1,
+                        dt=env.dt,
+                    )
+                )
 
             if args.log_hit_events:
                 hit_envs = np.flatnonzero(np.asarray(host["new_hit"]) > 0.5)
@@ -401,6 +646,12 @@ def main() -> None:
     if not args.no_save_csv:
         save_episode_rows(results_csv, episode_rows)
         print(f"[validate_mjx] wrote: {results_csv}")
+    if args.action_trace_csv is not None:
+        save_trace_rows(args.action_trace_csv, trace_rows)
+        print(f"[validate_mjx] wrote action trace: {args.action_trace_csv}")
+    if args.action_plot_out is not None:
+        plot_trace_rows(args.action_plot_out, trace_rows)
+        print(f"[validate_mjx] wrote action plot: {args.action_plot_out}")
     if args.video_out is not None:
         print(f"[validate_mjx] wrote video: {args.video_out}")
 
