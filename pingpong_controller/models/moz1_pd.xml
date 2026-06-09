@@ -1,5 +1,5 @@
 <mujoco model="MOZ1">
-  <compiler angle="radian" meshdir="/home/jacky/hr_teleop/GMR/assets/spirit01_model/meshes/"/>
+  <compiler angle="radian" meshdir="../tools/rl_sim/meshes/"/>
   <option timestep="0.001" integrator="implicitfast" iterations="100"/>
 
   <default>
