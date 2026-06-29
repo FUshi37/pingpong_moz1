@@ -37,6 +37,7 @@ class TrainState(NamedTuple):
 class RunnerState(NamedTuple):
     env_state: object
     obs: jax.Array
+    critic_obs: jax.Array
     rng: jax.Array
     running_return: jax.Array
     running_length: jax.Array
@@ -44,6 +45,7 @@ class RunnerState(NamedTuple):
 
 class Transition(NamedTuple):
     obs: jax.Array
+    critic_obs: jax.Array
     action: jax.Array
     logp: jax.Array
     value: jax.Array
@@ -58,6 +60,7 @@ class Transition(NamedTuple):
 
 class PpoBatch(NamedTuple):
     obs: jax.Array
+    critic_obs: jax.Array
     action: jax.Array
     old_logp: jax.Array
     advantages: jax.Array
@@ -91,11 +94,18 @@ def init_mlp(key: jax.Array, in_dim: int, hidden_dim: int, out_dim: int, out_sca
     }
 
 
-def init_params(key: jax.Array, obs_dim: int, act_dim: int, hidden_dim: int) -> dict[str, object]:
+def init_params(
+    key: jax.Array,
+    obs_dim: int,
+    act_dim: int,
+    hidden_dim: int,
+    critic_obs_dim: int | None = None,
+) -> dict[str, object]:
     k_pi, k_v = jax.random.split(key)
+    value_obs_dim = int(obs_dim if critic_obs_dim is None else critic_obs_dim)
     return {
         "pi": init_mlp(k_pi, obs_dim, hidden_dim, act_dim, 0.01),
-        "v": init_mlp(k_v, obs_dim, hidden_dim, 1, 1.0),
+        "v": init_mlp(k_v, value_obs_dim, hidden_dim, 1, 1.0),
         "log_std": jnp.full((act_dim,), -0.5, dtype=jnp.float32),
     }
 
@@ -106,9 +116,23 @@ def apply_mlp(params: dict[str, dict[str, jax.Array]], obs: jax.Array) -> jax.Ar
     return x @ params["out"]["w"] + params["out"]["b"]
 
 
-def policy_value(params: dict[str, object], obs: jax.Array) -> tuple[jax.Array, jax.Array]:
+def policy_mean(params: dict[str, object], obs: jax.Array) -> jax.Array:
+    return apply_mlp(params["pi"], obs)
+
+
+def value_fn(params: dict[str, object], critic_obs: jax.Array) -> jax.Array:
+    return apply_mlp(params["v"], critic_obs).squeeze(-1)
+
+
+def policy_value(
+    params: dict[str, object],
+    obs: jax.Array,
+    critic_obs: jax.Array | None = None,
+) -> tuple[jax.Array, jax.Array]:
+    if critic_obs is None:
+        critic_obs = obs
     mean = apply_mlp(params["pi"], obs)
-    value = apply_mlp(params["v"], obs).squeeze(-1)
+    value = value_fn(params, critic_obs)
     return mean, value
 
 
@@ -165,7 +189,8 @@ def ppo_loss(
     vf_coef: float,
     ent_coef: float,
 ) -> tuple[jax.Array, dict[str, jax.Array]]:
-    mean, value = policy_value(params, batch.obs)
+    mean = policy_mean(params, batch.obs)
+    value = value_fn(params, batch.critic_obs)
     log_std = params["log_std"]
     logp = normal_logprob(batch.action, mean, log_std)
     ratio = jnp.exp(logp - batch.old_logp)
@@ -234,9 +259,9 @@ def make_train_fns(
 
     def collect_rollout(params, runner: RunnerState) -> tuple[RunnerState, Transition]:
         def rollout_step(carry: RunnerState, _):
-            env_state, obs, rng, running_return, running_length = carry
+            env_state, obs, critic_obs, rng, running_return, running_length = carry
             rng, action_key, reset_key = jax.random.split(rng, 3)
-            mean, value = policy_value(params, obs)
+            mean, value = policy_value(params, obs, critic_obs)
             log_std = params["log_std"]
             raw_action = mean + jnp.exp(log_std) * jax.random.normal(action_key, mean.shape)
             env_action = jnp.clip(raw_action, -1.0, 1.0)
@@ -247,11 +272,13 @@ def make_train_fns(
             completed_length = running_length + 1
             reset_keys = jax.random.split(reset_key, env.n_envs)
             next_env_state, next_obs = env.reset_done(next_env_state, next_obs, done, reset_keys)
+            next_critic_obs = env.get_critic_obs(next_env_state, next_obs)
             next_running_return = jnp.where(done, 0.0, completed_return)
             next_running_length = jnp.where(done, 0, completed_length)
 
             transition = Transition(
                 obs=obs,
+                critic_obs=critic_obs,
                 action=raw_action,
                 logp=logp,
                 value=value,
@@ -264,14 +291,14 @@ def make_train_fns(
                 metrics=metrics,
             )
             return (
-                RunnerState(next_env_state, next_obs, rng, next_running_return, next_running_length),
+                RunnerState(next_env_state, next_obs, next_critic_obs, rng, next_running_return, next_running_length),
                 transition,
             )
 
         return jax.lax.scan(rollout_step, runner, None, length=int(n_steps))
 
     def update(train_state: TrainState, runner: RunnerState, transitions: Transition) -> tuple[TrainState, dict[str, jax.Array]]:
-        _, last_value = policy_value(train_state.params, runner.obs)
+        last_value = value_fn(train_state.params, runner.critic_obs)
         advantages, returns = compute_gae(
             transitions.reward,
             transitions.done,
@@ -284,6 +311,7 @@ def make_train_fns(
 
         batch = PpoBatch(
             obs=flatten_time_env(transitions.obs),
+            critic_obs=flatten_time_env(transitions.critic_obs),
             action=flatten_time_env(transitions.action),
             old_logp=flatten_time_env(transitions.logp),
             advantages=flatten_time_env(advantages),
@@ -347,6 +375,7 @@ def save_checkpoint(
         "step": int(step),
         "args": vars(args),
         "obs_dim": env.obs_dim,
+        "critic_obs_dim": getattr(env, "critic_obs_dim", env.obs_dim),
         "act_dim": env.act_dim,
         "env_cfg": env.cfg.__dict__,
         "xml": str(env.xml_path),
@@ -394,6 +423,17 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--vf-coef", type=float, default=0.5)
     p.add_argument("--max-grad-norm", type=float, default=0.5)
     p.add_argument("--hidden-dim", type=int, default=256)
+    p.add_argument(
+        "--asymmetric-critic",
+        action="store_true",
+        help="Train the value network with simulator-only privileged observations; actor observations stay unchanged.",
+    )
+    p.add_argument(
+        "--critic-command-history-steps",
+        type=int,
+        default=4,
+        help="Number of recent q_ref command-buffer entries appended only to privileged critic observations.",
+    )
     p.add_argument("--save-every-updates", type=int, default=10)
     p.add_argument("--wandb", action="store_true", help="Log training metrics to Weights & Biases.")
     p.add_argument("--wandb-project", type=str, default="pingpong-mjx")
@@ -422,10 +462,24 @@ def main() -> None:
     wandb_run = None
 
     print(f"[mjx_ppo] JAX devices: {jax.devices()}")
-    env = MjxJuggleEnv(args.xml, n_envs=args.n_envs, cfg=MjxJuggleConfig(domain_randomization=False, arm_action_limiter=True))
+    env = MjxJuggleEnv(
+        args.xml,
+        n_envs=args.n_envs,
+        cfg=MjxJuggleConfig(
+            domain_randomization=False,
+            arm_action_limiter=True,
+            asymmetric_critic=bool(args.asymmetric_critic),
+            critic_command_history_steps=int(args.critic_command_history_steps),
+        ),
+    )
     print(f"[mjx_ppo] MJX XML: {env.mjx_xml}")
     print(f"[mjx_ppo] n_envs={args.n_envs}, n_steps={args.n_steps}, batch={args.n_envs * args.n_steps}")
-    print(f"[mjx_ppo] episode_max_steps={env.max_steps}, dt={env.dt:.4f}s, horizon={env.max_steps * env.dt:.2f}s")
+    print(
+        f"[mjx_ppo] episode_max_steps={env.max_steps}, dt={env.dt:.4f}s, "
+        f"horizon={env.max_steps * env.dt:.2f}s, obs_dim={env.obs_dim}, "
+        f"critic_obs_dim={getattr(env, 'critic_obs_dim', env.obs_dim)}, "
+        f"asymmetric_critic={getattr(env, 'asymmetric_critic', False)}"
+    )
 
     if args.wandb:
         try:
@@ -444,6 +498,7 @@ def main() -> None:
                 "dt": env.dt,
                 "max_steps": env.max_steps,
                 "obs_dim": env.obs_dim,
+                "critic_obs_dim": getattr(env, "critic_obs_dim", env.obs_dim),
                 "act_dim": env.act_dim,
                 "jax_devices": [str(d) for d in jax.devices()],
             },
@@ -453,11 +508,13 @@ def main() -> None:
     rng, reset_key, params_key = jax.random.split(rng, 3)
     reset_keys = jax.random.split(reset_key, args.n_envs)
     env_state, obs = jax.jit(env.reset)(reset_keys)
-    params = init_params(params_key, env.obs_dim, env.act_dim, args.hidden_dim)
+    critic_obs = env.get_critic_obs(env_state, obs)
+    params = init_params(params_key, env.obs_dim, env.act_dim, args.hidden_dim, getattr(env, "critic_obs_dim", env.obs_dim))
     train_state = TrainState(params=params, opt=adam_init(params))
     runner = RunnerState(
         env_state=env_state,
         obs=obs,
+        critic_obs=critic_obs,
         rng=rng,
         running_return=jnp.zeros((args.n_envs,), dtype=jnp.float32),
         running_length=jnp.zeros((args.n_envs,), dtype=jnp.int32),

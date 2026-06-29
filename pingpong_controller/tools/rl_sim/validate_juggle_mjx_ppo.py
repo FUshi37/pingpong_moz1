@@ -26,7 +26,7 @@ if str(RL_SIM_DIR) not in sys.path:
 
 from mjx_juggle_env import MjxJuggleConfig, MjxJuggleEnv
 from rl_juggle_env_random import RIGHT_ARM_JOINTS
-from train_juggle_mjx_ppo import policy_value
+from train_juggle_mjx_ppo import policy_mean
 
 
 JOINT_PLOT_COLORS = {
@@ -57,6 +57,44 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--racket-z-hard-limit-down", type=float, default=None)
     p.add_argument("--racket-z-hard-limit-up", type=float, default=None)
     p.add_argument("--no-terminate-on-racket-z-limit", action="store_true")
+    p.add_argument(
+        "--ignore-early-done",
+        action="store_true",
+        help="Do not reset/stop on early task termination; only horizon truncation ends the rollout.",
+    )
+    p.add_argument(
+        "--realistic-s2r",
+        action="store_true",
+        help="Override the checkpoint env with real-camera/latency/actuator-lag sim-to-real stress settings.",
+    )
+    p.add_argument(
+        "--realistic-s2r-profile",
+        choices=["detector", "kf"],
+        default="kf",
+        help=(
+            "kf assumes the policy receives a 200Hz Kalman-filter prediction; "
+            "detector uses raw 60Hz camera/FOV/dropout stress settings."
+        ),
+    )
+    p.add_argument(
+        "--ball-obs-nominal-pos-bias-base",
+        type=float,
+        nargs=3,
+        default=None,
+        metavar=("X", "Y", "Z"),
+        help=(
+            "Optional nominal ball observation bias in base coordinates. "
+            "If real detections are chest-frame values fed as base-frame values, use approximately -T_base_chest."
+        ),
+    )
+    p.add_argument(
+        "--ball-obs-nominal-vel-bias-base",
+        type=float,
+        nargs=3,
+        default=None,
+        metavar=("VX", "VY", "VZ"),
+        help="Optional nominal ball velocity observation bias in base coordinates.",
+    )
     p.add_argument("--render", action="store_true", help="Render env 0 with MuJoCo viewer.")
     p.add_argument("--realtime", action="store_true", help="Sleep according to env.dt while rendering.")
     p.add_argument("--slowmo", type=float, default=1.0)
@@ -79,6 +117,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--trace-env", type=int, default=0, help="Environment index to save in the action/joint trace.")
     p.add_argument("--action-trace-csv", type=Path, default=None, help="Save per-control-step policy action and joint trace CSV.")
     p.add_argument("--action-plot-out", type=Path, default=None, help="Save a PNG plot of policy action and joint trajectories.")
+    p.add_argument("--obs-trace-csv", type=Path, default=None, help="Save the exact per-control-step policy observation CSV.")
     return p.parse_args()
 
 
@@ -123,6 +162,76 @@ def env_config_from_checkpoint(payload: dict, args: argparse.Namespace) -> MjxJu
         cfg = replace(cfg, racket_z_hard_limit_up=float(args.racket_z_hard_limit_up))
     if args.no_terminate_on_racket_z_limit:
         cfg = replace(cfg, terminate_on_racket_z_limit=False)
+    if args.realistic_s2r and args.realistic_s2r_profile == "detector":
+        cfg = replace(
+            cfg,
+            ball_obs_rate_hz=60.0,
+            ball_obs_fractional_rate=True,
+            ball_obs_age_tracks_stale=True,
+            ball_obs_dropout_on_refresh_only=True,
+            ball_obs_require_camera_visible=True,
+            ball_obs_pos_noise_std=0.006,
+            ball_obs_vel_noise_std=0.08,
+            ball_obs_noise_warmup_ratio=0.0,
+            ball_obs_noise_ramp_ratio=0.05,
+            ball_obs_dropout_prob=0.04,
+            ball_obs_dropout_max_steps=10,
+            ball_obs_dropout_burst_prob=0.010,
+            ball_obs_dropout_burst_max_steps=48,
+            domain_randomization=True,
+            dr_randomize_latency=True,
+            dr_obs_latency_steps_range=(3, 12),
+            dr_action_latency_steps_range=(20, 34),
+            actuator_cmd_filter=True,
+            dr_randomize_actuator_cmd_filter=True,
+            dr_actuator_cmd_tau_range=(0.04, 0.10),
+            dr_actuator_cmd_gain_range=(0.75, 1.00),
+            dr_randomize_ball_obs_frame=True,
+            dr_ball_obs_pos_bias_base_m=(0.030, 0.030, 0.040),
+            dr_ball_obs_rot_bias_deg=(2.0, 2.0, 3.0),
+            dr_ball_obs_vel_bias_base_m_s=(0.05, 0.05, 0.08),
+            dr_ball_obs_scale_range=(0.97, 1.03),
+        )
+    elif args.realistic_s2r and args.realistic_s2r_profile == "kf":
+        cfg = replace(
+            cfg,
+            ball_obs_rate_hz=200.0,
+            ball_obs_fractional_rate=False,
+            ball_obs_age_tracks_stale=False,
+            ball_obs_dropout_on_refresh_only=False,
+            ball_obs_require_camera_visible=False,
+            ball_obs_pos_noise_std=0.006,
+            ball_obs_vel_noise_std=0.08,
+            ball_obs_noise_warmup_ratio=0.0,
+            ball_obs_noise_ramp_ratio=0.05,
+            ball_obs_dropout_prob=0.0,
+            ball_obs_dropout_max_steps=1,
+            ball_obs_dropout_burst_prob=0.0,
+            ball_obs_dropout_burst_max_steps=1,
+            domain_randomization=True,
+            dr_randomize_latency=True,
+            dr_obs_latency_steps_range=(0, 4),
+            dr_action_latency_steps_range=(20, 34),
+            actuator_cmd_filter=True,
+            dr_randomize_actuator_cmd_filter=True,
+            dr_actuator_cmd_tau_range=(0.04, 0.10),
+            dr_actuator_cmd_gain_range=(0.75, 1.00),
+            dr_randomize_ball_obs_frame=True,
+            dr_ball_obs_pos_bias_base_m=(0.030, 0.030, 0.040),
+            dr_ball_obs_rot_bias_deg=(2.0, 2.0, 3.0),
+            dr_ball_obs_vel_bias_base_m_s=(0.05, 0.05, 0.08),
+            dr_ball_obs_scale_range=(0.97, 1.03),
+        )
+    if args.ball_obs_nominal_pos_bias_base is not None:
+        cfg = replace(
+            cfg,
+            ball_obs_nominal_pos_bias_base=tuple(float(v) for v in args.ball_obs_nominal_pos_bias_base),
+        )
+    if args.ball_obs_nominal_vel_bias_base is not None:
+        cfg = replace(
+            cfg,
+            ball_obs_nominal_vel_bias_base=tuple(float(v) for v in args.ball_obs_nominal_vel_bias_base),
+        )
     return cfg
 
 
@@ -154,10 +263,10 @@ def ensure_offscreen_framebuffer(model: mj.MjModel, width: int, height: int) -> 
     return old_width, old_height, int(model.vis.global_.offwidth), int(model.vis.global_.offheight)
 
 
-def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float):
+def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float, ignore_early_done: bool = False):
     def eval_step(params, env_state, obs, rng, running_return, running_length):
         rng, action_key, reset_key = jax.random.split(rng, 3)
-        mean, _ = policy_value(params, obs)
+        mean = policy_mean(params, obs)
         if deterministic:
             raw_action = mean
         else:
@@ -167,6 +276,8 @@ def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float):
 
         prev_arm_qvel = env_state.data.qvel[:, env.arm_vadr]
         next_env_state, next_obs, reward, done, metrics = env.step(env_state, action)
+        if bool(ignore_early_done):
+            done = metrics["truncated"].astype(bool)
         completed_return = running_return + reward
         completed_length = running_length + 1
         effective_action = next_env_state.prev_action
@@ -176,6 +287,7 @@ def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float):
         arm_qacc_mj = next_env_state.data.qacc[:, env.arm_vadr]
         arm_cmd_q = next_env_state.arm_cmd_q
         arm_cmd_qvel = next_env_state.arm_cmd_qvel
+        arm_applied_q = next_env_state.arm_applied_q
         desired_qdd_raw = (
             effective_action
             * env.arm_acc_limit_rad_s2[None, :]
@@ -207,6 +319,7 @@ def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float):
             "terminated": metrics["terminated"],
             "truncated": metrics["truncated"],
             "episode_step": metrics["episode_step"],
+            "obs": obs,
             "policy_mean": mean,
             "raw_action": raw_action,
             "applied_action": action,
@@ -216,6 +329,7 @@ def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float):
             "arm_cmd_q": arm_cmd_q,
             "arm_cmd_qvel": arm_cmd_qvel,
             "arm_cmd_qdd": desired_qdd,
+            "arm_applied_q": arm_applied_q,
             "arm_q": arm_q,
             "arm_qvel": arm_qvel,
             "arm_qacc": arm_qacc,
@@ -300,6 +414,7 @@ def trace_row_from_host(
         "arm_cmd_q",
         "arm_cmd_qvel",
         "arm_cmd_qdd",
+        "arm_applied_q",
         "arm_q",
         "arm_qvel",
         "arm_qacc",
@@ -310,7 +425,7 @@ def trace_row_from_host(
         for key in vector_keys:
             value = float(host[key][env_i, i])
             row[f"{key}/{safe_joint}"] = value
-            if key in {"arm_cmd_q", "arm_q"}:
+            if key in {"arm_cmd_q", "arm_applied_q", "arm_q"}:
                 row[f"{key}_deg/{safe_joint}"] = float(np.rad2deg(value))
             elif key in {"arm_cmd_qvel", "arm_qvel"}:
                 row[f"{key}_deg_s/{safe_joint}"] = float(np.rad2deg(value))
@@ -319,6 +434,67 @@ def trace_row_from_host(
     for key, value in host.items():
         if key.startswith("done/"):
             row[key] = float(value[env_i])
+    return row
+
+
+def obs_row_from_host(
+    host: dict[str, np.ndarray],
+    *,
+    env_i: int,
+    step_idx: int,
+    episode_idx: int,
+    dt: float,
+) -> dict[str, float]:
+    obs = np.asarray(host["obs"][env_i], dtype=np.float32).reshape(-1)
+    if obs.shape[0] < 50:
+        raise RuntimeError(f"expected obs dim at least 50, got {obs.shape[0]}")
+
+    row: dict[str, float] = {
+        "step": int(step_idx),
+        "time_sec": float(step_idx * dt),
+        "env": int(env_i),
+        "episode": int(episode_idx),
+        "episode_step": float(host["episode_step"][env_i]),
+        "reward": float(host["reward"][env_i]),
+        "return": float(host["episode_return"][env_i]),
+        "hits": float(host["hit_count"][env_i]),
+        "done": float(host["done"][env_i]),
+        "terminated": float(host["terminated"][env_i]),
+        "truncated": float(host["truncated"][env_i]),
+    }
+    for i, value in enumerate(obs):
+        row[f"obs/{i:03d}"] = float(value)
+        if i >= 50:
+            row[f"obs_extra/{i - 50:03d}"] = float(value)
+
+    axes = ("x", "y", "z")
+    base_names = ("x", "y", "yaw")
+    base_vel_names = ("vx", "vy", "yaw_rate")
+
+    def add_joint_block(prefix: str, start: int, *, deg_prefix: str | None = None) -> None:
+        for j, joint in enumerate(RIGHT_ARM_JOINTS):
+            value = float(obs[start + j])
+            row[f"{prefix}/{joint}"] = value
+            if deg_prefix is not None:
+                row[f"{deg_prefix}/{joint}"] = float(np.rad2deg(value))
+
+    add_joint_block("obs_arm_q_rad", 0, deg_prefix="obs_arm_q_deg")
+    add_joint_block("obs_arm_dq_rad_s", 7, deg_prefix="obs_arm_dq_deg_s")
+    for j, name in enumerate(base_names):
+        row[f"obs_base_q/{name}"] = float(obs[14 + j])
+    row["obs_base_q_yaw_deg"] = float(np.rad2deg(obs[16]))
+    for j, name in enumerate(base_vel_names):
+        row[f"obs_base_dq/{name}"] = float(obs[17 + j])
+    row["obs_base_dq_yaw_rate_deg_s"] = float(np.rad2deg(obs[19]))
+    for j, axis in enumerate(axes):
+        row[f"obs_ball_pos_base_m/{axis}"] = float(obs[20 + j])
+        row[f"obs_ball_vel_base_m_s/{axis}"] = float(obs[23 + j])
+        row[f"obs_racket_pos_base_m/{axis}"] = float(obs[26 + j])
+        row[f"obs_racket_vel_base_m_s/{axis}"] = float(obs[29 + j])
+        row[f"obs_rel_base_m/{axis}"] = float(obs[32 + j])
+    add_joint_block("obs_prev_action", 35)
+    add_joint_block("obs_arm_cmd_error_rad", 42, deg_prefix="obs_arm_cmd_error_deg")
+    row["obs_ball_age_norm"] = float(obs[49])
     return row
 
 
@@ -417,8 +593,18 @@ def plot_trace_rows(path: Path, rows: list[dict[str, float]]) -> None:
             linestyle="--",
             alpha=0.75,
         )
+        applied_key = f"arm_applied_q_deg/{name}"
+        if applied_key in rows[0]:
+            axes[3].plot(
+                t,
+                [row[applied_key] for row in rows],
+                linewidth=0.8,
+                color=color,
+                linestyle=":",
+                alpha=0.85,
+            )
     axes[3].set_ylabel("joint angle deg")
-    axes[3].set_title("Commanded joint targets (solid) vs simulated joint angles (dashed)")
+    axes[3].set_title("Commanded targets (solid), actuator-applied targets (dotted), simulated joint angles (dashed)")
     axes[3].grid(True, alpha=0.25)
     axes[3].legend(loc="upper right", ncol=2, fontsize=8)
 
@@ -451,7 +637,11 @@ def main() -> None:
 
     if (args.render or args.video_out is not None) and args.n_envs != 1:
         print("[validate_mjx] render/video shows env 0 only; use --n-envs 1 for smoother visual validation.")
-    trace_enabled = args.action_trace_csv is not None or args.action_plot_out is not None
+    trace_enabled = (
+        args.action_trace_csv is not None
+        or args.action_plot_out is not None
+        or args.obs_trace_csv is not None
+    )
     if trace_enabled and not (0 <= int(args.trace_env) < int(args.n_envs)):
         raise SystemExit(f"--trace-env must be in [0, {args.n_envs - 1}]")
 
@@ -473,6 +663,17 @@ def main() -> None:
         f"racket_z_limit_up={cfg.racket_z_hard_limit_up}, "
         f"terminate_on_racket_z_limit={cfg.terminate_on_racket_z_limit}"
     )
+    print(
+        "[validate_mjx] obs/latency_cfg: "
+        f"realistic_s2r_profile={args.realistic_s2r_profile if args.realistic_s2r else 'checkpoint'}, "
+        f"obs_dim={env.obs_dim}, high_latency_obs={cfg.high_latency_obs}, "
+        f"history_frames={cfg.high_latency_history_frames}, "
+        f"ball_obs_rate_hz={cfg.ball_obs_rate_hz}, fractional={cfg.ball_obs_fractional_rate}, "
+        f"age_tracks_stale={cfg.ball_obs_age_tracks_stale}, require_camera_visible={cfg.ball_obs_require_camera_visible}, "
+        f"obs_latency_steps={cfg.dr_obs_latency_steps_range}, action_latency_steps={cfg.dr_action_latency_steps_range}, "
+        f"actuator_cmd_filter={cfg.actuator_cmd_filter}, tau_range={cfg.dr_actuator_cmd_tau_range}, "
+        f"gain_range={cfg.dr_actuator_cmd_gain_range}, pos_bias={cfg.ball_obs_nominal_pos_bias_base}"
+    )
 
     rng = jax.random.PRNGKey(args.seed)
     rng, reset_key = jax.random.split(rng)
@@ -480,7 +681,7 @@ def main() -> None:
     env_state, obs = jax.jit(env.reset)(reset_keys)
     running_return = jnp.zeros((args.n_envs,), dtype=jnp.float32)
     running_length = jnp.zeros((args.n_envs,), dtype=jnp.int32)
-    eval_step = make_eval_step(env, args.deterministic, args.action_gain)
+    eval_step = make_eval_step(env, args.deterministic, args.action_gain, args.ignore_early_done)
 
     viewer_ctx = None
     viewer = None
@@ -534,6 +735,7 @@ def main() -> None:
 
     episode_rows: list[dict[str, float]] = []
     trace_rows: list[dict[str, float]] = []
+    obs_trace_rows: list[dict[str, float]] = []
     env_episode_counts = np.zeros((args.n_envs,), dtype=np.int32)
     max_steps = args.max_env_steps
     if max_steps <= 0:
@@ -555,15 +757,26 @@ def main() -> None:
             done = np.asarray(host["done"], dtype=bool)
             if trace_enabled:
                 trace_env = int(args.trace_env)
-                trace_rows.append(
-                    trace_row_from_host(
-                        host,
-                        env_i=trace_env,
-                        step_idx=step_idx,
-                        episode_idx=int(env_episode_counts[trace_env]) + 1,
-                        dt=env.dt,
+                if args.action_trace_csv is not None or args.action_plot_out is not None:
+                    trace_rows.append(
+                        trace_row_from_host(
+                            host,
+                            env_i=trace_env,
+                            step_idx=step_idx,
+                            episode_idx=int(env_episode_counts[trace_env]) + 1,
+                            dt=env.dt,
+                        )
                     )
-                )
+                if args.obs_trace_csv is not None:
+                    obs_trace_rows.append(
+                        obs_row_from_host(
+                            host,
+                            env_i=trace_env,
+                            step_idx=step_idx,
+                            episode_idx=int(env_episode_counts[trace_env]) + 1,
+                            dt=env.dt,
+                        )
+                    )
 
             if args.log_hit_events:
                 hit_envs = np.flatnonzero(np.asarray(host["new_hit"]) > 0.5)
@@ -652,6 +865,9 @@ def main() -> None:
     if args.action_plot_out is not None:
         plot_trace_rows(args.action_plot_out, trace_rows)
         print(f"[validate_mjx] wrote action plot: {args.action_plot_out}")
+    if args.obs_trace_csv is not None:
+        save_trace_rows(args.obs_trace_csv, obs_trace_rows)
+        print(f"[validate_mjx] wrote observation trace: {args.obs_trace_csv}")
     if args.video_out is not None:
         print(f"[validate_mjx] wrote video: {args.video_out}")
 
