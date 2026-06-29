@@ -10,6 +10,7 @@ setup(
         package_name: [
             'models/*',
             'output/*',
+            'tools/rl_sim/meshes/*',
         ],
     },
     include_package_data=True,
@@ -19,7 +20,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
     ],
     install_requires=['setuptools'],
-    zip_safe=True,
+    zip_safe=False,
     maintainer='jacky',
     maintainer_email='yjk2261123518@163.com',
     description='TODO: Package description',

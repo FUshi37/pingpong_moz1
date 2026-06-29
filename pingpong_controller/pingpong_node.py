@@ -11,6 +11,7 @@ RL control will be added later.
 
 import numpy as np
 import cv2
+import csv
 from dataclasses import dataclass
 from typing import Optional
 import time
@@ -47,6 +48,7 @@ from pingpong_controller.rl_policy import (
     target_left_arm_q_rad,
     target_right_arm_q_rad,
 )
+from pingpong_controller.mjx_policy import MJXPolicyController
 from pingpong_controller.safety_limiter import RightArmCommandSafetyLimiter
 
 
@@ -104,18 +106,30 @@ class PingPongControllerNode(Node):
         self.declare_parameter(
             'rl_joint_cmd_state_topic', '/pingpong/rl_joint_cmd_state')
         self.declare_parameter('publish_rl_joint_cmd_debug', True)
+        self.declare_parameter('record_rl_trace', False)
+        self.declare_parameter('rl_trace_csv_path', 'auto')
+        self.declare_parameter('rl_trace_sample_every', 1)
+        self.declare_parameter('rl_trace_flush_every', 100)
 
         # RL policy parameters
         default_rl_model_path = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             'models', 'best_model.zip')
+        default_robot_xml = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            'models', 'moz1_pd.xml')
         self.declare_parameter('rl_model_path', default_rl_model_path)
         self.declare_parameter('enable_rl_policy', True)
+        self.declare_parameter('rl_policy_backend', 'sb3')
         # 200 Hz control loop -> dt = 0.005 s.
         self.declare_parameter('rl_policy_dt', 0.005)
         self.declare_parameter('control_rate_hz', 200.0)
         self.declare_parameter('rl_policy_device', 'cpu')
         self.declare_parameter('rl_ball_obs_age_clip', 0.20)
+        self.declare_parameter('rl_action_gain', 1.0)
+        self.declare_parameter('rl_action_scale_mult', 1.0)
+        self.declare_parameter('rl_require_fk', False)
+        self.declare_parameter('robot_xml_path', default_robot_xml)
 
         # Whole-body init pose publishing.
         self.declare_parameter('enable_init_pose', True)
@@ -185,6 +199,14 @@ class PingPongControllerNode(Node):
             'rl_joint_cmd_state_topic').value
         self.publish_rl_joint_cmd_debug = bool(
             self.get_parameter('publish_rl_joint_cmd_debug').value)
+        self.record_rl_trace = bool(
+            self.get_parameter('record_rl_trace').value)
+        self.rl_trace_csv_path_param = self.get_parameter(
+            'rl_trace_csv_path').value
+        self.rl_trace_sample_every = max(
+            1, int(self.get_parameter('rl_trace_sample_every').value))
+        self.rl_trace_flush_every = max(
+            1, int(self.get_parameter('rl_trace_flush_every').value))
 
         self.yolo_model_path = self.get_parameter('yolo_model_path').value
         self.calibration_json_path = self.get_parameter(
@@ -215,6 +237,13 @@ class PingPongControllerNode(Node):
         self.rl_model_path = self.get_parameter('rl_model_path').value
         self.enable_rl_policy = bool(
             self.get_parameter('enable_rl_policy').value)
+        self.rl_policy_backend = str(
+            self.get_parameter('rl_policy_backend').value).strip().lower()
+        if self.rl_policy_backend not in ('sb3', 'mjx'):
+            self.get_logger().warn(
+                f'Unknown rl_policy_backend="{self.rl_policy_backend}"; '
+                'falling back to "sb3"')
+            self.rl_policy_backend = 'sb3'
         self.rl_policy_dt = float(self.get_parameter('rl_policy_dt').value)
         self.control_rate_hz = float(
             self.get_parameter('control_rate_hz').value)
@@ -227,16 +256,19 @@ class PingPongControllerNode(Node):
         self.rl_policy_device = self.get_parameter('rl_policy_device').value
         self.rl_ball_obs_age_clip = float(
             self.get_parameter('rl_ball_obs_age_clip').value)
+        self.rl_action_gain = float(
+            self.get_parameter('rl_action_gain').value)
+        self.rl_action_scale_mult = float(
+            self.get_parameter('rl_action_scale_mult').value)
+        self.rl_require_fk = bool(
+            self.get_parameter('rl_require_fk').value)
 
         # Robot XML for FK (default to models/moz1_pd.xml in same directory).
-        default_robot_xml = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            'models', 'moz1_pd.xml')
-        self.declare_parameter('robot_xml_path', default_robot_xml)
         self.robot_xml_path = self.get_parameter('robot_xml_path').value
 
         self.rl_controller = None
         self._last_valid_ball_wall_time = None
+        self._last_rl_ball_age_s = self.rl_ball_obs_age_clip
         # Post-safety-limiter command (what was last actually published).
         self._last_safe_joint_positions = np.array(
             self.default_joint_positions, dtype=np.float64)
@@ -261,24 +293,48 @@ class PingPongControllerNode(Node):
                 self.enable_rl_policy = False
             else:
                 try:
-                    self.rl_controller = RLPolicyController(
-                        model_path=self.rl_model_path,
-                        dt=self.control_dt,
-                        ball_obs_age_clip_s=self.rl_ball_obs_age_clip,
-                        device=self.rl_policy_device,
-                        robot_xml_path=self.robot_xml_path,
-                        logger=self.get_logger(),
-                    )
+                    if self.rl_policy_backend == 'mjx':
+                        self.rl_controller = MJXPolicyController(
+                            checkpoint_path=self.rl_model_path,
+                            dt=self.control_dt,
+                            action_gain=self.rl_action_gain,
+                            action_scale_mult=self.rl_action_scale_mult,
+                            ball_obs_age_clip_s=self.rl_ball_obs_age_clip,
+                            robot_xml_path=self.robot_xml_path,
+                            require_fk=self.rl_require_fk,
+                            logger=self.get_logger(),
+                        )
+                        summary = self.rl_controller.checkpoint_summary()
+                        self.get_logger().info(
+                            'MJX policy summary: '
+                            f"step={summary.get('step')}, "
+                            f"fk_enabled={summary.get('fk_enabled')}, "
+                            f"action_gain={summary.get('action_gain')}, "
+                            f"action_scale_mult={summary.get('action_scale_mult')}, "
+                            f"arm_action_limiter="
+                            f"{summary.get('arm_action_limiter')}")
+                    else:
+                        self.rl_controller = RLPolicyController(
+                            model_path=self.rl_model_path,
+                            dt=self.control_dt,
+                            ball_obs_age_clip_s=self.rl_ball_obs_age_clip,
+                            device=self.rl_policy_device,
+                            robot_xml_path=self.robot_xml_path,
+                            logger=self.get_logger(),
+                        )
                     self._last_safe_joint_positions = \
                         self.rl_controller.current_arm_cmd_q().astype(
                             np.float64)
                     self._last_raw_joint_positions = \
                         self._last_safe_joint_positions.copy()
                     self.get_logger().info(
-                        f'RLPolicyController ready (model={self.rl_model_path})')
+                        f'RL controller ready '
+                        f'(backend={self.rl_policy_backend}, '
+                        f'model={self.rl_model_path})')
                 except Exception as exc:
                     self.get_logger().error(
-                        f'Failed to initialize RLPolicyController: {exc}; '
+                        f'Failed to initialize RL controller '
+                        f'(backend={self.rl_policy_backend}): {exc}; '
                         'falling back to default joint positions')
                     self.rl_controller = None
                     self.enable_rl_policy = False
@@ -351,12 +407,26 @@ class PingPongControllerNode(Node):
         self._prev_right_arm_q_for_dq: Optional[np.ndarray] = None
         self._prev_right_arm_stamp_for_dq: Optional[float] = None
         self._estimated_right_arm_dq = np.zeros(7, dtype=np.float32)
+        self._prev_right_arm_dq_for_ddq: Optional[np.ndarray] = None
+        self._prev_right_arm_stamp_for_ddq: Optional[float] = None
+        self._estimated_right_arm_ddq = np.zeros(7, dtype=np.float32)
         # Hard cap for the finite-difference dq so a single noisy JointState
         # frame cannot feed unbounded dq into the RL obs.
         # Limits match RightArmCommandSafetyLimiter.VEL_LIMIT_DEG_S.
         self._right_arm_dq_clip_rad_s = np.deg2rad(np.array(
             [210.0, 210.0, 240.0, 240.0, 300.0, 300.0, 300.0],
             dtype=np.float32))
+        self._right_arm_ddq_clip_rad_s2 = np.deg2rad(np.array(
+            [1300.0, 1300.0, 1800.0, 3000.0, 3000.0, 3000.0, 3000.0],
+            dtype=np.float32))
+        self._control_tick_index = 0
+
+        # Optional CSV trace for real-robot policy experiments.
+        self._rl_trace_file = None
+        self._rl_trace_writer = None
+        self._rl_trace_rows_since_flush = 0
+        self._rl_trace_path = None
+        self._init_rl_trace_logger()
 
         # Callback groups: isolate the 200 Hz control timer from the heavy
         # vision callback so YOLO does not block control publishing. Vision
@@ -1003,6 +1073,202 @@ class PingPongControllerNode(Node):
         self.get_logger().info(
             f'Saved base_link trajectory plot to: {self.trajectory_plot_path}')
 
+    def _resolve_rl_trace_csv_path(self):
+        requested = str(self.rl_trace_csv_path_param or '').strip()
+        timestamp = time.strftime('%Y%m%d_%H%M%S')
+        if requested.lower() in ('', 'auto'):
+            return os.path.join(
+                self.source_module_dir, 'outputs', 'rl_2real',
+                f'rl_trace_{timestamp}.csv')
+        requested = requested.replace('{timestamp}', timestamp)
+        return os.path.expandvars(os.path.expanduser(requested))
+
+    @staticmethod
+    def _joint_key(joint_name: str) -> str:
+        return joint_name.replace('/', '_')
+
+    def _rl_trace_fieldnames(self):
+        fields = [
+            'control_tick',
+            'wall_time_sec',
+            'ros_time_sec',
+            'backend',
+            'ball_valid',
+            'ball_age_s',
+            'ball_x_m',
+            'ball_y_m',
+            'ball_z_m',
+            'ball_vx_m_s',
+            'ball_vy_m_s',
+            'ball_vz_m_s',
+            'joint_state_available',
+        ]
+        prefixes = (
+            'policy_action',
+            'policy_qdd_rad_s2',
+            'policy_qdd_deg_s2',
+            'policy_qvel_rad_s',
+            'policy_qvel_deg_s',
+            'policy_q_rad',
+            'policy_q_deg',
+            'raw_cmd_q_rad',
+            'raw_cmd_q_deg',
+            'safe_q_rad',
+            'safe_q_deg',
+            'safe_qvel_rad_s',
+            'safe_qvel_deg_s',
+            'safe_qdd_rad_s2',
+            'safe_qdd_deg_s2',
+            'real_q_rad',
+            'real_q_deg',
+            'real_qvel_rad_s',
+            'real_qvel_deg_s',
+            'real_qdd_rad_s2',
+            'real_qdd_deg_s2',
+        )
+        for prefix in prefixes:
+            for joint in RIGHT_ARM_JOINTS:
+                fields.append(f'{prefix}/{self._joint_key(joint)}')
+        return fields
+
+    def _init_rl_trace_logger(self) -> None:
+        if not self.record_rl_trace:
+            return
+        path = self._resolve_rl_trace_csv_path()
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        try:
+            self._rl_trace_file = open(path, 'w', newline='')
+            self._rl_trace_writer = csv.DictWriter(
+                self._rl_trace_file, fieldnames=self._rl_trace_fieldnames())
+            self._rl_trace_writer.writeheader()
+            self._rl_trace_path = path
+            self.get_logger().info(
+                f'RL trace recording enabled: {path} '
+                f'(sample_every={self.rl_trace_sample_every}, '
+                f'flush_every={self.rl_trace_flush_every})')
+        except Exception as exc:
+            self.get_logger().error(
+                f'Failed to open RL trace CSV "{path}": {exc}; '
+                'disabling record_rl_trace')
+            self.record_rl_trace = False
+            self._rl_trace_file = None
+            self._rl_trace_writer = None
+
+    def close_rl_trace(self) -> None:
+        if self._rl_trace_file is None:
+            return
+        try:
+            self._rl_trace_file.flush()
+            self._rl_trace_file.close()
+            self.get_logger().info(f'Closed RL trace CSV: {self._rl_trace_path}')
+        except Exception as exc:
+            self.get_logger().warn(f'Failed to close RL trace CSV: {exc}')
+        finally:
+            self._rl_trace_file = None
+            self._rl_trace_writer = None
+
+    @staticmethod
+    def _finite_vec_or_nan(value, n: int = 7) -> np.ndarray:
+        if value is None:
+            return np.full(n, np.nan, dtype=np.float64)
+        arr = np.asarray(value, dtype=np.float64).reshape(-1)
+        if arr.shape != (n,) or not np.all(np.isfinite(arr)):
+            return np.full(n, np.nan, dtype=np.float64)
+        return arr
+
+    def _add_trace_vec(
+            self, row: dict, prefix: str, values, *,
+            deg_prefix: Optional[str] = None,
+            deg_factor: float = 1.0) -> None:
+        arr = self._finite_vec_or_nan(values, len(RIGHT_ARM_JOINTS))
+        for i, joint in enumerate(RIGHT_ARM_JOINTS):
+            key = self._joint_key(joint)
+            row[f'{prefix}/{key}'] = float(arr[i])
+            if deg_prefix is not None:
+                row[f'{deg_prefix}/{key}'] = float(np.rad2deg(arr[i]) * deg_factor)
+
+    def _record_rl_trace(self, ball_state: BallState, raw_cmd, safe_cmd) -> None:
+        if not self.record_rl_trace or self._rl_trace_writer is None:
+            return
+        if (self._control_tick_index % self.rl_trace_sample_every) != 0:
+            return
+        try:
+            policy_state = (
+                self.rl_controller.latest_command_state()
+                if self.rl_controller is not None else {}
+            )
+            real_q, real_dq = self._get_right_arm_feedback()
+            with self._joint_state_lock:
+                real_ddq = (
+                    self._estimated_right_arm_ddq.copy()
+                    if self._joint_state_received else None
+                )
+            safe_q = self._finite_vec_or_nan(
+                safe_cmd if safe_cmd is not None else self._last_safe_joint_positions)
+            ball_pos_m = np.asarray(ball_state.position, dtype=np.float64) * 1e-3
+            ball_vel_m_s = np.asarray(ball_state.velocity, dtype=np.float64) * 1e-3
+            now_msg = self.get_clock().now().to_msg()
+            ros_time_sec = float(now_msg.sec) + float(now_msg.nanosec) * 1e-9
+
+            row = {
+                'control_tick': int(self._control_tick_index),
+                'wall_time_sec': float(time.time()),
+                'ros_time_sec': ros_time_sec,
+                'backend': self.rl_policy_backend,
+                'ball_valid': int(bool(ball_state.valid)),
+                'ball_age_s': float(self._last_rl_ball_age_s),
+                'ball_x_m': float(ball_pos_m[0]),
+                'ball_y_m': float(ball_pos_m[1]),
+                'ball_z_m': float(ball_pos_m[2]),
+                'ball_vx_m_s': float(ball_vel_m_s[0]),
+                'ball_vy_m_s': float(ball_vel_m_s[1]),
+                'ball_vz_m_s': float(ball_vel_m_s[2]),
+                'joint_state_available': int(real_q is not None),
+            }
+
+            self._add_trace_vec(row, 'policy_action', policy_state.get('action'))
+            self._add_trace_vec(
+                row, 'policy_qdd_rad_s2', policy_state.get('acceleration'),
+                deg_prefix='policy_qdd_deg_s2')
+            self._add_trace_vec(
+                row, 'policy_qvel_rad_s', policy_state.get('velocity'),
+                deg_prefix='policy_qvel_deg_s')
+            self._add_trace_vec(
+                row, 'policy_q_rad', policy_state.get('position'),
+                deg_prefix='policy_q_deg')
+            self._add_trace_vec(
+                row, 'raw_cmd_q_rad', raw_cmd, deg_prefix='raw_cmd_q_deg')
+            self._add_trace_vec(
+                row, 'safe_q_rad', safe_q, deg_prefix='safe_q_deg')
+            self._add_trace_vec(
+                row, 'safe_qvel_rad_s',
+                getattr(self.safety_limiter, 'last_vel', None),
+                deg_prefix='safe_qvel_deg_s')
+            self._add_trace_vec(
+                row, 'safe_qdd_rad_s2',
+                getattr(self.safety_limiter, 'last_acc', None),
+                deg_prefix='safe_qdd_deg_s2')
+            self._add_trace_vec(
+                row, 'real_q_rad', real_q, deg_prefix='real_q_deg')
+            self._add_trace_vec(
+                row, 'real_qvel_rad_s', real_dq,
+                deg_prefix='real_qvel_deg_s')
+            self._add_trace_vec(
+                row, 'real_qdd_rad_s2', real_ddq,
+                deg_prefix='real_qdd_deg_s2')
+
+            self._rl_trace_writer.writerow(row)
+            self._rl_trace_rows_since_flush += 1
+            if self._rl_trace_rows_since_flush >= self.rl_trace_flush_every:
+                self._rl_trace_file.flush()
+                self._rl_trace_rows_since_flush = 0
+        except Exception as exc:
+            self.get_logger().warn(
+                f'Failed to write RL trace row: {exc}',
+                throttle_duration_sec=1.0)
+
     def _log_detection_results(self, ball_state: BallState):
         """Log detection results with statistics."""
         if len(self.callback_times) > 0:
@@ -1062,6 +1328,7 @@ class PingPongControllerNode(Node):
         before being published.
         """
         now_wall = time.time()
+        self._control_tick_index += 1
         with self._latest_ball_lock:
             ball_state = self._latest_ball_state
 
@@ -1111,8 +1378,9 @@ class PingPongControllerNode(Node):
             raw_cmd, dtype=np.float64).reshape(-1).copy()
         # Publish RL joint command debug (reflects 200 Hz control cadence).
         self._publish_rl_joint_cmd_debug()
-        self._publish_right_arm_command(
+        safe_cmd = self._publish_right_arm_command(
             self._last_raw_joint_positions, ball_state.stamp)
+        self._record_rl_trace(ball_state, self._last_raw_joint_positions, safe_cmd)
 
     def _joint_state_callback(self, msg: JointState):
         """Cache the latest JointState; values are looked up by name.
@@ -1166,6 +1434,21 @@ class PingPongControllerNode(Node):
                             -self._right_arm_dq_clip_rad_s,
                             self._right_arm_dq_clip_rad_s)
                         self._estimated_right_arm_dq = dq_est
+                        if (self._prev_right_arm_dq_for_ddq is not None
+                                and self._prev_right_arm_stamp_for_ddq is not None):
+                            ddq_dt = stamp_sec - self._prev_right_arm_stamp_for_ddq
+                            if ddq_dt > 1e-4 and np.isfinite(ddq_dt):
+                                ddq_est = (
+                                    (dq_est - self._prev_right_arm_dq_for_ddq)
+                                    / max(ddq_dt, 1e-6)
+                                ).astype(np.float32)
+                                ddq_est = np.clip(
+                                    ddq_est,
+                                    -self._right_arm_ddq_clip_rad_s2,
+                                    self._right_arm_ddq_clip_rad_s2)
+                                self._estimated_right_arm_ddq = ddq_est
+                        self._prev_right_arm_dq_for_ddq = dq_est.copy()
+                        self._prev_right_arm_stamp_for_ddq = stamp_sec
                 self._prev_right_arm_q_for_dq = cur_q.copy()
                 self._prev_right_arm_stamp_for_dq = stamp_sec
 
@@ -1278,6 +1561,7 @@ class PingPongControllerNode(Node):
             age_s = max(0.0, now_wall - self._last_valid_ball_wall_time)
         else:
             age_s = self.rl_ball_obs_age_clip
+        self._last_rl_ball_age_s = float(age_s)
 
         # BallState carries mm / mm/s; the RL policy expects m / m/s.
         ball_pos_m = np.asarray(
@@ -1340,7 +1624,7 @@ class PingPongControllerNode(Node):
                 f'({len(self.joint_names)} vs '
                 f'{self.safety_limiter.N_JOINTS})',
                 throttle_duration_sec=1.0)
-            return
+            return None
 
         raw = np.asarray(joint_positions, dtype=np.float64).reshape(-1)
         safe_cmd = self.safety_limiter.filter(raw)
@@ -1354,6 +1638,7 @@ class PingPongControllerNode(Node):
         msg.psi = 0.0
         # msg.end_pose left at the default identity Pose; joint control only.
         self.cmd_pub.publish(msg)
+        return safe_cmd.copy()
 
     # Backward-compatible alias: the old internal name is kept in case
     # external code/tests still reference it.
@@ -1495,6 +1780,7 @@ def main(args=None):
         if node:
             node._shutdown_realsense()
             node.save_trajectory_plot()
+            node.close_rl_trace()
             if executor is not None:
                 executor.shutdown()
             node.destroy_node()

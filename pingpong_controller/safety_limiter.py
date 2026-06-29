@@ -71,6 +71,7 @@ class RightArmCommandSafetyLimiter:
         init = np.clip(init, self.POS_LIMIT_LOW_RAD, self.POS_LIMIT_HIGH_RAD)
         self.last_cmd = init.copy()
         self.last_vel = np.zeros(self.N_JOINTS, dtype=np.float64)
+        self.last_acc = np.zeros(self.N_JOINTS, dtype=np.float64)
 
         # Running clip counters; reset by consume_clip_counts().
         self._n_invalid = 0
@@ -96,6 +97,7 @@ class RightArmCommandSafetyLimiter:
         self.last_cmd = np.clip(
             current, self.POS_LIMIT_LOW_RAD, self.POS_LIMIT_HIGH_RAD)
         self.last_vel = np.zeros(self.N_JOINTS, dtype=np.float64)
+        self.last_acc = np.zeros(self.N_JOINTS, dtype=np.float64)
 
     def filter(self, raw_cmd) -> np.ndarray:
         """Return a safety-bounded 7-DOF joint command (rad) and update state.
@@ -145,8 +147,11 @@ class RightArmCommandSafetyLimiter:
         actual_vel = (candidate_clipped - self.last_cmd) / self.dt
 
         # (9) Update state.
+        prev_vel = self.last_vel.copy()
+        actual_acc = (actual_vel - prev_vel) / self.dt
         self.last_cmd = candidate_clipped.copy()
         self.last_vel = actual_vel.copy()
+        self.last_acc = actual_acc.copy()
 
         # (10) Return the safe command.
         return candidate_clipped.copy()
