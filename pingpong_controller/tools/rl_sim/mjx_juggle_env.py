@@ -1503,7 +1503,7 @@ class MjxJuggleEnv:
         return jnp.concatenate(features, axis=-1)
 
     def _estimate_contact_time_from_obs(self, state: EnvState, base_obs: jax.Array) -> jax.Array:
-        z_rel = base_obs[:, 32]
+        z_rel = base_obs[:, 34]
         vz_rel = base_obs[:, 25] - base_obs[:, 31]
         age_seconds = base_obs[:, 49] * float(self.cfg.ball_obs_age_clip)
         return self._estimate_contact_time_from_z_vz(state, z_rel, vz_rel, age_seconds)
@@ -2021,7 +2021,9 @@ class MjxJuggleEnv:
             ball_obs_vel_bias_base=state.ball_obs_vel_bias_base,
             ball_obs_scale=state.ball_obs_scale,
         )
-        next_state, obs = self._apply_observation_pipeline(next_state, bpos, bvel)
+        obs_state = next_state._replace(prev_racket_pos=state.prev_racket_pos)
+        obs_state, obs = self._apply_observation_pipeline(obs_state, bpos, bvel)
+        next_state = obs_state._replace(prev_racket_pos=rpos)
         e_active = arm_q_ref_active - data.qpos[:, self.arm_qadr]
         e_actuator_active = arm_actuator_q_ref_active - data.qpos[:, self.arm_qadr]
         t_contact_est = self._estimate_contact_time_from_z_vz(

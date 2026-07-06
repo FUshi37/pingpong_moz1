@@ -812,7 +812,7 @@ class MJXPolicyController:
             age_seconds = float(base_obs[49]) * self.ball_obs_age_clip_s
             lost_timeout_s = max(0.0, float(self.env_cfg.get("lost_ball_timeout_ms", 150.0))) * 1e-3
             t_contact = estimate_contact_time(
-                float(base_obs[32]),
+                float(base_obs[34]),
                 float(base_obs[25] - base_obs[31]),
                 gravity=9.81,
                 contact_height_offset=float(self.env_cfg.get("contact_height_offset", 0.0)),
