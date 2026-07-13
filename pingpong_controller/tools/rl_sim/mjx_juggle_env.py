@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
+import xml.etree.ElementTree as ET
 
 import jax
 import jax.numpy as jnp
@@ -19,6 +20,20 @@ import mujoco
 import numpy as np
 from mujoco import mjx
 
+from camera_calibration import (
+    D455_848_UNDISTORTED_BASE_POS,
+    D455_848_UNDISTORTED_BASE_ROT,
+    D455_848_UNDISTORTED_SIM_BASE_BODY,
+    D455_848_UNDISTORTED_CX,
+    D455_848_UNDISTORTED_CY,
+    D455_848_UNDISTORTED_FX,
+    D455_848_UNDISTORTED_FY,
+    D455_848_UNDISTORTED_HEIGHT,
+    D455_848_UNDISTORTED_HFOV_DEG,
+    D455_848_UNDISTORTED_PIXEL_MARGIN,
+    D455_848_UNDISTORTED_VFOV_DEG,
+    D455_848_UNDISTORTED_WIDTH,
+)
 from delay_control import DEFAULT_DELAY_BIN_EDGES_MS
 from mjx_smoke import _write_mjx_contact_only_xml
 from rl_juggle_env_random import RIGHT_ARM_JOINTS, TARGET_DEGREES, _build_temp_xml_with_ball
@@ -26,11 +41,64 @@ from rl_juggle_env_random import RIGHT_ARM_JOINTS, TARGET_DEGREES, _build_temp_x
 
 BASE_ACTS = ("Base-X", "Base-Y", "Base-Yaw")
 
+D455_REAL_RIGHT_ARM_RESET_DEGREES = (
+    5.736,
+    -44.399,
+    30.683,
+    97.142,
+    49.323,
+    -12.269,
+    14.214,
+)
+D455_REAL_VIEW_X_BOUNDS_M = (-0.25, 0.25)
+D455_REAL_VIEW_Y_BOUNDS_M = (-0.50, -0.20)
+# Physical z measurements are reported as XML/world z minus the 0.100m base height,
+# while MJX ball z metrics use the XML/world z directly.
+D455_REAL_VIEW_Z_BOUNDS_M = (1.00, 1.47)
+D455_REAL_VIEW_Z_IDEAL_M = (1.02, 1.30)
+D455_REAL_VIEW_Y_TARGET_M = -0.35
+
+LEGACY_STAGE4G_RIGHT_ARM_PD: dict[str, tuple[float, float]] = {
+    "RightArm-0": (32000.0, 2000.0),
+    "RightArm-1": (32000.0, 1800.0),
+    "RightArm-2": (27000.0, 1500.0),
+    "RightArm-3": (20000.0, 900.0),
+    "RightArm-4": (13000.0, 500.0),
+    "RightArm-5": (15000.0, 500.0),
+    "RightArm-6": (10000.0, 350.0),
+}
+
+
+def _apply_right_arm_pd_profile(xml_path: Path, profile: str) -> Path:
+    if profile in ("", "xml", "current"):
+        return xml_path
+    if profile != "legacy_stage4g":
+        raise ValueError(f"unknown right_arm_pd_profile={profile!r}")
+    tree = ET.parse(xml_path)
+    root = tree.getroot()
+    patched = 0
+    for elem in root.findall(".//actuator/position"):
+        name = elem.attrib.get("name", "")
+        if name not in LEGACY_STAGE4G_RIGHT_ARM_PD:
+            continue
+        kp, kv = LEGACY_STAGE4G_RIGHT_ARM_PD[name]
+        elem.set("kp", f"{kp:g}")
+        elem.set("kv", f"{kv:g}")
+        patched += 1
+    if patched != len(LEGACY_STAGE4G_RIGHT_ARM_PD):
+        raise ValueError(
+            f"right_arm_pd_profile={profile!r} patched {patched} actuators, "
+            f"expected {len(LEGACY_STAGE4G_RIGHT_ARM_PD)}"
+        )
+    tree.write(xml_path, encoding="unicode")
+    return xml_path
+
 
 @dataclass(frozen=True)
 class MjxJuggleConfig:
     horizon_sec: float = 6.0
     frame_skip: int = 5
+    right_arm_pd_profile: str = "xml"
     action_scale_arm_rad: float = 0.03
     action_scale_base_xy: float = 0.020
     action_scale_base_yaw: float = 0.030
@@ -39,8 +107,20 @@ class MjxJuggleConfig:
     ball_spawn_cube_size: float = 0.10
     ball_spawn_xy_jitter: float = 0.0
     ball_spawn_z_jitter: float = 0.0
+    episode_target_x_range_m: tuple[float, float] = (0.0, 0.0)
+    episode_target_y_range_m: tuple[float, float] = (0.0, 0.0)
+    episode_racket_anchor_z_range_m: tuple[float, float] = (0.0, 0.0)
+    right_arm_reset_degrees: tuple[float, ...] = D455_REAL_RIGHT_ARM_RESET_DEGREES
     ball_init_vxy_max: float = 0.0
     ball_init_vz: float = -0.28
+    ball_init_vz_jitter: float = 0.0
+    ball_reset_mode: str = "anchor_drop"
+    falling_reset_time_to_contact_range_s: tuple[float, float] = (0.12, 0.22)
+    falling_reset_apex_height_range_m: tuple[float, float] = (0.20, 0.32)
+    falling_reset_vxy_max: float = 0.0
+    falling_reset_contact_xy_jitter: float = 0.0
+    falling_reset_contact_rel_height: float = -1.0
+    falling_reset_min_downward_speed: float = 0.12
     ball_obs_rate_hz: float = 50.0
     ball_obs_fractional_rate: bool = False
     ball_obs_pos_noise_std: float = 0.003
@@ -57,6 +137,13 @@ class MjxJuggleConfig:
     post_hit_ball_vxy_penalty_weight: float = 0.18
     descending_intercept_reward_weight: float = 1.6
     descending_intercept_sigma: float = 0.10
+    pre_hit_intercept_reward_weight: float = 0.0
+    pre_hit_intercept_sigma: float = 0.08
+    pre_hit_intercept_time_max: float = 0.55
+    pre_hit_intercept_penalty_weight: float = 0.0
+    pre_hit_intercept_penalty_sigma: float = 0.20
+    pre_hit_intercept_penalty_radius: float = 0.025
+    pre_hit_intercept_penalty_time_max: float = 0.85
     non_racket_ball_contact_penalty_weight: float = 1.5
     failed_hit_penalty_weight: float = 1.0
     sticky_contact_penalty_growth: float = 0.6
@@ -79,6 +166,29 @@ class MjxJuggleConfig:
     apex_soft_penalty_weight: float = 5.0
     ball_xy_soft_limit_radius: float = 0.14
     ball_xy_soft_penalty_weight: float = 3.0
+    ball_low_termination_z_m: float = D455_REAL_VIEW_Z_BOUNDS_M[0]
+    ball_high_termination_z_m: float = 1.90
+    terminate_on_ball_view_bounds: bool = False
+    terminate_on_ball_view_x_bounds: bool = True
+    terminate_on_ball_view_y_bounds: bool = True
+    terminate_on_ball_view_z_low: bool = True
+    terminate_on_ball_view_z_high: bool = True
+    ball_view_x_bounds_m: tuple[float, float] = D455_REAL_VIEW_X_BOUNDS_M
+    ball_view_y_bounds_m: tuple[float, float] = D455_REAL_VIEW_Y_BOUNDS_M
+    ball_view_z_bounds_m: tuple[float, float] = D455_REAL_VIEW_Z_BOUNDS_M
+    ball_view_z_ideal_m: tuple[float, float] = D455_REAL_VIEW_Z_IDEAL_M
+    ball_view_x_target_m: float = 0.0
+    ball_view_y_target_m: float = D455_REAL_VIEW_Y_TARGET_M
+    ball_view_x_sigma_m: float = 0.08
+    ball_view_y_sigma_m: float = 0.10
+    ball_view_z_sigma_m: float = 0.08
+    ball_view_vxy_soft_limit_m_s: float = 1.0
+    ball_view_xy_center_penalty_weight: float = 0.0
+    ball_view_z_ideal_penalty_weight: float = 0.0
+    ball_view_bounds_penalty_weight: float = 0.0
+    ball_view_out_of_bounds_penalty_weight: float = 0.0
+    ball_view_z_not_ideal_penalty_weight: float = 0.0
+    ball_view_vxy_excess_penalty_weight: float = 0.0
     racket_z_band_down: float = 0.00
     racket_z_band_up: float = 0.20
     racket_z_soft_penalty_weight: float = 1.2
@@ -93,6 +203,8 @@ class MjxJuggleConfig:
     action_delta_penalty_weight: float = 0.001
     termination_miss_penalty_base: float = 2.5
     termination_miss_penalty_per_hit: float = 0.8
+    termination_miss_penalty_requires_hit: bool = True
+    termination_no_hit_miss_early_penalty: float = 0.0
     hit_rearm_no_contact_steps: int = 2
     hit_rearm_distance: float = 0.035
     stick_contact_penalty_weight: float = 0.60
@@ -113,6 +225,14 @@ class MjxJuggleConfig:
     hit_height_center: float = 0.52
     hit_height_tolerance: float = 0.06
     hit_height_penalty_weight: float = 10.0
+    hit_vxy_soft_limit_m_s: float = 0.35
+    hit_vxy_penalty_weight: float = 0.0
+    hit_apex_view_center_penalty_weight: float = 0.0
+    hit_apex_view_center_sigma_m: float = 0.12
+    hit_next_contact_anchor_penalty_weight: float = 0.0
+    hit_next_contact_anchor_sigma_m: float = 0.10
+    first_hit_apex_reward_weight: float = 0.0
+    first_hit_apex_sigma: float = 0.055
     low_hit_apex_margin: float = 0.06
     low_hit_penalty_weight: float = 10.0
     domain_randomization: bool = True
@@ -160,21 +280,25 @@ class MjxJuggleConfig:
     actuator_mpc_delta_weight: float = 0.08
     actuator_mpc_max_delta_rad: float = 0.0
     camera_visibility_mode: str = "off"
+    virtual_camera_pose_mode: str = "base_extrinsic"  # "base_extrinsic" or legacy "body_mount"
+    virtual_camera_base_body_name: str = D455_848_UNDISTORTED_SIM_BASE_BODY
     virtual_camera_body_name: str = "head22"
     virtual_camera_mount_pos: tuple[float, float, float] = (0.0, -0.068, 0.062)
     virtual_camera_mount_quat: tuple[float, float, float, float] = (0.707107, 0.0, 0.0, -0.707107)
     virtual_camera_optical_pos: tuple[float, float, float] = (0.048, 0.0, 0.0)
-    camera_image_width: int = 1280
-    camera_image_height: int = 720
-    camera_fx: float = 636.99
-    camera_fy: float = 636.84
-    camera_cx: float = 646.82
-    camera_cy: float = 373.21
-    camera_hfov_deg: float = 86.0
-    camera_vfov_deg: float = 57.0
+    virtual_camera_base_pos: tuple[float, float, float] = D455_848_UNDISTORTED_BASE_POS
+    virtual_camera_base_rot: tuple[float, ...] = D455_848_UNDISTORTED_BASE_ROT
+    camera_image_width: int = D455_848_UNDISTORTED_WIDTH
+    camera_image_height: int = D455_848_UNDISTORTED_HEIGHT
+    camera_fx: float = D455_848_UNDISTORTED_FX
+    camera_fy: float = D455_848_UNDISTORTED_FY
+    camera_cx: float = D455_848_UNDISTORTED_CX
+    camera_cy: float = D455_848_UNDISTORTED_CY
+    camera_hfov_deg: float = D455_848_UNDISTORTED_HFOV_DEG
+    camera_vfov_deg: float = D455_848_UNDISTORTED_VFOV_DEG
     camera_min_depth: float = 0.15
     camera_max_depth: float = 2.50
-    camera_pixel_margin: float = 80.0
+    camera_pixel_margin: float = D455_848_UNDISTORTED_PIXEL_MARGIN
     camera_center_weight: float = 0.0
     camera_visibility_penalty_weight: float = 0.0
     camera_depth_penalty_weight: float = 0.0
@@ -182,6 +306,11 @@ class MjxJuggleConfig:
     camera_visible_penalty_weight: float = 0.0
     camera_top_margin_penalty_weight: float = 0.0
     camera_dense_penalty_clip: float = 20.0
+    hit_camera_reward_weight: float = 0.0
+    hit_camera_out_of_band_penalty_weight: float = 0.0
+    hit_camera_target_v_frac: float = 0.65
+    hit_camera_v_sigma_frac: float = 0.15
+    hit_camera_lower_band_frac: tuple[float, float] = (0.50, 0.82)
     camera_box_half_width: float = 0.35
     camera_box_half_height: float = 0.35
     camera_box_depth_min: float = 0.20
@@ -205,6 +334,7 @@ class MjxJuggleConfig:
     fast_hit_penalty_weight: float = 0.0
     hit_reward_cap_mode: str = "off"
     hit_reward_count_cap: int = 0
+    hit_combo_count_cap: int = 14
     hit_reward_cap_target_interval: float = 0.65
     ball_obs_dropout_prob: float = 0.0
     ball_obs_dropout_max_steps: int = 1
@@ -214,6 +344,12 @@ class MjxJuggleConfig:
     ball_obs_age_tracks_stale: bool = False
     ball_obs_dropout_on_refresh_only: bool = False
     ball_obs_require_camera_visible: bool = False
+    ball_obs_camera_missing_prob: float = 1.0
+    ball_obs_reset_respects_camera_visibility: bool = False
+    ball_obs_require_view_bounds: bool = False
+    ball_obs_view_bounds_missing_prob: float = 1.0
+    ball_obs_missing_episode_coherent_prob: float = 0.0
+    ball_obs_view_z_high_missing_range_m: tuple[float, float] = (0.0, 0.0)
     ball_obs_nominal_pos_bias_base: tuple[float, float, float] = (0.0, 0.0, 0.0)
     ball_obs_nominal_vel_bias_base: tuple[float, float, float] = (0.0, 0.0, 0.0)
     dr_randomize_ball_obs_frame: bool = False
@@ -265,12 +401,20 @@ class EnvState(NamedTuple):
     step_count: jax.Array
     racket_anchor: jax.Array
     chest_target_offset: jax.Array
+    reset_ball_pos: jax.Array
+    reset_ball_vel: jax.Array
+    reset_target_offset: jax.Array
+    reset_disturbance_strength: jax.Array
     arm_cmd_q: jax.Array
     arm_cmd_qvel: jax.Array
     arm_q_ref_latest: jax.Array
     arm_q_ref_active: jax.Array
     arm_actuator_q_ref_latest: jax.Array
     arm_actuator_q_ref_active: jax.Array
+    reset_ball_obs_missing: jax.Array
+    ball_obs_missing_episode_coherent_enabled: jax.Array
+    ball_obs_camera_missing_enabled: jax.Array
+    ball_obs_view_bounds_missing_enabled: jax.Array
     arm_applied_q: jax.Array
     prev_action: jax.Array
     prev_arm_qvel: jax.Array
@@ -293,6 +437,10 @@ class EnvState(NamedTuple):
     delay_bin_id: jax.Array
     anti_windup_scale: jax.Array
     obs_buffer: jax.Array
+    pending_hit_camera_visible: jax.Array
+    pending_hit_camera_in_lower_band: jax.Array
+    pending_hit_camera_in_margin: jax.Array
+    pending_hit_camera_v_frac: jax.Array
     obs_latency_steps: jax.Array
     obs_history: jax.Array
     action_history: jax.Array
@@ -302,6 +450,7 @@ class EnvState(NamedTuple):
     ball_obs_valid_pos: jax.Array
     ball_obs_valid_vel: jax.Array
     ball_obs_age_seconds: jax.Array
+    ball_obs_missing_since_sample: jax.Array
     ball_obs_dropout_remaining: jax.Array
     ball_obs_dropout_steps_total: jax.Array
     ball_obs_burst_count: jax.Array
@@ -333,6 +482,7 @@ class EnvState(NamedTuple):
     ball_obs_rot_bias_rpy: jax.Array
     ball_obs_vel_bias_base: jax.Array
     ball_obs_scale: jax.Array
+    ball_obs_view_z_high_m: jax.Array
 
 
 def _deg_to_rad_map(deg_map: dict[str, float]) -> dict[str, float]:
@@ -476,7 +626,10 @@ class MjxJuggleEnv:
         self.delay_num_bins = max(1, int(edges.size - 1))
         self.delay_max_s = max(1e-6, float(cfg.delay_max_ms) * 1e-3)
 
-        patched_xml = _build_temp_xml_with_ball(self.xml_path)
+        patched_xml = _apply_right_arm_pd_profile(
+            _build_temp_xml_with_ball(self.xml_path),
+            str(cfg.right_arm_pd_profile),
+        )
         self.mjx_xml = _write_mjx_contact_only_xml(patched_xml)
         self.mj_model = mujoco.MjModel.from_xml_path(str(self.mjx_xml))
         self.model = mjx.put_model(self.mj_model)
@@ -528,6 +681,13 @@ class MjxJuggleEnv:
         self.racket_site_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE, "right_ee_site")
         self.waist_body_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_BODY, "waist03")
         self.base_body_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_BODY, "base_link")
+        if self.base_body_id < 0:
+            self.base_body_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_BODY, "base")
+        self.virtual_camera_base_body_id = mujoco.mj_name2id(
+            self.mj_model, mujoco.mjtObj.mjOBJ_BODY, str(cfg.virtual_camera_base_body_name)
+        )
+        if self.virtual_camera_base_body_id < 0:
+            self.virtual_camera_base_body_id = self.base_body_id
         self.virtual_camera_body_id = mujoco.mj_name2id(
             self.mj_model, mujoco.mjtObj.mjOBJ_BODY, str(cfg.virtual_camera_body_name)
         )
@@ -558,7 +718,16 @@ class MjxJuggleEnv:
         self.base_y_vadr = int(self.mj_model.jnt_dofadr[by])
         self.base_yaw_vadr = int(self.mj_model.jnt_dofadr[byaw])
 
-        target_rad = _deg_to_rad_map(TARGET_DEGREES)
+        target_degrees = dict(TARGET_DEGREES)
+        if len(tuple(cfg.right_arm_reset_degrees)) > 0:
+            if len(tuple(cfg.right_arm_reset_degrees)) != len(RIGHT_ARM_JOINTS):
+                raise ValueError(
+                    "right_arm_reset_degrees must contain "
+                    f"{len(RIGHT_ARM_JOINTS)} values, got {len(tuple(cfg.right_arm_reset_degrees))}"
+                )
+            for joint_name, joint_deg in zip(RIGHT_ARM_JOINTS, tuple(cfg.right_arm_reset_degrees)):
+                target_degrees[joint_name] = float(joint_deg)
+        target_rad = _deg_to_rad_map(target_degrees)
         posture_names = list(target_rad.keys())
         posture_jids = [mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_JOINT, n) for n in posture_names]
         posture_aids = [mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, n) for n in posture_names]
@@ -654,9 +823,19 @@ class MjxJuggleEnv:
         self.max_obs_latency_steps = max(0, int(cfg.dr_obs_latency_steps_range[1])) if cfg.domain_randomization else 0
         self.max_action_latency_steps = max(0, int(cfg.dr_action_latency_steps_range[1])) if cfg.domain_randomization else 0
         self.hit_reward_count_cap_active = self._get_hit_reward_count_cap()
+        cfg_values = getattr(cfg, "__dict__", {})
+        self.vc_pose_mode = str(cfg_values.get("virtual_camera_pose_mode", "body_mount"))
         self.vc_mount_R = jnp.asarray(_quat_wxyz_to_mat_np(cfg.virtual_camera_mount_quat), dtype=jnp.float32)
         self.vc_mount_pos = jnp.asarray(cfg.virtual_camera_mount_pos, dtype=jnp.float32)
         self.vc_optical_pos = jnp.asarray(cfg.virtual_camera_optical_pos, dtype=jnp.float32)
+        self.vc_base_pos = jnp.asarray(
+            cfg_values.get("virtual_camera_base_pos", D455_848_UNDISTORTED_BASE_POS),
+            dtype=jnp.float32,
+        )
+        self.vc_base_R = jnp.asarray(
+            cfg_values.get("virtual_camera_base_rot", D455_848_UNDISTORTED_BASE_ROT),
+            dtype=jnp.float32,
+        ).reshape((3, 3))
         self.vc_mount_to_camera_R = jnp.asarray(
             [[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
             dtype=jnp.float32,
@@ -774,7 +953,7 @@ class MjxJuggleEnv:
         n_envs = keys.shape[0]
         data = _batch_tree(self.base_data, n_envs)
 
-        split_keys = jax.vmap(lambda k: jax.random.split(k, 27))(keys)
+        split_keys = jax.vmap(lambda k: jax.random.split(k, 34))(keys)
         next_keys = split_keys[:, 0]
         key_xy = split_keys[:, 1]
         key_z = split_keys[:, 2]
@@ -802,12 +981,30 @@ class MjxJuggleEnv:
         key_delay_tau = split_keys[:, 24]
         key_pd_kp = split_keys[:, 25]
         key_pd_kv = split_keys[:, 26]
+        key_episode_target_x = split_keys[:, 27]
+        key_episode_target_y = split_keys[:, 28]
+        key_episode_anchor_z = split_keys[:, 29]
+        key_ball_init_vz = split_keys[:, 30]
+        key_ball_obs_view_z_high = split_keys[:, 31]
+        key_falling_tau = split_keys[:, 32]
+        key_falling_apex = split_keys[:, 33]
+        falling_reset = str(self.cfg.ball_reset_mode) == "falling_contact"
+        xy_jitter_limit = (
+            float(self.cfg.falling_reset_contact_xy_jitter)
+            if falling_reset
+            else float(self.cfg.ball_spawn_xy_jitter)
+        )
+        vxy_limit = (
+            float(self.cfg.falling_reset_vxy_max)
+            if falling_reset and float(self.cfg.falling_reset_vxy_max) > 0.0
+            else float(self.cfg.ball_init_vxy_max)
+        )
         xy_jitter = jax.vmap(
             lambda k: jax.random.uniform(
                 k,
                 (2,),
-                minval=-float(self.cfg.ball_spawn_xy_jitter),
-                maxval=float(self.cfg.ball_spawn_xy_jitter),
+                minval=-xy_jitter_limit,
+                maxval=xy_jitter_limit,
             )
         )(key_xy)
         z_jitter = jax.vmap(
@@ -822,10 +1019,73 @@ class MjxJuggleEnv:
             lambda k: jax.random.uniform(
                 k,
                 (2,),
-                minval=-float(self.cfg.ball_init_vxy_max),
-                maxval=float(self.cfg.ball_init_vxy_max),
+                minval=-vxy_limit,
+                maxval=vxy_limit,
             )
         )(key_vel)
+        vz_jitter_mag = abs(float(self.cfg.ball_init_vz_jitter))
+        vz_jitter = jax.vmap(
+            lambda k: jax.random.uniform(
+                k,
+                (),
+                minval=-vz_jitter_mag,
+                maxval=vz_jitter_mag,
+            )
+        )(key_ball_init_vz)
+        init_vz = float(self.cfg.ball_init_vz) + vz_jitter
+        target_x_offset = jax.vmap(
+            lambda k: jax.random.uniform(
+                k,
+                (),
+                minval=float(self.cfg.episode_target_x_range_m[0]),
+                maxval=float(self.cfg.episode_target_x_range_m[1]),
+            )
+        )(key_episode_target_x)
+        target_y_offset = jax.vmap(
+            lambda k: jax.random.uniform(
+                k,
+                (),
+                minval=float(self.cfg.episode_target_y_range_m[0]),
+                maxval=float(self.cfg.episode_target_y_range_m[1]),
+            )
+        )(key_episode_target_y)
+        target_z_offset = jax.vmap(
+            lambda k: jax.random.uniform(
+                k,
+                (),
+                minval=float(self.cfg.episode_racket_anchor_z_range_m[0]),
+                maxval=float(self.cfg.episode_racket_anchor_z_range_m[1]),
+            )
+        )(key_episode_anchor_z)
+        tau_lo, tau_hi = [float(v) for v in self.cfg.falling_reset_time_to_contact_range_s]
+        tau_lo, tau_hi = min(tau_lo, tau_hi), max(tau_lo, tau_hi)
+        falling_tau_raw = jax.vmap(
+            lambda k: jax.random.uniform(
+                k,
+                (),
+                minval=tau_lo,
+                maxval=max(tau_lo + 1e-6, tau_hi),
+            )
+        )(key_falling_tau)
+        apex_lo, apex_hi = [float(v) for v in self.cfg.falling_reset_apex_height_range_m]
+        if apex_hi <= 0.0 and apex_lo <= 0.0:
+            contact_rel_height_for_default = (
+                float(self.cfg.hit_confirm_rel_height)
+                if float(self.cfg.falling_reset_contact_rel_height) < 0.0
+                else float(self.cfg.falling_reset_contact_rel_height)
+            )
+            default_apex = max(0.08, float(self.cfg.hit_height_center) - contact_rel_height_for_default)
+            apex_lo = default_apex
+            apex_hi = default_apex
+        apex_lo, apex_hi = min(apex_lo, apex_hi), max(apex_lo, apex_hi)
+        falling_apex_height = jax.vmap(
+            lambda k: jax.random.uniform(
+                k,
+                (),
+                minval=max(1e-4, apex_lo),
+                maxval=max(max(1e-4, apex_lo) + 1e-6, apex_hi),
+            )
+        )(key_falling_apex)
 
         zero_action = jnp.zeros((n_envs, self.act_dim), dtype=jnp.float32)
         zero_ball_vel = jnp.zeros((n_envs, 3), dtype=jnp.float32)
@@ -1097,6 +1357,115 @@ class MjxJuggleEnv:
             ball_obs_vel_bias_base = jnp.broadcast_to(nominal_vel_bias, (n_envs, 3))
             ball_obs_scale = jnp.ones((n_envs,), dtype=jnp.float32)
 
+        z_high_low, z_high_high = [float(v) for v in self.cfg.ball_obs_view_z_high_missing_range_m]
+        if z_high_low <= 0.0 and z_high_high <= 0.0:
+            z_high_low = float(self.cfg.ball_view_z_bounds_m[1])
+            z_high_high = z_high_low
+        z_high_low, z_high_high = min(z_high_low, z_high_high), max(z_high_low, z_high_high)
+        if z_high_high > z_high_low:
+            ball_obs_view_z_high_m = jax.vmap(
+                lambda k: jax.random.uniform(
+                    k,
+                    (),
+                    minval=z_high_low,
+                    maxval=z_high_high,
+                    dtype=jnp.float32,
+                )
+            )(key_ball_obs_view_z_high)
+        else:
+            ball_obs_view_z_high_m = jnp.full((n_envs,), z_high_low, dtype=jnp.float32)
+
+        zero_strength = jnp.zeros((n_envs,), dtype=jnp.float32)
+
+        def squared_norm(value: jax.Array, scale: float) -> jax.Array:
+            denom = max(abs(float(scale)), 1e-6)
+            normalized = value / denom
+            if normalized.ndim <= 1:
+                return normalized * normalized
+            return jnp.sum(normalized * normalized, axis=-1)
+
+        def squared_range(value: jax.Array, bounds: tuple[float, float]) -> jax.Array:
+            lo, hi = [float(v) for v in bounds]
+            center = 0.5 * (lo + hi)
+            half_width = max(0.5 * abs(hi - lo), 1e-6)
+            return ((value - center) / half_width) ** 2
+
+        disturbance_sq = (
+            squared_norm(xy_jitter, xy_jitter_limit)
+            + squared_norm(z_jitter, float(self.cfg.ball_spawn_z_jitter))
+            + squared_norm(vxy, vxy_limit)
+            + squared_norm(vz_jitter, float(self.cfg.ball_init_vz_jitter))
+        )
+        if falling_reset:
+            disturbance_sq = (
+                disturbance_sq
+                + squared_range(falling_tau_raw, self.cfg.falling_reset_time_to_contact_range_s)
+                + squared_range(
+                    falling_apex_height,
+                    (
+                        max(1e-4, float(apex_lo)),
+                        max(max(1e-4, float(apex_lo)) + 1e-6, float(apex_hi)),
+                    ),
+                )
+            )
+        if bool(self.cfg.domain_randomization and self.cfg.dr_randomize_actuator):
+            disturbance_sq = (
+                disturbance_sq
+                + squared_range(action_scale_mult, self.cfg.dr_action_scale_mult_range)
+                + squared_range(dr_damping_mult, self.cfg.dr_damping_mult_range)
+                + squared_range(dr_armature_mult, self.cfg.dr_armature_mult_range)
+            )
+        if bool(self.cfg.domain_randomization and self.cfg.dr_randomize_actuator and self.cfg.dr_randomize_pd):
+            disturbance_sq = disturbance_sq + jnp.mean((dr_pd_kp_mult - 1.0) ** 2, axis=-1)
+            disturbance_sq = disturbance_sq + jnp.mean((dr_pd_kv_mult - 1.0) ** 2, axis=-1)
+        if bool(self.cfg.domain_randomization and self.cfg.dr_randomize_ball):
+            disturbance_sq = (
+                disturbance_sq
+                + squared_range(dr_gravity_z, self.cfg.dr_gravity_z_range)
+                + squared_range(dr_ball_mass, self.cfg.dr_ball_mass_range)
+            )
+        if bool(self.cfg.domain_randomization and self.cfg.dr_randomize_contact):
+            disturbance_sq = (
+                disturbance_sq
+                + squared_range(dr_ball_friction, self.cfg.dr_ball_friction_range)
+                + squared_range(dr_racket_friction, self.cfg.dr_racket_friction_range)
+                + squared_range(dr_ball_solref_time, self.cfg.dr_ball_solref_time_range)
+                + squared_range(dr_ball_solref_damping, self.cfg.dr_ball_solref_damping_range)
+            )
+        if bool(self.cfg.domain_randomization and self.cfg.dr_randomize_latency):
+            obs_span = max(1, int(self.cfg.dr_obs_latency_steps_range[1]) - int(self.cfg.dr_obs_latency_steps_range[0]))
+            act_span = max(1, int(self.cfg.dr_action_latency_steps_range[1]) - int(self.cfg.dr_action_latency_steps_range[0]))
+            disturbance_sq = (
+                disturbance_sq
+                + squared_norm(obs_latency_steps.astype(jnp.float32), float(obs_span))
+                + squared_norm(action_latency_steps.astype(jnp.float32), float(act_span))
+            )
+        if bool(self.cfg.actuator_cmd_filter and self.cfg.domain_randomization and self.cfg.dr_randomize_actuator_cmd_filter):
+            disturbance_sq = (
+                disturbance_sq
+                + squared_range(actuator_cmd_tau, self.cfg.dr_actuator_cmd_tau_range)
+                + squared_range(actuator_cmd_gain, self.cfg.dr_actuator_cmd_gain_range)
+            )
+        if bool(self.cfg.domain_randomization and self.cfg.dr_randomize_racket_mount):
+            disturbance_sq = (
+                disturbance_sq
+                + squared_norm(dr_racket_pos_offset, float(self.cfg.dr_racket_pos_offset_m))
+                + squared_norm(dr_racket_rot_offset, float(self.cfg.dr_racket_rot_offset_rad))
+                + squared_norm(dr_racket_radius_offset, float(self.cfg.dr_racket_radius_offset_m))
+            )
+        if bool(self.cfg.domain_randomization and self.cfg.dr_randomize_ball_obs_frame):
+            pos_bias_scale = max(float(np.linalg.norm(np.asarray(self.cfg.dr_ball_obs_pos_bias_base_m))), 1e-6)
+            rot_bias_scale = max(float(np.linalg.norm(np.deg2rad(np.asarray(self.cfg.dr_ball_obs_rot_bias_deg)))), 1e-6)
+            vel_bias_scale = max(float(np.linalg.norm(np.asarray(self.cfg.dr_ball_obs_vel_bias_base_m_s))), 1e-6)
+            disturbance_sq = (
+                disturbance_sq
+                + squared_norm(ball_obs_pos_bias_base - nominal_pos_bias[None, :], pos_bias_scale)
+                + squared_norm(ball_obs_rot_bias_rpy, rot_bias_scale)
+                + squared_norm(ball_obs_vel_bias_base - nominal_vel_bias[None, :], vel_bias_scale)
+                + squared_range(ball_obs_scale, self.cfg.dr_ball_obs_scale_range)
+            )
+        reset_disturbance_strength = jnp.sqrt(jnp.maximum(disturbance_sq, zero_strength))
+
         model = self._make_batched_model(
             n_envs=n_envs,
             dr_gravity_z=dr_gravity_z,
@@ -1115,18 +1484,41 @@ class MjxJuggleEnv:
         )
         data = self.batched_forward(model, data)
         reset_racket_anchor = data.site_xpos[:, self.racket_site_id]
+        episode_target_offset = jnp.stack([target_x_offset, target_y_offset, target_z_offset], axis=-1)
+        episode_racket_anchor = reset_racket_anchor + episode_target_offset
         if self.waist_body_id >= 0:
-            chest_target_offset = reset_racket_anchor - data.xpos[:, self.waist_body_id]
+            chest_target_offset = episode_racket_anchor - data.xpos[:, self.waist_body_id]
         else:
             chest_target_offset = jnp.zeros((n_envs, 3), dtype=jnp.float32)
 
-        ball_init = jnp.concatenate(
-            [
-                reset_racket_anchor[:, :2] + xy_jitter,
-                (reset_racket_anchor[:, 2] + float(self.cfg.ball_launch_height) + z_jitter)[:, None],
-            ],
-            axis=-1,
-        )
+        if falling_reset:
+            contact_rel_height = (
+                float(self.cfg.hit_confirm_rel_height)
+                if float(self.cfg.falling_reset_contact_rel_height) < 0.0
+                else float(self.cfg.falling_reset_contact_rel_height)
+            )
+            g_abs = jnp.maximum(jnp.abs(dr_gravity_z), 1e-6)
+            min_downward_speed = max(0.0, float(self.cfg.falling_reset_min_downward_speed))
+            apex_height = jnp.maximum(falling_apex_height, 1e-4)
+            time_apex_to_contact = jnp.sqrt(2.0 * apex_height / g_abs)
+            tau_upper = jnp.maximum(0.02, time_apex_to_contact - min_downward_speed / g_abs)
+            tau_lower = jnp.minimum(jnp.full_like(tau_upper, max(0.0, tau_lo)), tau_upper)
+            tau = jnp.minimum(jnp.maximum(falling_tau_raw, tau_lower), tau_upper)
+            contact_xy = episode_racket_anchor[:, :2] + xy_jitter
+            contact_z = episode_racket_anchor[:, 2] + contact_rel_height + z_jitter
+            contact_vz = -jnp.sqrt(2.0 * g_abs * apex_height)
+            init_vz = contact_vz + g_abs * tau
+            ball_xy = contact_xy - vxy * tau[:, None]
+            ball_z = contact_z - init_vz * tau + 0.5 * g_abs * tau * tau
+            ball_init = jnp.concatenate([ball_xy, ball_z[:, None]], axis=-1)
+        else:
+            ball_init = jnp.concatenate(
+                [
+                    episode_racket_anchor[:, :2] + xy_jitter,
+                    (episode_racket_anchor[:, 2] + float(self.cfg.ball_launch_height) + z_jitter)[:, None],
+                ],
+                axis=-1,
+            )
         qpos = data.qpos
         qvel = data.qvel
         qpos = qpos.at[:, self.ball_qadr : self.ball_qadr + 3].set(ball_init)
@@ -1135,26 +1527,98 @@ class MjxJuggleEnv:
         )
         qvel = qvel.at[:, self.ball_vadr : self.ball_vadr + 6].set(0.0)
         qvel = qvel.at[:, self.ball_vadr : self.ball_vadr + 2].set(vxy)
-        qvel = qvel.at[:, self.ball_vadr + 2].set(float(self.cfg.ball_init_vz))
+        qvel = qvel.at[:, self.ball_vadr + 2].set(init_vz)
+        ball_init_vel = jnp.concatenate([vxy, init_vz[:, None]], axis=-1)
         data = data.replace(qpos=qpos, qvel=qvel, ctrl=jnp.broadcast_to(self.default_ctrl, (n_envs, self.mj_model.nu)))
         data = self.batched_forward(model, data)
 
         bpos = data.xpos[:, self.ball_body_id]
         rpos = data.site_xpos[:, self.racket_site_id]
 
+        camera_missing_u = jax.vmap(
+            lambda key: jax.random.uniform(jax.random.fold_in(key, 1908))
+        )(next_keys)
+        camera_missing_enabled = (
+            camera_missing_u < float(self.cfg.ball_obs_camera_missing_prob)
+        )
+        view_bounds_missing_u = jax.vmap(
+            lambda key: jax.random.uniform(jax.random.fold_in(key, 1909))
+        )(next_keys)
+        view_bounds_missing_enabled = (
+            view_bounds_missing_u < float(self.cfg.ball_obs_view_bounds_missing_prob)
+        )
+        coherent_missing_u = jax.vmap(
+            lambda key: jax.random.uniform(jax.random.fold_in(key, 1910))
+        )(next_keys)
+        coherent_missing_enabled = (
+            coherent_missing_u
+            < float(self.cfg.ball_obs_missing_episode_coherent_prob)
+        )
+
+        reset_ball_obs_missing = jnp.zeros((n_envs,), dtype=bool)
+        reset_ball_obs_pos = bpos
+        reset_ball_obs_age = jnp.zeros((n_envs,), dtype=jnp.float32)
+        reset_last_ball_obs_step = jnp.zeros((n_envs,), dtype=jnp.int32)
+        if bool(
+            self.cfg.ball_obs_reset_respects_camera_visibility
+            and self.cfg.ball_obs_require_camera_visible
+            and self.cfg.camera_visibility_mode != "off"
+        ):
+            reset_camera_terms = self._camera_reward_terms(data, bpos)
+            reset_camera_visible = reset_camera_terms["metric/camera_visible"] > 0.5
+            reset_camera_u = jax.vmap(
+                lambda key: jax.random.uniform(jax.random.fold_in(key, 1907))
+            )(next_keys)
+            reset_frame_missing = (~reset_camera_visible) & (
+                reset_camera_u < float(self.cfg.ball_obs_camera_missing_prob)
+            )
+            reset_coherent_missing = (
+                (~reset_camera_visible) & camera_missing_enabled
+            )
+            reset_ball_obs_missing = jnp.where(
+                coherent_missing_enabled,
+                reset_coherent_missing,
+                reset_frame_missing,
+            )
+            reset_missing_age = min(
+                float(self.cfg.ball_obs_age_clip),
+                max(
+                    self.dt,
+                    max(0.0, float(self.cfg.lost_ball_timeout_ms)) * 1e-3,
+                ),
+            )
+            reset_ball_obs_pos = jnp.where(reset_ball_obs_missing[:, None], rpos, bpos)
+            reset_ball_obs_age = jnp.where(
+                reset_ball_obs_missing,
+                reset_missing_age,
+                0.0,
+            )
+            reset_last_ball_obs_step = jnp.where(
+                reset_ball_obs_missing,
+                -int(np.ceil(reset_missing_age / max(self.dt, 1e-6))),
+                0,
+            ).astype(jnp.int32)
         state = EnvState(
             model=model,
             data=data,
             rng=next_keys,
             step_count=jnp.zeros((n_envs,), dtype=jnp.int32),
-            racket_anchor=reset_racket_anchor,
+            racket_anchor=episode_racket_anchor,
             chest_target_offset=chest_target_offset,
+            reset_ball_pos=ball_init,
+            reset_ball_vel=ball_init_vel,
+            reset_target_offset=episode_target_offset,
+            reset_disturbance_strength=reset_disturbance_strength,
+            reset_ball_obs_missing=reset_ball_obs_missing,
             arm_cmd_q=jnp.broadcast_to(self.warm_arm_q, (n_envs, self.act_dim)),
             arm_cmd_qvel=jnp.zeros((n_envs, self.act_dim), dtype=jnp.float32),
             arm_q_ref_latest=jnp.broadcast_to(self.warm_arm_q, (n_envs, self.act_dim)),
             arm_q_ref_active=jnp.broadcast_to(self.warm_arm_q, (n_envs, self.act_dim)),
             arm_actuator_q_ref_latest=jnp.broadcast_to(self.warm_arm_q, (n_envs, self.act_dim)),
             arm_actuator_q_ref_active=jnp.broadcast_to(self.warm_arm_q, (n_envs, self.act_dim)),
+            ball_obs_missing_episode_coherent_enabled=coherent_missing_enabled,
+            ball_obs_camera_missing_enabled=camera_missing_enabled,
+            ball_obs_view_bounds_missing_enabled=view_bounds_missing_enabled,
             arm_applied_q=jnp.broadcast_to(self.warm_arm_q, (n_envs, self.act_dim)),
             prev_action=zero_action,
             prev_arm_qvel=jnp.broadcast_to(self.warm_arm_qvel, (n_envs, self.act_dim)),
@@ -1166,6 +1630,10 @@ class MjxJuggleEnv:
             contact_hold_steps=jnp.zeros((n_envs,), dtype=jnp.int32),
             pending_hit=jnp.zeros((n_envs,), dtype=bool),
             pending_hit_steps=jnp.zeros((n_envs,), dtype=jnp.int32),
+            pending_hit_camera_visible=jnp.zeros((n_envs,), dtype=bool),
+            pending_hit_camera_in_margin=jnp.zeros((n_envs,), dtype=bool),
+            pending_hit_camera_in_lower_band=jnp.zeros((n_envs,), dtype=bool),
+            pending_hit_camera_v_frac=jnp.zeros((n_envs,), dtype=jnp.float32),
             hit_count=jnp.zeros((n_envs,), dtype=jnp.int32),
             action_buffer=jnp.zeros((n_envs, self.max_action_latency_steps + 1, self.act_dim), dtype=jnp.float32),
             action_latency_steps=action_latency_steps,
@@ -1192,12 +1660,13 @@ class MjxJuggleEnv:
                 (n_envs, self.high_latency_action_prev_frames, self.act_dim),
                 dtype=jnp.float32,
             ),
-            cached_ball_obs_pos=bpos,
+            cached_ball_obs_pos=reset_ball_obs_pos,
             cached_ball_obs_vel=zero_ball_vel,
-            last_ball_obs_step=jnp.zeros((n_envs,), dtype=jnp.int32),
-            ball_obs_valid_pos=bpos,
+            last_ball_obs_step=reset_last_ball_obs_step,
+            ball_obs_valid_pos=reset_ball_obs_pos,
             ball_obs_valid_vel=zero_ball_vel,
-            ball_obs_age_seconds=jnp.zeros((n_envs,), dtype=jnp.float32),
+            ball_obs_age_seconds=reset_ball_obs_age,
+            ball_obs_missing_since_sample=reset_ball_obs_missing,
             ball_obs_dropout_remaining=jnp.zeros((n_envs,), dtype=jnp.int32),
             ball_obs_dropout_steps_total=jnp.zeros((n_envs,), dtype=jnp.int32),
             ball_obs_burst_count=jnp.zeros((n_envs,), dtype=jnp.int32),
@@ -1229,6 +1698,7 @@ class MjxJuggleEnv:
             ball_obs_rot_bias_rpy=ball_obs_rot_bias_rpy,
             ball_obs_vel_bias_base=ball_obs_vel_bias_base,
             ball_obs_scale=ball_obs_scale,
+            ball_obs_view_z_high_m=ball_obs_view_z_high_m,
         )
         base_obs = self._make_obs(
             state,
@@ -1503,9 +1973,15 @@ class MjxJuggleEnv:
         return jnp.concatenate(features, axis=-1)
 
     def _estimate_contact_time_from_obs(self, state: EnvState, base_obs: jax.Array) -> jax.Array:
-        z_rel = base_obs[:, 34]
-        vz_rel = base_obs[:, 25] - base_obs[:, 31]
         age_seconds = base_obs[:, 49] * float(self.cfg.ball_obs_age_clip)
+        ball_vz_stale = base_obs[:, 25]
+        gravity_z = state.dr_gravity_z
+        z_rel = (
+            base_obs[:, 34]
+            + ball_vz_stale * age_seconds
+            + 0.5 * gravity_z * age_seconds * age_seconds
+        )
+        vz_rel = ball_vz_stale + gravity_z * age_seconds - base_obs[:, 31]
         return self._estimate_contact_time_from_z_vz(state, z_rel, vz_rel, age_seconds)
 
     def _estimate_contact_time_from_z_vz(
@@ -1777,10 +2253,58 @@ class MjxJuggleEnv:
         ctrl = ctrl.at[:, self.base_aids_j].set(0.0)
         data = state.data.replace(ctrl=ctrl)
 
-        def one_substep(_, d):
-            return self.batched_step(state.model, d.replace(ctrl=ctrl))
+        contact_init = jnp.zeros((action.shape[0],), dtype=bool)
+        contact_camera_v_frac_init = jnp.zeros((action.shape[0],), dtype=jnp.float32)
 
-        data = jax.lax.fori_loop(0, int(self.cfg.frame_skip), one_substep, data)
+        def one_substep(_, carry):
+            (
+                d,
+                contact_any,
+                other_ball_contact_any,
+                first_contact_camera_visible,
+                first_contact_camera_in_margin,
+                first_contact_camera_v_frac,
+            ) = carry
+            d = self.batched_step(state.model, d.replace(ctrl=ctrl))
+            substep_contact, substep_other_ball_contact = self._ball_contact_flags(d)
+            first_contact = substep_contact & (~contact_any)
+            substep_bpos = d.xpos[:, self.ball_body_id]
+            substep_camera_terms = self._camera_reward_terms(d, substep_bpos)
+            substep_camera_visible = substep_camera_terms["metric/camera_visible"] > 0.5
+            substep_camera_in_margin = substep_camera_terms["metric/camera_in_margin"] > 0.5
+            substep_camera_v_frac = substep_camera_terms["metric/ball_pixel_v"] / max(
+                1.0,
+                float(self.cfg.camera_image_height),
+            )
+            return (
+                d,
+                contact_any | substep_contact,
+                other_ball_contact_any | substep_other_ball_contact,
+                jnp.where(first_contact, substep_camera_visible, first_contact_camera_visible),
+                jnp.where(first_contact, substep_camera_in_margin, first_contact_camera_in_margin),
+                jnp.where(first_contact, substep_camera_v_frac, first_contact_camera_v_frac),
+            )
+
+        (
+            data,
+            in_contact,
+            other_ball_contact,
+            contact_camera_visible,
+            contact_camera_in_margin,
+            contact_camera_v_frac,
+        ) = jax.lax.fori_loop(
+            0,
+            int(self.cfg.frame_skip),
+            one_substep,
+            (
+                data,
+                contact_init,
+                contact_init,
+                contact_init,
+                contact_init,
+                contact_camera_v_frac_init,
+            ),
+        )
 
         step_count = state.step_count + 1
         bpos = data.xpos[:, self.ball_body_id]
@@ -1791,7 +2315,6 @@ class MjxJuggleEnv:
         rvel = (rpos - state.prev_racket_pos) / max(self.dt, 1e-6)
         rel = bpos - rpos
         rel_local = jnp.einsum("nij,nj->ni", jnp.swapaxes(rmat, 1, 2), rel)
-        in_contact, other_ball_contact = self._ball_contact_flags(data)
 
         sep_dist = jnp.linalg.norm(rel, axis=-1)
         no_contact_steps = jnp.where(in_contact, 0, state.no_contact_steps + 1)
@@ -1805,6 +2328,29 @@ class MjxJuggleEnv:
         )
 
         hit_edge = in_contact & (~state.prev_contact) & hit_armed & (~state.pending_hit)
+        camera_terms = self._camera_reward_terms(data, bpos)
+        contact_camera_in_lower_band = (
+            contact_camera_visible
+            & contact_camera_in_margin
+            & (contact_camera_v_frac >= float(self.cfg.hit_camera_lower_band_frac[0]))
+            & (contact_camera_v_frac <= float(self.cfg.hit_camera_lower_band_frac[1]))
+        )
+        pending_hit_camera_visible = jnp.where(
+            hit_edge,
+            contact_camera_visible,
+            state.pending_hit_camera_visible,
+        )
+        pending_hit_camera_in_margin = jnp.where(
+            hit_edge,
+            contact_camera_in_margin,
+            state.pending_hit_camera_in_margin,
+        )
+        pending_hit_camera_in_lower_band = jnp.where(
+            hit_edge,
+            contact_camera_in_lower_band,
+            state.pending_hit_camera_in_lower_band,
+        )
+        pending_hit_camera_v_frac = jnp.where(hit_edge, contact_camera_v_frac, state.pending_hit_camera_v_frac)
         pending_hit = state.pending_hit | hit_edge
         pending_steps = jnp.where(pending_hit, state.pending_hit_steps + 1, 0)
         hit_armed = jnp.where(hit_edge, False, hit_armed)
@@ -1884,9 +2430,19 @@ class MjxJuggleEnv:
         last_hit_time = jnp.where(launched_upward_raw, current_time, state.last_hit_time)
         pending_hit = jnp.where(launched_upward_raw | failed_hit, False, pending_hit)
         pending_steps = jnp.where(launched_upward_raw | failed_hit, 0, pending_steps)
+        hit_camera_visible = pending_hit_camera_visible
+        hit_camera_in_margin = pending_hit_camera_in_margin
+        hit_camera_in_lower_band = pending_hit_camera_in_lower_band
+        hit_camera_v_frac = pending_hit_camera_v_frac
+        hit_resolved = launched_upward_raw | failed_hit
+        pending_hit_camera_visible = jnp.where(hit_resolved, False, pending_hit_camera_visible)
+        pending_hit_camera_in_margin = jnp.where(hit_resolved, False, pending_hit_camera_in_margin)
+        pending_hit_camera_in_lower_band = jnp.where(hit_resolved, False, pending_hit_camera_in_lower_band)
+        pending_hit_camera_v_frac = jnp.where(hit_resolved, 0.0, pending_hit_camera_v_frac)
 
         reward, reward_terms = self._reward(
             data=data,
+            camera_terms=camera_terms,
             action=action,
             da=da,
             arm_limiter_pen=arm_limiter_pen,
@@ -1906,6 +2462,10 @@ class MjxJuggleEnv:
             hit_cadence_reward=hit_cadence_reward,
             hit_min_interval_penalty=hit_min_interval_penalty,
             fast_hit_penalty=fast_hit_penalty,
+            hit_camera_visible=hit_camera_visible,
+            hit_camera_in_margin=hit_camera_in_margin,
+            hit_camera_in_lower_band=hit_camera_in_lower_band,
+            hit_camera_v_frac=hit_camera_v_frac,
             other_ball_contact=other_ball_contact,
             in_contact=in_contact,
             contact_hold_steps=contact_hold_steps,
@@ -1923,13 +2483,30 @@ class MjxJuggleEnv:
             | done_terms["ball_too_high"]
             | done_terms["ball_x_out_of_bounds"]
             | done_terms["ball_y_out_of_bounds"]
+            | done_terms["ball_view_x_too_low"]
+            | done_terms["ball_view_x_too_high"]
+            | done_terms["ball_view_y_too_low"]
+            | done_terms["ball_view_y_too_high"]
+            | done_terms["ball_view_z_too_low"]
+            | done_terms["ball_view_z_too_high"]
         )
         racket_limit_done = done_terms["racket_too_high"] | done_terms["racket_too_low"]
+        ball_miss_penalty_active = ball_miss & (
+            (hit_count > 0)
+            | (not bool(self.cfg.termination_miss_penalty_requires_hit))
+        )
+        no_hit_early_termination_penalty = jnp.where(
+            hit_count <= 0,
+            float(self.cfg.termination_no_hit_miss_early_penalty)
+            * jnp.maximum(0.0, 1.0 - step_count.astype(jnp.float32) / float(self.max_steps)),
+            0.0,
+        )
         ball_miss_penalty = jnp.where(
-            ball_miss & (hit_count > 0),
+            ball_miss_penalty_active,
             -(
                 float(self.cfg.termination_miss_penalty_base)
                 + float(self.cfg.termination_miss_penalty_per_hit) * hit_count.astype(jnp.float32)
+                + no_hit_early_termination_penalty
             ),
             0.0,
         )
@@ -1938,6 +2515,7 @@ class MjxJuggleEnv:
             -(
                 float(self.cfg.racket_z_limit_termination_penalty_base)
                 + float(self.cfg.racket_z_limit_termination_penalty_per_hit) * hit_count.astype(jnp.float32)
+                + no_hit_early_termination_penalty
             ),
             0.0,
         )
@@ -1952,12 +2530,20 @@ class MjxJuggleEnv:
             step_count=step_count,
             racket_anchor=state.racket_anchor,
             chest_target_offset=state.chest_target_offset,
+            reset_ball_pos=state.reset_ball_pos,
+            reset_ball_vel=state.reset_ball_vel,
+            reset_target_offset=state.reset_target_offset,
+            reset_disturbance_strength=state.reset_disturbance_strength,
+            reset_ball_obs_missing=state.reset_ball_obs_missing,
             arm_cmd_q=arm_cmd_q,
             arm_cmd_qvel=cmd_qvel,
             arm_q_ref_latest=arm_q_ref_latest,
             arm_q_ref_active=arm_q_ref_active,
             arm_actuator_q_ref_latest=arm_actuator_q_ref_latest,
             arm_actuator_q_ref_active=arm_actuator_q_ref_active,
+            ball_obs_missing_episode_coherent_enabled=state.ball_obs_missing_episode_coherent_enabled,
+            ball_obs_camera_missing_enabled=state.ball_obs_camera_missing_enabled,
+            ball_obs_view_bounds_missing_enabled=state.ball_obs_view_bounds_missing_enabled,
             arm_applied_q=arm_applied_q,
             prev_action=action,
             prev_arm_qvel=arm_qvel,
@@ -1969,6 +2555,10 @@ class MjxJuggleEnv:
             contact_hold_steps=contact_hold_steps,
             pending_hit=pending_hit,
             pending_hit_steps=pending_steps,
+            pending_hit_camera_visible=pending_hit_camera_visible,
+            pending_hit_camera_in_margin=pending_hit_camera_in_margin,
+            pending_hit_camera_in_lower_band=pending_hit_camera_in_lower_band,
+            pending_hit_camera_v_frac=pending_hit_camera_v_frac,
             hit_count=hit_count,
             action_buffer=action_buffer,
             action_latency_steps=state.action_latency_steps,
@@ -1989,6 +2579,7 @@ class MjxJuggleEnv:
             ball_obs_valid_pos=state.ball_obs_valid_pos,
             ball_obs_valid_vel=state.ball_obs_valid_vel,
             ball_obs_age_seconds=state.ball_obs_age_seconds,
+            ball_obs_missing_since_sample=state.ball_obs_missing_since_sample,
             ball_obs_dropout_remaining=state.ball_obs_dropout_remaining,
             ball_obs_dropout_steps_total=state.ball_obs_dropout_steps_total,
             ball_obs_burst_count=state.ball_obs_burst_count,
@@ -2020,9 +2611,10 @@ class MjxJuggleEnv:
             ball_obs_rot_bias_rpy=state.ball_obs_rot_bias_rpy,
             ball_obs_vel_bias_base=state.ball_obs_vel_bias_base,
             ball_obs_scale=state.ball_obs_scale,
+            ball_obs_view_z_high_m=state.ball_obs_view_z_high_m,
         )
         obs_state = next_state._replace(prev_racket_pos=state.prev_racket_pos)
-        obs_state, obs = self._apply_observation_pipeline(obs_state, bpos, bvel)
+        obs_state, obs, obs_metrics = self._apply_observation_pipeline(obs_state, bpos, bvel)
         next_state = obs_state._replace(prev_racket_pos=rpos)
         e_active = arm_q_ref_active - data.qpos[:, self.arm_qadr]
         e_actuator_active = arm_actuator_q_ref_active - data.qpos[:, self.arm_qadr]
@@ -2060,8 +2652,18 @@ class MjxJuggleEnv:
             "racket_z": rpos[:, 2],
             "racket_z_rel": rpos[:, 2] - state.racket_anchor[:, 2],
             "in_contact": in_contact.astype(jnp.float32),
+            "reset_ball_x": state.reset_ball_pos[:, 0],
+            "reset_ball_y": state.reset_ball_pos[:, 1],
+            "reset_ball_z": state.reset_ball_pos[:, 2],
+            "reset_ball_vxy": jnp.linalg.norm(state.reset_ball_vel[:, :2], axis=-1),
+            "reset_ball_vz": state.reset_ball_vel[:, 2],
+            "reset_target_x": state.reset_target_offset[:, 0],
+            "reset_target_y": state.reset_target_offset[:, 1],
+            "reset_target_z": state.reset_target_offset[:, 2],
+            "reset_disturbance_strength": state.reset_disturbance_strength,
             "action_scale_mult": state.action_scale_mult,
             "dr_gravity_z": state.dr_gravity_z,
+            "reset_ball_obs_missing": state.reset_ball_obs_missing.astype(jnp.float32),
             "dr_ball_mass": state.dr_ball_mass,
             "dr_ball_friction": state.dr_ball_friction,
             "dr_racket_friction": state.dr_racket_friction,
@@ -2109,7 +2711,7 @@ class MjxJuggleEnv:
             "q_actuator_ref_active": arm_actuator_q_ref_active,
             "dq_ref_latest": cmd_qvel,
             "ball_obs_age": next_state.ball_obs_age_seconds,
-            "ball_obs_dropout_active": (next_state.ball_obs_age_seconds > 0.0).astype(jnp.float32),
+            "ball_obs_view_z_high_m": next_state.ball_obs_view_z_high_m,
             "terminated": terminated.astype(jnp.float32),
             "truncated": truncated.astype(jnp.float32),
             "episode_step": step_count.astype(jnp.float32),
@@ -2124,6 +2726,7 @@ class MjxJuggleEnv:
         metrics["reward/command_tracking_error_penalty"] = command_tracking_penalty
         metrics["reward/delay_action_jerk_penalty"] = delay_action_jerk_penalty
         metrics["reward/total"] = reward
+        metrics.update(obs_metrics)
         metrics.update({f"done/{name}": value.astype(jnp.float32) for name, value in done_terms.items()})
         return next_state, obs, reward, done, metrics
 
@@ -2147,14 +2750,16 @@ class MjxJuggleEnv:
         state: EnvState,
         true_bpos: jax.Array,
         true_bvel: jax.Array,
-    ) -> tuple[EnvState, jax.Array]:
-        split_keys = jax.vmap(lambda k: jax.random.split(k, 6))(state.rng)
+    ) -> tuple[EnvState, jax.Array, dict[str, jax.Array]]:
+        split_keys = jax.vmap(lambda k: jax.random.split(k, 8))(state.rng)
         next_rng = split_keys[:, 0]
         key_pos_noise = split_keys[:, 1]
         key_vel_noise = split_keys[:, 2]
         key_dropout = split_keys[:, 3]
         key_dropout_duration = split_keys[:, 4]
         key_burst_duration = split_keys[:, 5]
+        key_view_bounds_missing = split_keys[:, 6]
+        key_camera_missing = split_keys[:, 7]
 
         total_steps_cfg = max(1, int(self.cfg.total_training_steps))
         warmup = max(0, int(round(total_steps_cfg * float(self.cfg.ball_obs_noise_warmup_ratio))))
@@ -2171,11 +2776,73 @@ class MjxJuggleEnv:
             refresh = curr_tick > prev_tick
         else:
             refresh = (state.step_count - state.last_ball_obs_step) >= int(self.ball_obs_every)
+        camera_visible_for_obs = jnp.ones((true_bpos.shape[0],), dtype=bool)
         if bool(self.cfg.ball_obs_require_camera_visible) and self.cfg.camera_visibility_mode != "off":
             camera_terms = self._camera_reward_terms(state.data, true_bpos)
-            camera_visible_for_obs = camera_terms["metric/camera_visible"] > 0.5
-        else:
-            camera_visible_for_obs = jnp.ones((true_bpos.shape[0],), dtype=bool)
+            camera_visible = camera_terms["metric/camera_visible"] > 0.5
+            camera_missing_prob = float(self.cfg.ball_obs_camera_missing_prob)
+            if camera_missing_prob >= 1.0:
+                camera_visible_for_obs = camera_visible
+            elif camera_missing_prob <= 0.0:
+                camera_visible_for_obs = jnp.ones_like(camera_visible, dtype=bool)
+            else:
+                u_camera_missing = jax.vmap(
+                    lambda k: jax.random.uniform(k, (), dtype=jnp.float32)
+                )(key_camera_missing)
+                frame_missing = (
+                    (~camera_visible) & (u_camera_missing < camera_missing_prob)
+                )
+                coherent_missing = (
+                    (~camera_visible) & state.ball_obs_camera_missing_enabled
+                )
+                camera_missing = jnp.where(
+                    state.ball_obs_missing_episode_coherent_enabled,
+                    coherent_missing,
+                    frame_missing,
+                )
+                camera_visible_for_obs = camera_visible | (~camera_missing)
+        view_bounds_visible_for_obs = jnp.ones((true_bpos.shape[0],), dtype=bool)
+        if bool(self.cfg.ball_obs_require_view_bounds):
+            data = state.data
+            base_q = jnp.stack(
+                [
+                    data.qpos[:, self.base_x_qadr],
+                    data.qpos[:, self.base_y_qadr],
+                    data.qpos[:, self.base_yaw_qadr],
+                ],
+                axis=-1,
+            )
+            bpos_base = self._point_to_base(true_bpos, base_q)
+            view_bounds_visible_for_obs = (
+                (bpos_base[:, 0] >= float(self.cfg.ball_view_x_bounds_m[0]))
+                & (bpos_base[:, 0] <= float(self.cfg.ball_view_x_bounds_m[1]))
+                & (bpos_base[:, 1] >= float(self.cfg.ball_view_y_bounds_m[0]))
+                & (bpos_base[:, 1] <= float(self.cfg.ball_view_y_bounds_m[1]))
+                & (true_bpos[:, 2] >= float(self.cfg.ball_view_z_bounds_m[0]))
+                & (true_bpos[:, 2] <= state.ball_obs_view_z_high_m)
+            )
+            if float(self.cfg.ball_obs_view_bounds_missing_prob) >= 1.0:
+                view_bounds_sample_available = view_bounds_visible_for_obs
+            elif float(self.cfg.ball_obs_view_bounds_missing_prob) <= 0.0:
+                view_bounds_sample_available = jnp.ones_like(view_bounds_visible_for_obs, dtype=bool)
+            else:
+                u_view_bounds = jax.vmap(lambda k: jax.random.uniform(k, (), dtype=jnp.float32))(
+                    key_view_bounds_missing
+                )
+                frame_view_bounds_missing = (~view_bounds_visible_for_obs) & (
+                    u_view_bounds < float(self.cfg.ball_obs_view_bounds_missing_prob)
+                )
+                coherent_view_bounds_missing = (
+                    (~view_bounds_visible_for_obs)
+                    & state.ball_obs_view_bounds_missing_enabled
+                )
+                view_bounds_missing = jnp.where(
+                    state.ball_obs_missing_episode_coherent_enabled,
+                    coherent_view_bounds_missing,
+                    frame_view_bounds_missing,
+                )
+                view_bounds_sample_available = view_bounds_visible_for_obs | (~view_bounds_missing)
+            camera_visible_for_obs = camera_visible_for_obs & view_bounds_sample_available
         sampled_pos = true_bpos + pos_noise
         sampled_vel = true_bvel + vel_noise
         last_ball_obs_step = jnp.where(refresh, state.step_count, state.last_ball_obs_step)
@@ -2220,6 +2887,23 @@ class MjxJuggleEnv:
         )
         blocked_by_dropout = still_dropout | start_dropout
         sample_available = refresh & camera_visible_for_obs & (~blocked_by_dropout)
+        previous_age_seconds = state.ball_obs_age_seconds
+        missing_on_refresh = refresh & (~sample_available)
+        missing_streak_started = missing_on_refresh & (~state.ball_obs_missing_since_sample)
+        reacquired_after_missing = (
+            sample_available & state.ball_obs_missing_since_sample
+        )
+        lost_timeout_s = max(0.0, float(self.cfg.lost_ball_timeout_ms)) * 1e-3
+        reacquired_after_lost = (
+            sample_available
+            & (lost_timeout_s > 0.0)
+            & (previous_age_seconds >= lost_timeout_s)
+        )
+        missing_since_sample = jnp.where(
+            sample_available,
+            False,
+            state.ball_obs_missing_since_sample | missing_on_refresh,
+        )
         valid_pos = jnp.where(sample_available[:, None], sampled_pos, state.ball_obs_valid_pos)
         valid_vel = jnp.where(sample_available[:, None], sampled_vel, state.ball_obs_valid_vel)
         cached_pos = jnp.where(sample_available[:, None], sampled_pos, state.cached_ball_obs_pos)
@@ -2239,6 +2923,7 @@ class MjxJuggleEnv:
             ball_obs_valid_pos=valid_pos,
             ball_obs_valid_vel=valid_vel,
             ball_obs_age_seconds=age_seconds,
+            ball_obs_missing_since_sample=missing_since_sample,
             ball_obs_dropout_remaining=dropout_remaining,
             ball_obs_dropout_steps_total=dropout_steps_total,
             ball_obs_burst_count=burst_count,
@@ -2263,7 +2948,25 @@ class MjxJuggleEnv:
         else:
             action_history = state.action_history
         state = state._replace(obs_buffer=obs_buffer, obs_history=obs_history, action_history=action_history)
-        return state, obs
+        lost_timeout_s = max(0.0, float(self.cfg.lost_ball_timeout_ms)) * 1e-3
+        lost_active = (lost_timeout_s > 0.0) & (age_seconds >= lost_timeout_s)
+        lost_entered = lost_active & (previous_age_seconds < lost_timeout_s)
+        metrics = {
+            "ball_obs_refresh_due": refresh.astype(jnp.float32),
+            "ball_obs_sample_available": sample_available.astype(jnp.float32),
+            "ball_obs_camera_available": camera_visible_for_obs.astype(jnp.float32),
+            "ball_obs_view_available": view_bounds_visible_for_obs.astype(jnp.float32),
+            "ball_obs_missing_on_refresh": missing_on_refresh.astype(jnp.float32),
+            "ball_obs_missing_streak_started": missing_streak_started.astype(jnp.float32),
+            "ball_obs_stale_active": (age_seconds > 0.0).astype(jnp.float32),
+            "ball_obs_dropout_active": blocked_by_dropout.astype(jnp.float32),
+            "ball_obs_lost_active": lost_active.astype(jnp.float32),
+            "ball_obs_lost_entered": lost_entered.astype(jnp.float32),
+            "ball_obs_reacquired": reacquired_after_missing.astype(jnp.float32),
+            "ball_obs_reacquired_after_missing": reacquired_after_missing.astype(jnp.float32),
+            "ball_obs_reacquired_after_lost": reacquired_after_lost.astype(jnp.float32),
+        }
+        return state, obs, metrics
 
     def _ball_contact_flags(self, data) -> tuple[jax.Array, jax.Array]:
         geom = data.contact.geom
@@ -2288,6 +2991,7 @@ class MjxJuggleEnv:
         self,
         data,
         action: jax.Array,
+        camera_terms: dict[str, jax.Array],
         da: jax.Array,
         arm_limiter_pen: jax.Array,
         bpos: jax.Array,
@@ -2306,6 +3010,10 @@ class MjxJuggleEnv:
         hit_cadence_reward: jax.Array,
         hit_min_interval_penalty: jax.Array,
         fast_hit_penalty: jax.Array,
+        hit_camera_visible: jax.Array,
+        hit_camera_in_lower_band: jax.Array,
+        hit_camera_v_frac: jax.Array,
+        hit_camera_in_margin: jax.Array,
         other_ball_contact: jax.Array,
         in_contact: jax.Array,
         contact_hold_steps: jax.Array,
@@ -2364,6 +3072,64 @@ class MjxJuggleEnv:
         ball_base_vy = -s_yaw * bvel[:, 0] + c_yaw * bvel[:, 1]
         ball_base_vxy_pen = ball_base_vx * ball_base_vx + ball_base_vy * ball_base_vy
         ball_vxy_pen = jnp.sum(bvel[:, :2] ** 2, axis=-1)
+        gravity_abs = max(1e-6, abs(float(self.default_gravity_z)))
+        time_to_apex = upward_vz / gravity_abs
+        time_to_next_contact = 2.0 * time_to_apex
+        predicted_apex_xy = bpos[:, :2] + bvel[:, :2] * time_to_apex[:, None]
+        predicted_next_contact_xy = bpos[:, :2] + bvel[:, :2] * time_to_next_contact[:, None]
+        base_to_apex_world = predicted_apex_xy - base_pose[:, :2]
+        apex_view_x = c_yaw * base_to_apex_world[:, 0] + s_yaw * base_to_apex_world[:, 1]
+        apex_view_y = -s_yaw * base_to_apex_world[:, 0] + c_yaw * base_to_apex_world[:, 1]
+        hit_apex_view_center_pen = (
+            ((apex_view_x - float(self.cfg.ball_view_x_target_m)) / max(1e-6, float(self.cfg.hit_apex_view_center_sigma_m))) ** 2
+            + ((apex_view_y - float(self.cfg.ball_view_y_target_m)) / max(1e-6, float(self.cfg.hit_apex_view_center_sigma_m))) ** 2
+        )
+        hit_next_contact_anchor_pen = (
+            jnp.sum((predicted_next_contact_xy - racket_anchor[:, :2]) ** 2, axis=-1)
+            / max(1e-6, float(self.cfg.hit_next_contact_anchor_sigma_m)) ** 2
+        )
+        ball_view_x = ball_base_x
+        ball_view_y = -s_yaw * base_to_ball_world[:, 0] + c_yaw * base_to_ball_world[:, 1]
+        ball_view_z = bpos[:, 2]
+        ball_view_xy_center_pen = (
+            ((ball_view_x - float(self.cfg.ball_view_x_target_m)) / max(1e-6, float(self.cfg.ball_view_x_sigma_m))) ** 2
+            + ((ball_view_y - float(self.cfg.ball_view_y_target_m)) / max(1e-6, float(self.cfg.ball_view_y_sigma_m))) ** 2
+        )
+        z_ideal_low = float(self.cfg.ball_view_z_ideal_m[0])
+        z_ideal_high = float(self.cfg.ball_view_z_ideal_m[1])
+        ball_view_z_ideal_excess = jnp.maximum(0.0, z_ideal_low - ball_view_z) + jnp.maximum(
+            0.0, ball_view_z - z_ideal_high
+        )
+        ball_view_z_ideal_pen = (
+            ball_view_z_ideal_excess / max(1e-6, float(self.cfg.ball_view_z_sigma_m))
+        ) ** 2
+        x_bound_low = float(self.cfg.ball_view_x_bounds_m[0])
+        x_bound_high = float(self.cfg.ball_view_x_bounds_m[1])
+        y_bound_low = float(self.cfg.ball_view_y_bounds_m[0])
+        y_bound_high = float(self.cfg.ball_view_y_bounds_m[1])
+        z_bound_low = float(self.cfg.ball_view_z_bounds_m[0])
+        z_bound_high = float(self.cfg.ball_view_z_bounds_m[1])
+        ball_view_bounds_pen = (
+            jnp.maximum(0.0, x_bound_low - ball_view_x) ** 2
+            + jnp.maximum(0.0, ball_view_x - x_bound_high) ** 2
+            + jnp.maximum(0.0, y_bound_low - ball_view_y) ** 2
+            + jnp.maximum(0.0, ball_view_y - y_bound_high) ** 2
+            + jnp.maximum(0.0, z_bound_low - ball_view_z) ** 2
+            + jnp.maximum(0.0, ball_view_z - z_bound_high) ** 2
+        )
+        ball_view_in_bounds = (
+            (ball_view_x >= x_bound_low)
+            & (ball_view_x <= x_bound_high)
+            & (ball_view_y >= y_bound_low)
+            & (ball_view_y <= y_bound_high)
+            & (ball_view_z >= z_bound_low)
+            & (ball_view_z <= z_bound_high)
+        )
+        ball_view_z_ideal = (ball_view_z >= z_ideal_low) & (ball_view_z <= z_ideal_high)
+        ball_view_vxy_excess = (
+            jnp.maximum(0.0, jnp.abs(ball_base_vx) - float(self.cfg.ball_view_vxy_soft_limit_m_s)) ** 2
+            + jnp.maximum(0.0, jnp.abs(ball_base_vy) - float(self.cfg.ball_view_vxy_soft_limit_m_s)) ** 2
+        )
         post_hit_ball_xy_dist = jnp.linalg.norm(bpos[:, :2] - chest_target[:, :2], axis=-1)
         apex_soft_excess = jnp.maximum(0.0, predicted_apex_z - (target_ball_z + float(self.cfg.apex_soft_limit_margin)))
         apex_soft_pen = float(self.cfg.apex_soft_penalty_weight) * apex_soft_excess * apex_soft_excess
@@ -2394,6 +3160,34 @@ class MjxJuggleEnv:
             ),
             0.0,
         )
+        pre_hit_intercept_reward = jnp.where(
+            (hit_count <= 0)
+            & (bvel[:, 2] < -1e-4)
+            & (bpos[:, 2] > rpos[:, 2])
+            & (time_to_racket >= 0.0)
+            & (time_to_racket <= float(self.cfg.pre_hit_intercept_time_max)),
+            jnp.exp(
+                -0.5
+                * (descending_intercept_xy_err / max(1e-6, float(self.cfg.pre_hit_intercept_sigma))) ** 2
+            ),
+            0.0,
+        )
+        pre_hit_intercept_penalty_active = (
+            (hit_count <= 0)
+            & (bvel[:, 2] < -1e-4)
+            & (bpos[:, 2] > rpos[:, 2])
+            & (time_to_racket >= 0.0)
+            & (time_to_racket <= float(self.cfg.pre_hit_intercept_penalty_time_max))
+        )
+        pre_hit_intercept_excess = jnp.maximum(
+            0.0,
+            descending_intercept_xy_err - float(self.cfg.pre_hit_intercept_penalty_radius),
+        )
+        pre_hit_intercept_penalty = jnp.where(
+            pre_hit_intercept_penalty_active,
+            (pre_hit_intercept_excess / max(1e-6, float(self.cfg.pre_hit_intercept_penalty_sigma))) ** 2,
+            0.0,
+        )
         torque_pen = jnp.mean(data.actuator_force[:, self.arm_aids_j] ** 2, axis=-1)
         sep_dist = jnp.linalg.norm(rel, axis=-1)
         sticky_contact = (
@@ -2419,7 +3213,6 @@ class MjxJuggleEnv:
             racket_z_rel * jnp.maximum(0.0, rvel[:, 2]),
             0.0,
         )
-        camera_terms = self._camera_reward_terms(data, bpos)
 
         arm_qvel = data.qvel[:, self.arm_vadr]
         arm_vel_ratio = jnp.abs(arm_qvel) / jnp.maximum(self.arm_vel_limit_rad_s, 1e-6)
@@ -2445,10 +3238,26 @@ class MjxJuggleEnv:
         term_ball_base_x_penalty = -float(self.cfg.ball_base_x_penalty_weight) * ball_base_x_pen
         term_ball_base_vxy_penalty = -float(self.cfg.ball_base_vxy_penalty_weight) * ball_base_vxy_pen
         term_ball_vxy_penalty = -float(self.cfg.ball_vxy_penalty_weight) * ball_vxy_pen
+        term_ball_view_xy_center_penalty = -float(self.cfg.ball_view_xy_center_penalty_weight) * ball_view_xy_center_pen
+        term_ball_view_z_ideal_penalty = -float(self.cfg.ball_view_z_ideal_penalty_weight) * ball_view_z_ideal_pen
+        term_ball_view_bounds_penalty = -float(self.cfg.ball_view_bounds_penalty_weight) * ball_view_bounds_pen
+        term_ball_view_out_of_bounds_penalty = (
+            -float(self.cfg.ball_view_out_of_bounds_penalty_weight) * (~ball_view_in_bounds).astype(jnp.float32)
+        )
+        term_ball_view_z_not_ideal_penalty = (
+            -float(self.cfg.ball_view_z_not_ideal_penalty_weight) * (~ball_view_z_ideal).astype(jnp.float32)
+        )
+        term_ball_view_vxy_excess_penalty = (
+            -float(self.cfg.ball_view_vxy_excess_penalty_weight) * ball_view_vxy_excess
+        )
         term_apex_soft_penalty = -apex_soft_pen
         term_ball_xy_soft_penalty = -ball_xy_soft_pen
         term_post_hit_survival = float(self.cfg.post_hit_survival_reward_weight) * post_hit_survival_reward
         term_descending_intercept = float(self.cfg.descending_intercept_reward_weight) * descending_intercept_reward
+        term_pre_hit_intercept = float(self.cfg.pre_hit_intercept_reward_weight) * pre_hit_intercept_reward
+        term_pre_hit_intercept_penalty = (
+            -float(self.cfg.pre_hit_intercept_penalty_weight) * pre_hit_intercept_penalty
+        )
         term_racket_xy_reward = float(self.cfg.racket_xy_gauss_reward_weight) * racket_xy_gauss
         term_racket_xy_penalty = -float(self.cfg.racket_xy_gauss_penalty_weight) * racket_xy_gauss_pen
         term_racket_z_penalty = -float(self.cfg.racket_z_soft_penalty_weight) * racket_z_band_pen
@@ -2484,10 +3293,18 @@ class MjxJuggleEnv:
             + term_ball_base_x_penalty
             + term_ball_base_vxy_penalty
             + term_ball_vxy_penalty
+            + term_ball_view_xy_center_penalty
+            + term_ball_view_z_ideal_penalty
+            + term_ball_view_bounds_penalty
+            + term_ball_view_out_of_bounds_penalty
+            + term_ball_view_z_not_ideal_penalty
+            + term_ball_view_vxy_excess_penalty
             + term_apex_soft_penalty
             + term_ball_xy_soft_penalty
             + term_post_hit_survival
             + term_descending_intercept
+            + term_pre_hit_intercept
+            + term_pre_hit_intercept_penalty
             + term_racket_xy_reward
             + term_racket_xy_penalty
             + term_racket_z_penalty
@@ -2505,13 +3322,24 @@ class MjxJuggleEnv:
         contact_center_dist = jnp.linalg.norm(rel_local[:, :2], axis=-1)
         center_gain = jnp.exp(-0.5 * (contact_center_dist / max(1e-6, float(self.cfg.hit_center_sigma))) ** 2)
         local_center_gain = jnp.exp(-0.5 * (contact_center_dist / max(1e-6, float(self.cfg.hit_center_local_sigma))) ** 2)
-        hit_bonus = float(self.cfg.hit_reward_base) + float(self.cfg.hit_reward_combo) * jnp.minimum(hit_count.astype(jnp.float32), 12.0)
+        hit_bonus = float(self.cfg.hit_reward_base) + float(self.cfg.hit_reward_combo) * jnp.minimum(
+            hit_count.astype(jnp.float32),
+            float(self.cfg.hit_combo_count_cap),
+        )
         hit_bonus = hit_bonus * jnp.maximum(0.2, center_gain * flatness_score)
         hit_height_err = jnp.abs(predicted_apex_z - target_hit_apex_z)
         hit_height_excess = jnp.maximum(0.0, hit_height_err - float(self.cfg.hit_height_tolerance))
         hit_height_pen = float(self.cfg.hit_height_penalty_weight) * hit_height_excess * hit_height_excess
+        hit_vxy = jnp.linalg.norm(bvel[:, :2], axis=-1)
+        hit_vxy_excess = jnp.maximum(0.0, hit_vxy - float(self.cfg.hit_vxy_soft_limit_m_s))
+        hit_vxy_pen = float(self.cfg.hit_vxy_penalty_weight) * hit_vxy_excess * hit_vxy_excess
         low_hit_deficit = jnp.maximum(0.0, (target_ball_z - float(self.cfg.low_hit_apex_margin)) - predicted_apex_z)
         low_hit_pen = float(self.cfg.low_hit_penalty_weight) * low_hit_deficit * low_hit_deficit
+        first_hit_apex_err = (predicted_apex_z - target_hit_apex_z) / max(
+            1e-6,
+            float(self.cfg.first_hit_apex_sigma),
+        )
+        first_hit_apex_score = jnp.exp(-0.5 * first_hit_apex_err * first_hit_apex_err)
         center_flat = float(self.cfg.center_flat_hit_reward_weight) * local_center_gain * flatness_score
         height_bonus = jnp.where(
             predicted_apex_z >= target_ball_z,
@@ -2519,12 +3347,51 @@ class MjxJuggleEnv:
             0.0,
         )
         hit_reward_mask = new_hit & rewardable_hit
+        first_hit_reward_mask = hit_reward_mask & (hit_count <= 1)
+        hit_camera_safe = hit_camera_visible & hit_camera_in_margin
+        hit_camera_score = jnp.where(
+            hit_camera_safe,
+            jnp.exp(
+                -0.5
+                * (
+                    (hit_camera_v_frac - float(self.cfg.hit_camera_target_v_frac))
+                    / max(1e-6, float(self.cfg.hit_camera_v_sigma_frac))
+                )
+                ** 2
+            ),
+            0.0,
+        )
+        term_hit_camera = jnp.where(
+            hit_reward_mask,
+            float(self.cfg.hit_camera_reward_weight) * hit_camera_score
+            - float(self.cfg.hit_camera_out_of_band_penalty_weight)
+            * (~hit_camera_in_lower_band).astype(jnp.float32),
+            0.0,
+        )
         term_hit_bonus = jnp.where(hit_reward_mask, hit_bonus, 0.0)
         term_center_flat_hit = jnp.where(hit_reward_mask, center_flat, 0.0)
         term_hit_height_bonus = jnp.where(hit_reward_mask, height_bonus, 0.0)
+        term_first_hit_apex = jnp.where(
+            first_hit_reward_mask,
+            float(self.cfg.first_hit_apex_reward_weight)
+            * first_hit_apex_score
+            * jnp.maximum(0.25, local_center_gain * flatness_score),
+            0.0,
+        )
         term_hit_cadence_reward = jnp.where(hit_reward_mask, hit_cadence_reward, 0.0)
         term_hit_min_interval_penalty = jnp.where(hit_reward_mask, -hit_min_interval_penalty, 0.0)
         term_hit_height_penalty = jnp.where(hit_reward_mask, -hit_height_pen, 0.0)
+        term_hit_vxy_penalty = jnp.where(hit_reward_mask, -hit_vxy_pen, 0.0)
+        term_hit_apex_view_center_penalty = jnp.where(
+            hit_reward_mask,
+            -float(self.cfg.hit_apex_view_center_penalty_weight) * hit_apex_view_center_pen,
+            0.0,
+        )
+        term_hit_next_contact_anchor_penalty = jnp.where(
+            hit_reward_mask,
+            -float(self.cfg.hit_next_contact_anchor_penalty_weight) * hit_next_contact_anchor_pen,
+            0.0,
+        )
         term_low_hit_penalty = jnp.where(hit_reward_mask, -low_hit_pen, 0.0)
         term_failed_hit_penalty = jnp.where(failed_hit, -float(self.cfg.failed_hit_penalty_weight), 0.0)
         term_fast_hit_penalty = jnp.where(ignored_fast_hit, -fast_hit_penalty, 0.0)
@@ -2533,9 +3400,14 @@ class MjxJuggleEnv:
             + term_hit_bonus
             + term_center_flat_hit
             + term_hit_height_bonus
+            + term_hit_camera
+            + term_first_hit_apex
             + term_hit_cadence_reward
             + term_hit_min_interval_penalty
             + term_hit_height_penalty
+            + term_hit_vxy_penalty
+            + term_hit_apex_view_center_penalty
+            + term_hit_next_contact_anchor_penalty
             + term_low_hit_penalty
             + term_failed_hit_penalty
             + term_fast_hit_penalty
@@ -2555,13 +3427,33 @@ class MjxJuggleEnv:
             "racket_chest_xy_penalty": term_racket_chest_xy_penalty * self.dt,
             "racket_chest_z_penalty": term_racket_chest_z_penalty * self.dt,
             "ball_anchor_xy_penalty": term_ball_anchor_xy_penalty * self.dt,
+            "metric/ball_view_z_high_exceeded": (ball_view_z > z_bound_high).astype(jnp.float32),
             "ball_base_x_penalty": term_ball_base_x_penalty * self.dt,
             "ball_base_vxy_penalty": term_ball_base_vxy_penalty * self.dt,
             "ball_vxy_penalty": term_ball_vxy_penalty * self.dt,
+            "ball_view_xy_center_penalty": term_ball_view_xy_center_penalty * self.dt,
+            "ball_view_z_ideal_penalty": term_ball_view_z_ideal_penalty * self.dt,
+            "ball_view_bounds_penalty": term_ball_view_bounds_penalty * self.dt,
+            "ball_view_out_of_bounds_penalty": term_ball_view_out_of_bounds_penalty * self.dt,
+            "ball_view_z_not_ideal_penalty": term_ball_view_z_not_ideal_penalty * self.dt,
+            "ball_view_vxy_excess_penalty": term_ball_view_vxy_excess_penalty * self.dt,
+            "metric/ball_view_x": ball_view_x,
+            "metric/ball_view_y": ball_view_y,
+            "metric/ball_view_z": ball_view_z,
+            "metric/ball_view_vx": ball_base_vx,
+            "metric/ball_view_vy": ball_base_vy,
+            "metric/ball_view_xy_center_pen": ball_view_xy_center_pen,
+            "metric/ball_view_z_ideal_pen": ball_view_z_ideal_pen,
+            "metric/ball_view_bounds_pen": ball_view_bounds_pen,
+            "metric/ball_view_vxy_excess_pen": ball_view_vxy_excess,
+            "metric/ball_view_in_bounds": ball_view_in_bounds.astype(jnp.float32),
+            "metric/ball_view_z_ideal": ball_view_z_ideal.astype(jnp.float32),
             "apex_soft_penalty": term_apex_soft_penalty * self.dt,
             "ball_xy_soft_penalty": term_ball_xy_soft_penalty * self.dt,
             "post_hit_survival": term_post_hit_survival * self.dt,
             "descending_intercept": term_descending_intercept * self.dt,
+            "pre_hit_intercept": term_pre_hit_intercept * self.dt,
+            "pre_hit_intercept_penalty": term_pre_hit_intercept_penalty * self.dt,
             "racket_xy_reward": term_racket_xy_reward * self.dt,
             "racket_xy_penalty": term_racket_xy_penalty * self.dt,
             "racket_z_penalty": term_racket_z_penalty * self.dt,
@@ -2582,15 +3474,62 @@ class MjxJuggleEnv:
             "hit_bonus": term_hit_bonus,
             "center_flat_hit": term_center_flat_hit,
             "hit_height_bonus": term_hit_height_bonus,
+            "hit_camera": term_hit_camera,
+            "metric/hit_camera_event": new_hit.astype(jnp.float32),
+            "metric/hit_camera_visible_event": (new_hit & hit_camera_visible).astype(jnp.float32),
+            "metric/hit_camera_in_margin_event": (new_hit & hit_camera_safe).astype(jnp.float32),
+            "metric/hit_camera_lower_band_event": (new_hit & hit_camera_in_lower_band).astype(jnp.float32),
+            "metric/hit_camera_v_frac_sum": jnp.where(
+                new_hit & hit_camera_visible,
+                hit_camera_v_frac,
+                0.0,
+            ),
+            "metric/hit_vxy_sum": jnp.where(new_hit, hit_vxy, 0.0),
+            "first_hit_apex": term_first_hit_apex,
             "hit_cadence_reward": term_hit_cadence_reward,
             "hit_min_interval_penalty": term_hit_min_interval_penalty,
             "hit_height_penalty": term_hit_height_penalty,
+            "hit_vxy_penalty": term_hit_vxy_penalty,
+            "hit_apex_view_center_penalty": term_hit_apex_view_center_penalty,
+            "hit_next_contact_anchor_penalty": term_hit_next_contact_anchor_penalty,
+            "metric/hit_apex_view_x_sum": jnp.where(new_hit, apex_view_x, 0.0),
+            "metric/hit_apex_view_y_sum": jnp.where(new_hit, apex_view_y, 0.0),
+            "metric/hit_next_contact_anchor_err_sum": jnp.where(
+                new_hit,
+                jnp.sqrt(jnp.maximum(hit_next_contact_anchor_pen, 0.0))
+                * max(1e-6, float(self.cfg.hit_next_contact_anchor_sigma_m)),
+                0.0,
+            ),
             "low_hit_penalty": term_low_hit_penalty,
             "failed_hit_penalty": term_failed_hit_penalty,
             "fast_hit_penalty": term_fast_hit_penalty,
         }
         terms.update({name: value for name, value in camera_terms.items() if name.startswith("metric/")})
         return reward, terms
+
+    def _virtual_camera_pose(self, data) -> tuple[jax.Array, jax.Array, bool]:
+        n = data.xpos.shape[0]
+        if self.vc_pose_mode == "base_extrinsic":
+            if self.virtual_camera_base_body_id < 0:
+                cam_pos = jnp.zeros((n, 3), dtype=jnp.float32)
+                cam_R = jnp.broadcast_to(jnp.eye(3, dtype=jnp.float32), (n, 3, 3))
+                return cam_pos, cam_R, False
+            base_pos = data.xpos[:, self.virtual_camera_base_body_id]
+            base_R = data.xmat[:, self.virtual_camera_base_body_id].reshape((n, 3, 3))
+            cam_pos = base_pos + jnp.einsum("nij,j->ni", base_R, self.vc_base_pos)
+            cam_R = jnp.einsum("nij,jk->nik", base_R, self.vc_base_R)
+            return cam_pos, cam_R, True
+
+        if self.virtual_camera_body_id < 0:
+            cam_pos = jnp.zeros((n, 3), dtype=jnp.float32)
+            cam_R = jnp.broadcast_to(jnp.eye(3, dtype=jnp.float32), (n, 3, 3))
+            return cam_pos, cam_R, False
+        body_pos = data.xpos[:, self.virtual_camera_body_id]
+        body_R = data.xmat[:, self.virtual_camera_body_id].reshape((n, 3, 3))
+        mount_offset = self.vc_mount_pos + self.vc_mount_R @ self.vc_optical_pos
+        cam_pos = body_pos + jnp.einsum("nij,j->ni", body_R, mount_offset)
+        cam_R = jnp.einsum("nij,jk->nik", body_R, self.vc_mount_R @ self.vc_mount_to_camera_R)
+        return cam_pos, cam_R, True
 
     def _camera_reward_terms(self, data, bpos: jax.Array) -> dict[str, jax.Array]:
         n = bpos.shape[0]
@@ -2620,14 +3559,12 @@ class MjxJuggleEnv:
             "metric/ball_pixel_u": zeros,
             "metric/ball_pixel_v": zeros,
         }
-        if self.cfg.camera_visibility_mode == "off" or self.virtual_camera_body_id < 0:
+        if self.cfg.camera_visibility_mode == "off":
             return terms
 
-        body_pos = data.xpos[:, self.virtual_camera_body_id]
-        body_R = data.xmat[:, self.virtual_camera_body_id].reshape((n, 3, 3))
-        mount_offset = self.vc_mount_pos + self.vc_mount_R @ self.vc_optical_pos
-        cam_pos = body_pos + jnp.einsum("nij,j->ni", body_R, mount_offset)
-        cam_R = jnp.einsum("nij,jk->nik", body_R, self.vc_mount_R @ self.vc_mount_to_camera_R)
+        cam_pos, cam_R, camera_available = self._virtual_camera_pose(data)
+        if not camera_available:
+            return terms
         p_cam = jnp.einsum("nij,nj->ni", jnp.swapaxes(cam_R, 1, 2), bpos - cam_pos)
         x = p_cam[:, 0]
         y = p_cam[:, 1]
@@ -2643,7 +3580,9 @@ class MjxJuggleEnv:
         cy = float(self.cfg.camera_cy)
         margin = float(self.cfg.camera_pixel_margin)
         u = fx * (x / z_safe) + cx
-        v = cy - fy * (y / z_safe)
+        # D455 hand-eye calibration uses the OpenCV optical frame:
+        # +x right, +y down, +z forward. Pixel v therefore uses a plus sign.
+        v = cy + fy * (y / z_safe)
 
         in_front = has_projection
         in_depth = has_projection & (z >= float(self.cfg.camera_min_depth)) & (z <= float(self.cfg.camera_max_depth))
@@ -2776,11 +3715,53 @@ class MjxJuggleEnv:
         if not bool(self.cfg.terminate_on_racket_z_limit):
             racket_too_high = jnp.zeros_like(racket_too_high, dtype=bool)
             racket_too_low = jnp.zeros_like(racket_too_low, dtype=bool)
+        base_q = jnp.stack(
+            [
+                data.qpos[:, self.base_x_qadr],
+                data.qpos[:, self.base_y_qadr],
+                data.qpos[:, self.base_yaw_qadr],
+            ],
+            axis=-1,
+        )
+        bpos_base = self._point_to_base(bpos, base_q)
+        ball_view_x = bpos_base[:, 0]
+        ball_view_y = bpos_base[:, 1]
+        ball_view_z = bpos[:, 2]
+        ball_view_x_too_low = ball_view_x < float(self.cfg.ball_view_x_bounds_m[0])
+        ball_view_x_too_high = ball_view_x > float(self.cfg.ball_view_x_bounds_m[1])
+        ball_view_y_too_low = ball_view_y < float(self.cfg.ball_view_y_bounds_m[0])
+        ball_view_y_too_high = ball_view_y > float(self.cfg.ball_view_y_bounds_m[1])
+        ball_view_z_too_low = ball_view_z < float(self.cfg.ball_view_z_bounds_m[0])
+        ball_view_z_too_high = ball_view_z > float(self.cfg.ball_view_z_bounds_m[1])
+        if not bool(self.cfg.terminate_on_ball_view_bounds):
+            ball_view_x_too_low = jnp.zeros_like(ball_view_x_too_low, dtype=bool)
+            ball_view_x_too_high = jnp.zeros_like(ball_view_x_too_high, dtype=bool)
+            ball_view_y_too_low = jnp.zeros_like(ball_view_y_too_low, dtype=bool)
+            ball_view_y_too_high = jnp.zeros_like(ball_view_y_too_high, dtype=bool)
+            ball_view_z_too_low = jnp.zeros_like(ball_view_z_too_low, dtype=bool)
+            ball_view_z_too_high = jnp.zeros_like(ball_view_z_too_high, dtype=bool)
+        else:
+            if not bool(self.cfg.terminate_on_ball_view_x_bounds):
+                ball_view_x_too_low = jnp.zeros_like(ball_view_x_too_low, dtype=bool)
+                ball_view_x_too_high = jnp.zeros_like(ball_view_x_too_high, dtype=bool)
+            if not bool(self.cfg.terminate_on_ball_view_y_bounds):
+                ball_view_y_too_low = jnp.zeros_like(ball_view_y_too_low, dtype=bool)
+                ball_view_y_too_high = jnp.zeros_like(ball_view_y_too_high, dtype=bool)
+            if not bool(self.cfg.terminate_on_ball_view_z_low):
+                ball_view_z_too_low = jnp.zeros_like(ball_view_z_too_low, dtype=bool)
+            if not bool(self.cfg.terminate_on_ball_view_z_high):
+                ball_view_z_too_high = jnp.zeros_like(ball_view_z_too_high, dtype=bool)
         terms = {
-            "ball_too_low": bpos[:, 2] < 0.8,
-            "ball_too_high": bpos[:, 2] > 1.9,
+            "ball_too_low": bpos[:, 2] < float(self.cfg.ball_low_termination_z_m),
+            "ball_too_high": bpos[:, 2] > float(self.cfg.ball_high_termination_z_m),
             "ball_x_out_of_bounds": jnp.abs(bpos[:, 0] - racket_anchor[:, 0]) > 0.5,
             "ball_y_out_of_bounds": jnp.abs(bpos[:, 1] - racket_anchor[:, 1]) > 0.5,
+            "ball_view_x_too_low": ball_view_x_too_low,
+            "ball_view_x_too_high": ball_view_x_too_high,
+            "ball_view_y_too_low": ball_view_y_too_low,
+            "ball_view_y_too_high": ball_view_y_too_high,
+            "ball_view_z_too_low": ball_view_z_too_low,
+            "ball_view_z_too_high": ball_view_z_too_high,
             "base_x_out_of_bounds": jnp.abs(data.qpos[:, self.base_x_qadr]) > 2.6,
             "base_y_out_of_bounds": jnp.abs(data.qpos[:, self.base_y_qadr]) > 2.6,
             "racket_too_far_from_anchor": jnp.linalg.norm(rpos - racket_anchor, axis=-1) > 1.1,

@@ -43,6 +43,15 @@ JOINT_PLOT_COLORS = {
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Validate a MJX/JAX PPO juggling checkpoint.")
     p.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
+    p.add_argument(
+        "--env-checkpoint",
+        type=Path,
+        default=None,
+        help=(
+            "Optionally load XML/environment configuration from a different checkpoint while "
+            "keeping policy parameters from --checkpoint; useful for old-setting guardrails."
+        ),
+    )
     p.add_argument("--xml", type=Path, default=None, help="Override XML path. Defaults to the checkpoint XML.")
     p.add_argument("--episodes", type=int, default=20)
     p.add_argument("--n-envs", type=int, default=32)
@@ -56,7 +65,49 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--no-save-csv", action="store_true")
     p.add_argument("--racket-z-hard-limit-down", type=float, default=None)
     p.add_argument("--racket-z-hard-limit-up", type=float, default=None)
+    p.add_argument(
+        "--virtual-camera-base-body-name",
+        type=str,
+        default=None,
+        help=(
+            "Override virtual_camera_base_body_name for evaluation only. "
+            "Useful for checking calibrated base_extrinsic frame mappings "
+            "without changing the checkpoint or training curriculum."
+        ),
+    )
+    p.add_argument(
+        "--right-arm-pd-profile",
+        choices=["xml", "legacy_stage4g"],
+        default=None,
+        help="Override the right-arm actuator KP/KV profile in the temporary MJX XML.",
+    )
+    p.add_argument(
+        "--ball-obs-missing-episode-coherent-prob",
+        type=float,
+        default=None,
+        help=(
+            "Override the fraction of environments using episode-coherent physical "
+            "camera/view missing; useful for matched q=0 versus q>0 checkpoint comparisons."
+        ),
+    )
+    p.add_argument(
+        "--ball-obs-missing-prob",
+        type=float,
+        default=None,
+        help=(
+            "Override both physical-camera and randomized view-bounds missing probabilities; "
+            "useful for matched p sweeps of one checkpoint."
+        ),
+    )
     p.add_argument("--no-terminate-on-racket-z-limit", action="store_true")
+    p.add_argument(
+        "--no-terminate-on-ball-view-xy-bounds",
+        action="store_true",
+        help=(
+            "Disable only lateral view-bound termination while preserving physical ball, "
+            "z-low, and other task terminations; useful for missing-age recovery ablations."
+        ),
+    )
     p.add_argument(
         "--ignore-early-done",
         action="store_true",
@@ -155,13 +206,44 @@ def env_config_from_checkpoint(payload: dict, args: argparse.Namespace) -> MjxJu
     cfg_payload = payload.get("env_cfg") or {}
     valid_fields = {f.name for f in fields(MjxJuggleConfig)}
     cfg_kwargs = {k: v for k, v in cfg_payload.items() if k in valid_fields}
+    if "virtual_camera_pose_mode" not in cfg_payload:
+        cfg_kwargs["virtual_camera_pose_mode"] = "body_mount"
     cfg = MjxJuggleConfig(**cfg_kwargs)
+    if args.virtual_camera_base_body_name is not None:
+        cfg = replace(cfg, virtual_camera_base_body_name=str(args.virtual_camera_base_body_name))
+    if args.right_arm_pd_profile is not None:
+        cfg = replace(cfg, right_arm_pd_profile=str(args.right_arm_pd_profile))
     if args.racket_z_hard_limit_down is not None:
         cfg = replace(cfg, racket_z_hard_limit_down=float(args.racket_z_hard_limit_down))
     if args.racket_z_hard_limit_up is not None:
         cfg = replace(cfg, racket_z_hard_limit_up=float(args.racket_z_hard_limit_up))
+    if args.ball_obs_missing_episode_coherent_prob is not None:
+        coherent_prob = float(args.ball_obs_missing_episode_coherent_prob)
+        if not 0.0 <= coherent_prob <= 1.0:
+            raise SystemExit(
+                "--ball-obs-missing-episode-coherent-prob must be within [0, 1]"
+            )
+        cfg = replace(
+            cfg,
+            ball_obs_missing_episode_coherent_prob=coherent_prob,
+        )
+    if args.ball_obs_missing_prob is not None:
+        missing_prob = float(args.ball_obs_missing_prob)
+        if not 0.0 <= missing_prob <= 1.0:
+            raise SystemExit("--ball-obs-missing-prob must be within [0, 1]")
+        cfg = replace(
+            cfg,
+            ball_obs_camera_missing_prob=missing_prob,
+            ball_obs_view_bounds_missing_prob=missing_prob,
+        )
     if args.no_terminate_on_racket_z_limit:
         cfg = replace(cfg, terminate_on_racket_z_limit=False)
+    if args.no_terminate_on_ball_view_xy_bounds:
+        cfg = replace(
+            cfg,
+            terminate_on_ball_view_x_bounds=False,
+            terminate_on_ball_view_y_bounds=False,
+        )
     if args.realistic_s2r and args.realistic_s2r_profile == "detector":
         cfg = replace(
             cfg,
@@ -263,6 +345,85 @@ def ensure_offscreen_framebuffer(model: mj.MjModel, width: int, height: int) -> 
     return old_width, old_height, int(model.vis.global_.offwidth), int(model.vis.global_.offheight)
 
 
+def camera_trace_metrics(env: MjxJuggleEnv, env_state) -> dict[str, jax.Array]:
+    """Return true ball position in the virtual camera frame for trace CSVs."""
+    data = env_state.data
+    n = data.xpos.shape[0]
+    zeros = jnp.zeros((n,), dtype=jnp.float32)
+    out = {
+        "camera_available": zeros,
+        "camera_in_front": zeros,
+        "camera_in_depth": zeros,
+        "camera_in_frustum": zeros,
+        "camera_in_image": zeros,
+        "camera_visible": zeros,
+        "ball_cam_x": zeros,
+        "ball_cam_y": zeros,
+        "ball_cam_z": zeros,
+        "ball_cam_distance": zeros,
+        "ball_pixel_u": zeros,
+        "ball_pixel_v": zeros,
+        "camera_world_x": zeros,
+        "camera_world_y": zeros,
+        "camera_world_z": zeros,
+        "ball_world_x": zeros,
+        "ball_world_y": zeros,
+        "ball_world_z": zeros,
+    }
+    if env.ball_body_id < 0:
+        return out
+
+    bpos = data.xpos[:, env.ball_body_id]
+    cam_pos, cam_R, camera_available = env._virtual_camera_pose(data)
+    if not camera_available:
+        return out
+    p_cam = jnp.einsum("nij,nj->ni", jnp.swapaxes(cam_R, 1, 2), bpos - cam_pos)
+
+    x = p_cam[:, 0]
+    y = p_cam[:, 1]
+    z = p_cam[:, 2]
+    has_projection = z > 1e-6
+    z_safe = jnp.where(has_projection, z, 1.0)
+    width = float(env.cfg.camera_image_width)
+    height = float(env.cfg.camera_image_height)
+    fx = float(env.cfg.camera_fx)
+    fy = float(env.cfg.camera_fy)
+    cx = float(env.cfg.camera_cx)
+    cy = float(env.cfg.camera_cy)
+    u = fx * (x / z_safe) + cx
+    v = cy + fy * (y / z_safe)
+    h_half = float(np.deg2rad(float(env.cfg.camera_hfov_deg) * 0.5))
+    v_half = float(np.deg2rad(float(env.cfg.camera_vfov_deg) * 0.5))
+    x_angle = jnp.arctan2(x, z_safe)
+    y_angle = jnp.arctan2(y, z_safe)
+    in_front = has_projection
+    in_depth = has_projection & (z >= float(env.cfg.camera_min_depth)) & (z <= float(env.cfg.camera_max_depth))
+    in_frustum = has_projection & (jnp.abs(x_angle) <= h_half) & (jnp.abs(y_angle) <= v_half)
+    in_image = has_projection & (u >= 0.0) & (u < width) & (v >= 0.0) & (v < height)
+    visible = in_front & in_depth & in_frustum & in_image
+
+    return {
+        "camera_available": jnp.ones((n,), dtype=jnp.float32),
+        "camera_in_front": in_front.astype(jnp.float32),
+        "camera_in_depth": in_depth.astype(jnp.float32),
+        "camera_in_frustum": in_frustum.astype(jnp.float32),
+        "camera_in_image": in_image.astype(jnp.float32),
+        "camera_visible": visible.astype(jnp.float32),
+        "ball_cam_x": x,
+        "ball_cam_y": y,
+        "ball_cam_z": z,
+        "ball_cam_distance": jnp.linalg.norm(p_cam, axis=-1),
+        "ball_pixel_u": jnp.where(has_projection, u, 0.0),
+        "ball_pixel_v": jnp.where(has_projection, v, 0.0),
+        "camera_world_x": cam_pos[:, 0],
+        "camera_world_y": cam_pos[:, 1],
+        "camera_world_z": cam_pos[:, 2],
+        "ball_world_x": bpos[:, 0],
+        "ball_world_y": bpos[:, 1],
+        "ball_world_z": bpos[:, 2],
+    }
+
+
 def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float, ignore_early_done: bool = False):
     def eval_step(params, env_state, obs, rng, running_return, running_length):
         rng, action_key, reset_key = jax.random.split(rng, 3)
@@ -300,6 +461,7 @@ def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float, i
             desired_qdd = desired_qdd_raw
 
         reset_keys = jax.random.split(reset_key, env.n_envs)
+        camera_metrics = camera_trace_metrics(env, next_env_state)
         next_env_state, next_obs = env.reset_done(next_env_state, next_obs, done, reset_keys)
         next_running_return = jnp.where(done, 0.0, completed_return)
         next_running_length = jnp.where(done, 0, completed_length)
@@ -335,12 +497,96 @@ def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float, i
             "arm_qacc": arm_qacc,
             "arm_qacc_mj": arm_qacc_mj,
         }
+        step_metrics.update(camera_metrics)
         for key, value in metrics.items():
-            if key.startswith("done/") or key.startswith("reward/"):
+            if (
+                key.startswith("done/")
+                or key.startswith("reward/")
+                or key.startswith("ball_obs_")
+                or key.startswith("hit_camera_")
+                or key.startswith("reset_")
+                or key in {"ball_view_z_high_exceeded", "ball_view_in_bounds", "ball_view_z_ideal"}
+            ):
                 step_metrics[key] = value
         return next_env_state, next_obs, rng, next_running_return, next_running_length, step_metrics
 
     return jax.jit(eval_step)
+
+
+def aggregate_episode_metrics(
+    rows: list[dict[str, float]],
+) -> dict[str, float]:
+    def ratio(numerator_key: str, denominator_key: str) -> float:
+        numerator = sum(float(row.get(numerator_key, 0.0)) for row in rows)
+        denominator = sum(float(row.get(denominator_key, 0.0)) for row in rows)
+        return numerator / denominator if denominator > 0.0 else float("nan")
+
+    return {
+        "hit_camera_visible_rate": ratio(
+            "hit_camera_visible_events",
+            "hit_camera_events",
+        ),
+        "hit_camera_in_margin_rate": ratio(
+            "hit_camera_in_margin_events",
+            "hit_camera_events",
+        ),
+        "hit_camera_lower_band_rate": ratio(
+            "hit_camera_lower_band_events",
+            "hit_camera_events",
+        ),
+        "mean_hit_camera_v_frac": ratio(
+            "hit_camera_v_frac_sum",
+            "hit_camera_visible_events",
+        ),
+        "mean_hit_vxy": ratio("hit_vxy_sum", "hit_camera_events"),
+        "camera_visible_rate": ratio("camera_visible_steps", "length"),
+        "ball_view_in_bounds_rate": ratio("ball_view_in_bounds_steps", "length"),
+        "ball_view_z_ideal_rate": ratio("ball_view_z_ideal_steps", "length"),
+        "ball_view_z_high_exceeded_rate": ratio(
+            "ball_view_z_high_exceeded_steps",
+            "length",
+        ),
+        "ball_obs_missing_refresh_rate": ratio(
+            "ball_obs_missing_refresh_count",
+            "ball_obs_refresh_count",
+        ),
+        "ball_obs_lost_rate": ratio("ball_obs_lost_steps", "length"),
+        "ball_obs_stale_rate": ratio("ball_obs_stale_steps", "length"),
+        "ball_obs_dropout_rate": ratio("ball_obs_dropout_steps", "length"),
+        "ball_obs_reacquired_after_missing_rate": ratio(
+            "ball_obs_reacquired_after_missing_events",
+            "ball_obs_missing_exposure_count",
+        ),
+        "ball_obs_reacquired_after_lost_rate": ratio(
+            "ball_obs_reacquired_after_lost_events",
+            "ball_obs_lost_exposure_count",
+        ),
+    }
+def add_terminal_step_metrics(
+    row: dict[str, float],
+    host: dict[str, np.ndarray],
+    env_i: int,
+) -> None:
+    for key, value in host.items():
+        if not (
+            key.startswith("done/")
+            or key.startswith("reward/")
+            or key.startswith("ball_obs_")
+            or key.startswith("reset_")
+            or key.startswith("hit_camera_")
+            or key
+            in {
+                "ball_view_z_high_exceeded",
+                "ball_view_in_bounds",
+                "ball_view_z_ideal",
+            }
+        ):
+            continue
+        output_key = key if key not in row else f"last/{key}"
+        row[output_key] = float(value[env_i])
+
+
+
 
 
 def summarize(rows: list[dict[str, float]]) -> str:
@@ -349,13 +595,21 @@ def summarize(rows: list[dict[str, float]]) -> str:
     returns = np.asarray([r["return"] for r in rows], dtype=np.float32)
     lengths = np.asarray([r["length"] for r in rows], dtype=np.float32)
     hits = np.asarray([r["hits"] for r in rows], dtype=np.float32)
+    full_rate = float(np.mean([float(r.get("truncated", 0.0)) > 0.5 for r in rows]))
+    aggregate = aggregate_episode_metrics(rows)
     return (
         f"episodes={len(rows)} "
         f"return_mean={returns.mean():.3f} return_std={returns.std():.3f} "
-        f"len_mean={lengths.mean():.1f} hits_mean={hits.mean():.2f} "
-        f"hits_max={hits.max():.0f}"
+        f"len_mean={lengths.mean():.1f} full_rate={full_rate:.3f} hits_mean={hits.mean():.2f} "
+        f"hits_max={hits.max():.0f} "
+        f"hit_cam={aggregate['hit_camera_visible_rate']:.3f} "
+        f"hit_band={aggregate['hit_camera_lower_band_rate']:.3f} "
+        f"hit_vxy={aggregate['mean_hit_vxy']:.3f} "
+        f"camera={aggregate['camera_visible_rate']:.3f} "
+        f"zideal={aggregate['ball_view_z_ideal_rate']:.3f} "
+        f"missing={aggregate['ball_obs_missing_refresh_rate']:.3f} "
+        f"lost={aggregate['ball_obs_lost_rate']:.3f}"
     )
-
 
 def done_reason_summary(rows: list[dict[str, float]]) -> str:
     if not rows:
@@ -404,6 +658,7 @@ def trace_row_from_host(
         "racket_z_rel": float(host["racket_z_rel"][env_i]),
         "action_norm": float(host["action_norm"][env_i]),
     }
+    add_camera_columns(row, host, env_i)
     vector_keys = [
         "policy_mean",
         "raw_action",
@@ -432,7 +687,13 @@ def trace_row_from_host(
             elif key in {"desired_qdd_raw", "desired_qdd", "arm_cmd_qdd", "arm_qacc", "arm_qacc_mj"}:
                 row[f"{key}_deg_s2/{safe_joint}"] = float(np.rad2deg(value))
     for key, value in host.items():
-        if key.startswith("done/"):
+        if (
+            key.startswith("done/")
+            or key.startswith("reset_")
+            or key.startswith("ball_obs_")
+            or key.startswith("hit_camera_")
+            or key in {"ball_view_z_high_exceeded", "ball_view_in_bounds", "ball_view_z_ideal"}
+        ):
             row[key] = float(value[env_i])
     return row
 
@@ -462,6 +723,10 @@ def obs_row_from_host(
         "terminated": float(host["terminated"][env_i]),
         "truncated": float(host["truncated"][env_i]),
     }
+    add_camera_columns(row, host, env_i)
+    for key, value in host.items():
+        if key.startswith("ball_obs_") or key.startswith("reset_") or key.startswith("hit_camera_") or key in {"ball_view_z_high_exceeded", "ball_view_in_bounds", "ball_view_z_ideal"}:
+            row[key] = float(value[env_i])
     for i, value in enumerate(obs):
         row[f"obs/{i:03d}"] = float(value)
         if i >= 50:
@@ -498,10 +763,39 @@ def obs_row_from_host(
     return row
 
 
+def add_camera_columns(row: dict[str, float], host: dict[str, np.ndarray], env_i: int) -> None:
+    scalar_keys = [
+        "camera_available",
+        "camera_in_front",
+        "camera_in_depth",
+        "camera_in_frustum",
+        "camera_in_image",
+        "camera_visible",
+        "ball_cam_x",
+        "ball_cam_y",
+        "ball_cam_z",
+        "ball_cam_distance",
+        "ball_pixel_u",
+        "ball_pixel_v",
+        "camera_world_x",
+        "camera_world_y",
+        "camera_world_z",
+        "ball_world_x",
+        "ball_world_y",
+        "ball_world_z",
+    ]
+    for key in scalar_keys:
+        if key in host:
+            row[key] = float(host[key][env_i])
+
+
 def plot_trace_rows(path: Path, rows: list[dict[str, float]]) -> None:
     if not rows:
         return
     try:
+        import matplotlib
+
+        matplotlib.use("Agg", force=True)
         import matplotlib.pyplot as plt
     except ModuleNotFoundError as exc:
         raise SystemExit("matplotlib is required for --action-plot-out. Install with: python -m pip install matplotlib") from exc
@@ -628,9 +922,14 @@ def plot_trace_rows(path: Path, rows: list[dict[str, float]]) -> None:
 def main() -> None:
     args = parse_args()
     payload = load_checkpoint(args.checkpoint)
+    env_payload = (
+        load_checkpoint(args.env_checkpoint)
+        if args.env_checkpoint is not None
+        else payload
+    )
     params = jax.tree_util.tree_map(jnp.asarray, payload["params"])
-    xml_path = args.xml or Path(payload.get("xml", RL_SIM_DIR / "moz1_pd.xml"))
-    cfg = env_config_from_checkpoint(payload, args)
+    xml_path = args.xml or Path(env_payload.get("xml", RL_SIM_DIR / "moz1_pd.xml"))
+    cfg = env_config_from_checkpoint(env_payload, args)
     results_csv = args.results_csv
     if args.results_csv == DEFAULT_RESULTS:
         results_csv = args.checkpoint.parent / "validation.csv"
@@ -648,6 +947,8 @@ def main() -> None:
     env = MjxJuggleEnv(xml_path, n_envs=args.n_envs, cfg=cfg)
     print(f"[validate_mjx] JAX devices: {jax.devices()}")
     print(f"[validate_mjx] checkpoint: {args.checkpoint}")
+    if args.env_checkpoint is not None:
+        print(f"[validate_mjx] environment checkpoint: {args.env_checkpoint}")
     print(f"[validate_mjx] XML: {xml_path}")
     print(f"[validate_mjx] MJX XML: {env.mjx_xml}")
     print(
@@ -659,6 +960,7 @@ def main() -> None:
         f"horizon_sec={cfg.horizon_sec}, max_steps={env.max_steps}, "
         f"mujoco_timestep={env.timestep:.4f}s, frame_skip={cfg.frame_skip}, "
         f"control_dt={env.dt:.4f}s, control_hz={1.0 / env.dt:.1f}Hz, "
+        f"right_arm_pd_profile={cfg.right_arm_pd_profile}, "
         f"racket_z_limit_down={cfg.racket_z_hard_limit_down}, "
         f"racket_z_limit_up={cfg.racket_z_hard_limit_up}, "
         f"terminate_on_racket_z_limit={cfg.terminate_on_racket_z_limit}"
@@ -670,6 +972,9 @@ def main() -> None:
         f"history_frames={cfg.high_latency_history_frames}, "
         f"ball_obs_rate_hz={cfg.ball_obs_rate_hz}, fractional={cfg.ball_obs_fractional_rate}, "
         f"age_tracks_stale={cfg.ball_obs_age_tracks_stale}, require_camera_visible={cfg.ball_obs_require_camera_visible}, "
+        f"camera_missing_prob={cfg.ball_obs_camera_missing_prob}, "
+        f"view_missing_prob={cfg.ball_obs_view_bounds_missing_prob}, "
+        f"episode_coherent_prob={cfg.ball_obs_missing_episode_coherent_prob}, "
         f"obs_latency_steps={cfg.dr_obs_latency_steps_range}, action_latency_steps={cfg.dr_action_latency_steps_range}, "
         f"actuator_cmd_filter={cfg.actuator_cmd_filter}, tau_range={cfg.dr_actuator_cmd_tau_range}, "
         f"gain_range={cfg.dr_actuator_cmd_gain_range}, pos_bias={cfg.ball_obs_nominal_pos_bias_base}"
@@ -737,6 +1042,33 @@ def main() -> None:
     trace_rows: list[dict[str, float]] = []
     obs_trace_rows: list[dict[str, float]] = []
     env_episode_counts = np.zeros((args.n_envs,), dtype=np.int32)
+    episode_hit_camera_events = np.zeros((args.n_envs,), dtype=np.float64)
+    episode_hit_camera_visible = np.zeros((args.n_envs,), dtype=np.float64)
+    episode_hit_camera_in_margin = np.zeros((args.n_envs,), dtype=np.float64)
+    episode_hit_camera_in_band = np.zeros((args.n_envs,), dtype=np.float64)
+    episode_hit_camera_v_frac_sum = np.zeros((args.n_envs,), dtype=np.float64)
+    episode_hit_vxy_sum = np.zeros((args.n_envs,), dtype=np.float64)
+    episode_step_metric_sources = {
+        "camera_visible_steps": "camera_visible",
+        "ball_view_in_bounds_steps": "ball_view_in_bounds",
+        "ball_view_z_ideal_steps": "ball_view_z_ideal",
+        "ball_view_z_high_exceeded_steps": "ball_view_z_high_exceeded",
+        "ball_obs_refresh_count": "ball_obs_refresh_due",
+        "ball_obs_missing_refresh_count": "ball_obs_missing_on_refresh",
+        "ball_obs_missing_streak_start_count": "ball_obs_missing_streak_started",
+        "ball_obs_lost_steps": "ball_obs_lost_active",
+        "ball_obs_lost_entry_count": "ball_obs_lost_entered",
+        "ball_obs_stale_steps": "ball_obs_stale_active",
+        "ball_obs_dropout_steps": "ball_obs_dropout_active",
+        "ball_obs_reacquired_after_missing_events": (
+            "ball_obs_reacquired_after_missing"
+        ),
+        "ball_obs_reacquired_after_lost_events": "ball_obs_reacquired_after_lost",
+    }
+    episode_step_sums = {
+        name: np.zeros((args.n_envs,), dtype=np.float64)
+        for name in episode_step_metric_sources
+    }
     max_steps = args.max_env_steps
     if max_steps <= 0:
         max_steps = int(np.ceil(args.episodes / max(1, args.n_envs)) * env.max_steps * 2)
@@ -754,6 +1086,17 @@ def main() -> None:
                 running_length,
             )
             host = jax.device_get(metrics)
+            episode_hit_camera_events += np.asarray(host.get("hit_camera_event", 0.0), dtype=np.float64)
+            episode_hit_camera_visible += np.asarray(host.get("hit_camera_visible_event", 0.0), dtype=np.float64)
+            episode_hit_camera_in_margin += np.asarray(host.get("hit_camera_in_margin_event", 0.0), dtype=np.float64)
+            episode_hit_camera_in_band += np.asarray(host.get("hit_camera_lower_band_event", 0.0), dtype=np.float64)
+            episode_hit_camera_v_frac_sum += np.asarray(host.get("hit_camera_v_frac_sum", 0.0), dtype=np.float64)
+            episode_hit_vxy_sum += np.asarray(host.get("hit_vxy_sum", 0.0), dtype=np.float64)
+            for accumulator_name, metric_name in episode_step_metric_sources.items():
+                episode_step_sums[accumulator_name] += np.asarray(
+                    host.get(metric_name, 0.0),
+                    dtype=np.float64,
+                )
             done = np.asarray(host["done"], dtype=bool)
             if trace_enabled:
                 trace_env = int(args.trace_env)
@@ -805,10 +1148,127 @@ def main() -> None:
                     "truncated": float(host["truncated"][env_i]),
                     "episode_step": float(host["episode_step"][env_i]),
                 }
-                for key, value in host.items():
-                    if key.startswith("done/") or key.startswith("reward/"):
-                        row[key] = float(value[env_i])
+                hit_camera_events = float(episode_hit_camera_events[env_i])
+                hit_camera_visible = float(episode_hit_camera_visible[env_i])
+                hit_camera_in_margin = float(episode_hit_camera_in_margin[env_i])
+                hit_camera_in_band = float(episode_hit_camera_in_band[env_i])
+                hit_camera_v_frac_sum = float(
+                    episode_hit_camera_v_frac_sum[env_i]
+                )
+                hit_vxy_sum = float(episode_hit_vxy_sum[env_i])
+                row["hit_camera_events"] = hit_camera_events
+                row["hit_camera_visible_events"] = hit_camera_visible
+                row["hit_camera_in_margin_events"] = hit_camera_in_margin
+                row["hit_camera_lower_band_events"] = hit_camera_in_band
+                row["hit_camera_v_frac_sum"] = hit_camera_v_frac_sum
+                row["hit_vxy_sum"] = hit_vxy_sum
+                row["hit_camera_visible_rate"] = (
+                    hit_camera_visible / hit_camera_events
+                    if hit_camera_events > 0.0
+                    else float("nan")
+                )
+                row["hit_camera_in_margin_rate"] = (
+                    hit_camera_in_margin / hit_camera_events
+                    if hit_camera_events > 0.0
+                    else float("nan")
+                )
+                row["hit_camera_lower_band_rate"] = (
+                    hit_camera_in_band / hit_camera_events
+                    if hit_camera_events > 0.0
+                    else float("nan")
+                )
+                row["mean_hit_camera_v_frac"] = (
+                    hit_camera_v_frac_sum / hit_camera_visible
+                    if hit_camera_visible > 0.0
+                    else float("nan")
+                )
+                row["mean_hit_vxy"] = (
+                    hit_vxy_sum / hit_camera_events
+                    if hit_camera_events > 0.0
+                    else float("nan")
+                )
+                for accumulator_name, values in episode_step_sums.items():
+                    row[accumulator_name] = float(values[env_i])
+                episode_length = max(1.0, float(row["length"]))
+                refresh_count = row["ball_obs_refresh_count"]
+                row["camera_visible_rate"] = (
+                    row["camera_visible_steps"] / episode_length
+                )
+                row["ball_view_in_bounds_rate"] = (
+                    row["ball_view_in_bounds_steps"] / episode_length
+                )
+                row["ball_view_z_ideal_rate"] = (
+                    row["ball_view_z_ideal_steps"] / episode_length
+                )
+                row["ball_view_z_high_exceeded_rate"] = (
+                    row["ball_view_z_high_exceeded_steps"] / episode_length
+                )
+                row["ball_view_z_high_exceeded_ever"] = float(
+                    row["ball_view_z_high_exceeded_steps"] > 0.0
+                )
+                row["ball_obs_missing_refresh_rate"] = (
+                    row["ball_obs_missing_refresh_count"] / refresh_count
+                    if refresh_count > 0.0
+                    else float("nan")
+                )
+                row["ball_obs_lost_rate"] = (
+                    row["ball_obs_lost_steps"] / episode_length
+                )
+                row["ball_obs_stale_rate"] = (
+                    row["ball_obs_stale_steps"] / episode_length
+                )
+                row["ball_obs_dropout_rate"] = (
+                    row["ball_obs_dropout_steps"] / episode_length
+                )
+                add_terminal_step_metrics(row, host, env_i)
+                reset_missing_exposure = float(
+                    row.get("reset_ball_obs_missing", 0.0)
+                )
+                lost_timeout_s = (
+                    max(0.0, float(env.cfg.lost_ball_timeout_ms)) * 1e-3
+                )
+                reset_missing_age = min(
+                    float(env.cfg.ball_obs_age_clip),
+                    max(float(env.dt), lost_timeout_s),
+                )
+                reset_lost_exposure = (
+                    reset_missing_exposure
+                    if lost_timeout_s > 0.0
+                    and reset_missing_age >= lost_timeout_s
+                    else 0.0
+                )
+                row["ball_obs_missing_exposure_count"] = (
+                    row["ball_obs_missing_streak_start_count"]
+                    + reset_missing_exposure
+                )
+                row["ball_obs_lost_exposure_count"] = (
+                    row["ball_obs_lost_entry_count"] + reset_lost_exposure
+                )
+                missing_exposure_count = row[
+                    "ball_obs_missing_exposure_count"
+                ]
+                lost_exposure_count = row["ball_obs_lost_exposure_count"]
+                row["ball_obs_reacquired_after_missing_rate"] = (
+                    row["ball_obs_reacquired_after_missing_events"]
+                    / missing_exposure_count
+                    if missing_exposure_count > 0.0
+                    else float("nan")
+                )
+                row["ball_obs_reacquired_after_lost_rate"] = (
+                    row["ball_obs_reacquired_after_lost_events"]
+                    / lost_exposure_count
+                    if lost_exposure_count > 0.0
+                    else float("nan")
+                )
                 episode_rows.append(row)
+                episode_hit_camera_events[env_i] = 0.0
+                episode_hit_camera_visible[env_i] = 0.0
+                episode_hit_camera_in_margin[env_i] = 0.0
+                episode_hit_camera_in_band[env_i] = 0.0
+                episode_hit_camera_v_frac_sum[env_i] = 0.0
+                episode_hit_vxy_sum[env_i] = 0.0
+                for values in episode_step_sums.values():
+                    values[env_i] = 0.0
                 print(
                     f"[episode] ep={row['episode']} env={row['env']} "
                     f"len={row['length']} return={row['return']:.3f} "
@@ -862,12 +1322,16 @@ def main() -> None:
     if args.action_trace_csv is not None:
         save_trace_rows(args.action_trace_csv, trace_rows)
         print(f"[validate_mjx] wrote action trace: {args.action_trace_csv}")
-    if args.action_plot_out is not None:
-        plot_trace_rows(args.action_plot_out, trace_rows)
-        print(f"[validate_mjx] wrote action plot: {args.action_plot_out}")
     if args.obs_trace_csv is not None:
         save_trace_rows(args.obs_trace_csv, obs_trace_rows)
         print(f"[validate_mjx] wrote observation trace: {args.obs_trace_csv}")
+    if args.action_plot_out is not None:
+        try:
+            plot_trace_rows(args.action_plot_out, trace_rows)
+        except Exception as exc:
+            print(f"[validate_mjx] warning: failed to write action plot {args.action_plot_out}: {exc}", file=sys.stderr)
+        else:
+            print(f"[validate_mjx] wrote action plot: {args.action_plot_out}")
     if args.video_out is not None:
         print(f"[validate_mjx] wrote video: {args.video_out}")
 

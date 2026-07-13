@@ -274,13 +274,13 @@
     <position name="LeftArm-6" joint="LeftArm-6" ctrlrange="-1.5708 1.5708"    ctrllimited="true" kp="600" kv="6"/>
 
     <!-- 右臂：提高刚度/阻尼，优先改善球拍末端跟踪 -->
-    <position name="RightArm-0" joint="RightArm-0" ctrlrange="-2.0944 3.14159"  ctrllimited="true" kp="32000" kv="2000"/>
-    <position name="RightArm-1" joint="RightArm-1" ctrlrange="-2.96706 0.15708"  ctrllimited="true" kp="32000" kv="1800"/>
-    <position name="RightArm-2" joint="RightArm-2" ctrlrange="-3.05433 3.05433"  ctrllimited="true" kp="27000" kv="1500"/>
-    <position name="RightArm-3" joint="RightArm-3" ctrlrange="-0.174533 2.25147" ctrllimited="true" kp="20000" kv="900"/>
-    <position name="RightArm-4" joint="RightArm-4" ctrlrange="-3.05433 3.05433"  ctrllimited="true" kp="13000" kv="500"/>
-    <position name="RightArm-5" joint="RightArm-5" ctrlrange="-1.65806 1.65806"  ctrllimited="true" kp="15000" kv="500"/>
-    <position name="RightArm-6" joint="RightArm-6" ctrlrange="-1.5708 1.5708"    ctrllimited="true" kp="10000" kv="350"/>
+    <position name="RightArm-0" joint="RightArm-0" ctrlrange="-2.0944 3.14159"  ctrllimited="true" kp="80000" kv="500"/>
+    <position name="RightArm-1" joint="RightArm-1" ctrlrange="-2.96706 0.15708"  ctrllimited="true" kp="80000" kv="270"/>
+    <position name="RightArm-2" joint="RightArm-2" ctrlrange="-3.05433 3.05433"  ctrllimited="true" kp="67500" kv="435"/>
+    <position name="RightArm-3" joint="RightArm-3" ctrlrange="-0.174533 2.25147" ctrllimited="true" kp="50000" kv="337.5"/>
+    <position name="RightArm-4" joint="RightArm-4" ctrlrange="-3.05433 3.05433"  ctrllimited="true" kp="32500" kv="187.5"/>
+    <position name="RightArm-5" joint="RightArm-5" ctrlrange="-1.65806 1.65806"  ctrllimited="true" kp="37500" kv="212.5"/>
+    <position name="RightArm-6" joint="RightArm-6" ctrlrange="-1.5708 1.5708"    ctrllimited="true" kp="25000" kv="131.25"/>
 
     <!-- 头部 -->
     <position name="Head-0" joint="Head-0" ctrlrange="-1.5708 1.5708" ctrllimited="true" kp="40" kv="4"/>
