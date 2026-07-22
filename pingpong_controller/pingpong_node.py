@@ -312,7 +312,13 @@ class PingPongControllerNode(Node):
                             f"action_gain={summary.get('action_gain')}, "
                             f"action_scale_mult={summary.get('action_scale_mult')}, "
                             f"arm_action_limiter="
-                            f"{summary.get('arm_action_limiter')}")
+                            f"{summary.get('arm_action_limiter')}, "
+                            f"drive_target_planner="
+                            f"{summary.get('drive_target_tracking_planner')}, "
+                            f"drive_vel_scale="
+                            f"{summary.get('drive_target_velocity_scale')}, "
+                            f"drive_acc_scale="
+                            f"{summary.get('drive_target_acceleration_scale')}")
                     else:
                         self.rl_controller = RLPolicyController(
                             model_path=self.rl_model_path,

@@ -188,6 +188,10 @@ def ppo_loss(
     clip_range: float,
     vf_coef: float,
     ent_coef: float,
+    reference_params=None,
+    actor_anchor_kl_coef: float = 0.0,
+    actor_anchor_obs: jax.Array | None = None,
+    actor_anchor_replay_kl_coef: float = 0.0,
 ) -> tuple[jax.Array, dict[str, jax.Array]]:
     mean = policy_mean(params, batch.obs)
     value = value_fn(params, batch.critic_obs)
@@ -199,7 +203,57 @@ def ppo_loss(
     policy_loss = -jnp.mean(jnp.minimum(pg1, pg2))
     value_loss = 0.5 * jnp.mean((batch.returns - value) ** 2)
     entropy = normal_entropy(log_std)
-    loss = policy_loss + float(vf_coef) * value_loss - float(ent_coef) * entropy
+    actor_anchor_kl = jnp.asarray(0.0, dtype=mean.dtype)
+    actor_anchor_current_kl = jnp.asarray(0.0, dtype=mean.dtype)
+    actor_anchor_replay_kl = jnp.asarray(0.0, dtype=mean.dtype)
+    actor_anchor_regularization = jnp.asarray(0.0, dtype=mean.dtype)
+    if reference_params is not None and (
+        float(actor_anchor_kl_coef) > 0.0
+        or float(actor_anchor_replay_kl_coef) > 0.0
+    ):
+        reference_log_std = jax.lax.stop_gradient(reference_params["log_std"])
+        reference_var = jnp.exp(2.0 * reference_log_std)
+        current_var = jnp.exp(2.0 * log_std)
+
+        def anchor_kl(obs: jax.Array) -> jax.Array:
+            current_mean = policy_mean(params, obs)
+            reference_mean = jax.lax.stop_gradient(policy_mean(reference_params, obs))
+            return jnp.mean(jnp.sum(
+                log_std
+                - reference_log_std
+                + (reference_var + jnp.square(reference_mean - current_mean))
+                / (2.0 * current_var)
+                - 0.5,
+                axis=-1,
+            ))
+
+        actor_anchor_current_kl = anchor_kl(batch.obs)
+        actor_anchor_kl = actor_anchor_current_kl
+        actor_anchor_regularization = (
+            float(actor_anchor_kl_coef) * actor_anchor_current_kl
+        )
+        if actor_anchor_obs is not None:
+            actor_anchor_replay_kl = anchor_kl(actor_anchor_obs)
+            if float(actor_anchor_replay_kl_coef) > 0.0:
+                actor_anchor_regularization = (
+                    actor_anchor_regularization
+                    + float(actor_anchor_replay_kl_coef) * actor_anchor_replay_kl
+                )
+            else:
+                # Preserve the original equal-domain averaging behavior when
+                # no independent replay coefficient is requested.
+                actor_anchor_kl = 0.5 * (
+                    actor_anchor_current_kl + actor_anchor_replay_kl
+                )
+                actor_anchor_regularization = (
+                    float(actor_anchor_kl_coef) * actor_anchor_kl
+                )
+    loss = (
+        policy_loss
+        + float(vf_coef) * value_loss
+        - float(ent_coef) * entropy
+        + actor_anchor_regularization
+    )
     approx_kl = jnp.mean(batch.old_logp - logp)
     clip_frac = jnp.mean((jnp.abs(ratio - 1.0) > float(clip_range)).astype(jnp.float32))
     aux = {
@@ -209,6 +263,10 @@ def ppo_loss(
         "entropy": entropy,
         "approx_kl": approx_kl,
         "clip_frac": clip_frac,
+        "actor_anchor_kl": actor_anchor_kl,
+        "actor_anchor_current_kl": actor_anchor_current_kl,
+        "actor_anchor_replay_kl": actor_anchor_replay_kl,
+        "actor_anchor_regularization": actor_anchor_regularization,
     }
     return loss, aux
 
@@ -252,7 +310,18 @@ def make_train_fns(
     vf_coef: float,
     ent_coef: float,
     max_grad_norm: float,
+    reference_params=None,
+    actor_anchor_kl_coef: float = 0.0,
+    actor_anchor_replay_obs: jax.Array | None = None,
+    actor_anchor_replay_kl_coef: float = 0.0,
 ):
+    if (
+        float(actor_anchor_kl_coef) > 0.0
+        or float(actor_anchor_replay_kl_coef) > 0.0
+    ) and reference_params is None:
+        raise ValueError("actor anchor KL requires reference_params")
+    if float(actor_anchor_replay_kl_coef) > 0.0 and actor_anchor_replay_obs is None:
+        raise ValueError("actor_anchor_replay_kl_coef > 0 requires replay observations")
     batch_size = env.n_envs * int(n_steps)
     num_minibatches = max(1, batch_size // int(minibatch_size))
     used_batch_size = num_minibatches * int(minibatch_size)
@@ -324,12 +393,20 @@ def make_train_fns(
 
         def update_minibatch(state: TrainState, idx: jax.Array):
             mini = take_minibatch(batch, idx)
+            mini_anchor_obs = None
+            if actor_anchor_replay_obs is not None:
+                replay_idx = jnp.mod(idx, actor_anchor_replay_obs.shape[0])
+                mini_anchor_obs = actor_anchor_replay_obs[replay_idx]
             (loss, aux), grads = jax.value_and_grad(ppo_loss, has_aux=True)(
                 state.params,
                 mini,
                 clip_range,
                 vf_coef,
                 ent_coef,
+                reference_params,
+                actor_anchor_kl_coef,
+                mini_anchor_obs,
+                actor_anchor_replay_kl_coef,
             )
             params, opt, grad_norm = adam_step(
                 state.params,
@@ -391,11 +468,46 @@ def save_checkpoint(
 
 def append_progress(path: Path, row: dict[str, float]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    write_header = not path.exists()
-    with path.open("a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=list(row.keys()))
-        if write_header:
+    row_fields = list(row.keys())
+    if not path.exists() or path.stat().st_size == 0:
+        with path.open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=row_fields)
             writer.writeheader()
+            writer.writerow(row)
+        return
+
+    with path.open("r", newline="") as f:
+        reader = csv.reader(f)
+        try:
+            fieldnames = next(reader)
+        except StopIteration:
+            fieldnames = []
+
+    if not fieldnames:
+        fieldnames = row_fields
+
+    missing_fields = [name for name in row_fields if name not in fieldnames]
+    if missing_fields:
+        old_fieldnames = fieldnames
+        fieldnames = [*fieldnames, *missing_fields]
+        tmp_path = path.with_name(path.name + ".tmp")
+        with path.open("r", newline="") as src, tmp_path.open("w", newline="") as dst:
+            reader = csv.reader(src)
+            writer = csv.writer(dst)
+            try:
+                next(reader)
+            except StopIteration:
+                pass
+            writer.writerow(fieldnames)
+            for old_row in reader:
+                padded = old_row[: len(old_fieldnames)]
+                if len(padded) < len(old_fieldnames):
+                    padded.extend([""] * (len(old_fieldnames) - len(padded)))
+                writer.writerow([*padded, *([""] * len(missing_fields))])
+        tmp_path.replace(path)
+
+    with path.open("a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writerow(row)
 
 

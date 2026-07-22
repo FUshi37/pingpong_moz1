@@ -288,11 +288,18 @@ def inverse_mpc_compensate_q_ref(
     nominal_weight: float = 0.25,
     delta_weight: float = 0.08,
     max_delta_rad: float = 0.0,
+    command_dynamics_constraint: bool = False,
+    command_velocity_weight: float = 0.0,
+    command_acceleration_weight: float = 0.0,
+    command_velocity_limit_rad_s: np.ndarray | None = None,
+    command_acceleration_limit_rad_s2: np.ndarray | None = None,
+    previous_command_q: np.ndarray | None = None,
+    previous_command_qvel: np.ndarray | None = None,
     warm_q: np.ndarray | None = None,
     q_low: np.ndarray | None = None,
     q_high: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Regularized inverse-MPC command for a delayed first-order actuator.
+    """Regularized causal inverse-MPC command for a delayed first-order actuator.
 
     The optimizer assumes the newly sent command will become active after the
     queued delay, then remain roughly constant for ``horizon_steps`` control
@@ -305,7 +312,9 @@ def inverse_mpc_compensate_q_ref(
 
     This is deliberately softer than a pure inverse Smith step.  The nominal and
     delta terms keep the policy-facing action interface smooth while still
-    compensating the low-level delay/filter.
+    compensating the low-level delay/filter.  ``q_des`` is a local prediction
+    obtained from the current q/dq/ddq and the fixed actuator model.  No future
+    measured state or future reference sample is an input to this function.
     """
     q = np.asarray(q_cmd, dtype=np.float32)
     qdot = np.asarray(qdot_cmd, dtype=np.float32)
@@ -317,11 +326,27 @@ def inverse_mpc_compensate_q_ref(
     if buf.ndim != 2 or buf.shape[1] != q.shape[0]:
         raise ValueError("command_buffer must have shape (T, act_dim)")
 
+    dt_safe = max(float(dt), 1e-9)
+    prev_q = (
+        np.asarray(previous_command_q, dtype=np.float32)
+        if previous_command_q is not None
+        else buf[-1].astype(np.float32)
+    )
+    if prev_q.shape != q.shape:
+        raise ValueError("previous_command_q must match q_cmd shape")
+    if previous_command_qvel is not None:
+        prev_qvel = np.asarray(previous_command_qvel, dtype=np.float32)
+        if prev_qvel.shape != q.shape:
+            raise ValueError("previous_command_qvel must match q_cmd shape")
+    elif buf.shape[0] >= 2:
+        prev_qvel = ((buf[-1] - buf[-2]) / dt_safe).astype(np.float32)
+    else:
+        prev_qvel = np.zeros_like(q, dtype=np.float32)
+
     beta_f = float(beta)
     if not np.isfinite(beta_f) or beta_f == 0.0:
         out = q.copy()
     else:
-        dt_safe = max(float(dt), 1e-9)
         comp_delay_steps = int(np.clip(round(float(delay_steps) * max(0.0, float(delay_scale))), 0, buf.shape[0] - 1))
         h_steps = max(1, int(horizon_steps))
         tau_est = max(0.0, float(actuator_tau_s) * max(0.0, float(tau_scale)))
@@ -337,31 +362,97 @@ def inverse_mpc_compensate_q_ref(
             append_placeholder=q,
         )
 
-        total_horizon = (float(comp_delay_steps) + float(h_steps)) * dt_safe
-        q_des = q + total_horizon * qdot + 0.5 * total_horizon * total_horizon * qdd
-        decay = float(np.clip(1.0 - alpha, 0.0, 1.0)) ** h_steps
-        response = 1.0 - decay
         base = np.zeros_like(q) if warm_q is None else np.asarray(warm_q, dtype=np.float32)
         gain = float(actuator_gain)
         if not np.isfinite(gain) or abs(gain) < 1e-6:
             gain = 1.0
-        k = response * gain
-        b = decay * y_pre + response * (1.0 - gain) * base
         u_last = buf[-1]
 
         wt = max(0.0, float(tracking_weight))
         wn = max(0.0, float(nominal_weight))
         wd = max(0.0, float(delta_weight))
-        denom = wt * k * k + wn + wd
-        if denom <= 1e-9 or not np.isfinite(denom):
-            u_star = q.copy()
-        else:
-            u_star = (wt * k * (q_des - b) + wn * q + wd * u_last) / denom
+        total_horizon = (float(comp_delay_steps) + float(h_steps)) * dt_safe
+        q_des = q + total_horizon * qdot + 0.5 * total_horizon * total_horizon * qdd
+        decay = float(np.clip(1.0 - alpha, 0.0, 1.0)) ** h_steps
+        response = 1.0 - decay
+        k = response * gain
+        b = decay * y_pre + response * (1.0 - gain) * base
+        denom = np.full_like(q, wt * k * k + wn + wd, dtype=np.float32)
+        numer = wt * k * (q_des - b) + wn * q + wd * u_last
+        valid = (denom > 1e-9) & np.isfinite(denom) & np.isfinite(numer)
+        u_star = np.where(valid, numer / np.maximum(denom, 1e-9), q)
         delta = beta_f * (u_star - q)
         limit = float(max_delta_rad)
         if np.isfinite(limit) and limit > 0.0:
             delta = np.clip(delta, -limit, limit)
         out = q + delta.astype(np.float32)
+
+    wv = max(0.0, float(command_velocity_weight))
+    wa = max(0.0, float(command_acceleration_weight))
+    vel_limit = (
+        None
+        if command_velocity_limit_rad_s is None
+        else np.asarray(command_velocity_limit_rad_s, dtype=np.float32)
+    )
+    acc_limit = (
+        None
+        if command_acceleration_limit_rad_s2 is None
+        else np.asarray(command_acceleration_limit_rad_s2, dtype=np.float32)
+    )
+    if vel_limit is not None and vel_limit.shape != q.shape:
+        raise ValueError("command_velocity_limit_rad_s must match q_cmd shape")
+    if acc_limit is not None and acc_limit.shape != q.shape:
+        raise ValueError("command_acceleration_limit_rad_s2 must match q_cmd shape")
+
+    if wv > 0.0 or wa > 0.0:
+        # Small convex one-step refinement around the original inverse-MPC
+        # output.  The scale normalization makes the weights comparable across
+        # joints with different velocity/acceleration limits.  It uses only
+        # previous command state, so it remains causal and deployment-safe.
+        refined_num = out.astype(np.float32)
+        refined_den = np.ones_like(q, dtype=np.float32)
+        if wv > 0.0:
+            if vel_limit is None:
+                raise ValueError("command_velocity_weight requires command_velocity_limit_rad_s")
+            vel_scale = np.maximum(vel_limit * dt_safe, 1e-6)
+            weight = np.asarray(wv, dtype=np.float32) / (vel_scale * vel_scale)
+            refined_num = refined_num + weight * prev_q
+            refined_den = refined_den + weight
+        if wa > 0.0:
+            if acc_limit is None:
+                raise ValueError("command_acceleration_weight requires command_acceleration_limit_rad_s2")
+            acc_center = prev_q + prev_qvel * dt_safe
+            acc_scale = np.maximum(acc_limit * dt_safe * dt_safe, 1e-6)
+            weight = np.asarray(wa, dtype=np.float32) / (acc_scale * acc_scale)
+            refined_num = refined_num + weight * acc_center
+            refined_den = refined_den + weight
+        out = refined_num / np.maximum(refined_den, 1e-9)
+
+    if command_dynamics_constraint:
+        low = np.full_like(q, -np.inf, dtype=np.float32)
+        high = np.full_like(q, np.inf, dtype=np.float32)
+        if q_low is not None:
+            low = np.maximum(low, np.asarray(q_low, dtype=np.float32))
+        if q_high is not None:
+            high = np.minimum(high, np.asarray(q_high, dtype=np.float32))
+        if vel_limit is not None:
+            low = np.maximum(low, prev_q - vel_limit * dt_safe)
+            high = np.minimum(high, prev_q + vel_limit * dt_safe)
+        if acc_limit is not None:
+            center = prev_q + prev_qvel * dt_safe
+            low = np.maximum(low, center - acc_limit * dt_safe * dt_safe)
+            high = np.minimum(high, center + acc_limit * dt_safe * dt_safe)
+        finite_bound = np.isfinite(low) | np.isfinite(high)
+        if np.any(finite_bound):
+            # If an externally supplied previous command state is already
+            # outside the one-step feasible set, keep execution defined by
+            # collapsing only the inverted numerical interval.  The caller's
+            # safety metrics should expose such a state error; this helper
+            # should not silently emit NaNs.
+            mid = 0.5 * (low + high)
+            safe_low = np.minimum(low, mid)
+            safe_high = np.maximum(high, mid)
+            out = np.minimum(np.maximum(out, safe_low), safe_high)
 
     if q_low is not None or q_high is not None:
         lo = -np.inf if q_low is None else np.asarray(q_low, dtype=np.float32)
@@ -396,6 +487,13 @@ def compensate_q_ref(
     mpc_nominal_weight: float = 0.25,
     mpc_delta_weight: float = 0.08,
     mpc_max_delta_rad: float = 0.0,
+    mpc_command_dynamics_constraint: bool = False,
+    mpc_command_velocity_weight: float = 0.0,
+    mpc_command_acceleration_weight: float = 0.0,
+    mpc_command_velocity_limit_rad_s: np.ndarray | None = None,
+    mpc_command_acceleration_limit_rad_s2: np.ndarray | None = None,
+    mpc_previous_command_q: np.ndarray | None = None,
+    mpc_previous_command_qvel: np.ndarray | None = None,
     applied_q: np.ndarray | None = None,
     command_buffer: np.ndarray | None = None,
     warm_q: np.ndarray | None = None,
@@ -468,6 +566,13 @@ def compensate_q_ref(
             nominal_weight=mpc_nominal_weight,
             delta_weight=mpc_delta_weight,
             max_delta_rad=mpc_max_delta_rad,
+            command_dynamics_constraint=mpc_command_dynamics_constraint,
+            command_velocity_weight=mpc_command_velocity_weight,
+            command_acceleration_weight=mpc_command_acceleration_weight,
+            command_velocity_limit_rad_s=mpc_command_velocity_limit_rad_s,
+            command_acceleration_limit_rad_s2=mpc_command_acceleration_limit_rad_s2,
+            previous_command_q=mpc_previous_command_q,
+            previous_command_qvel=mpc_previous_command_qvel,
             warm_q=warm_q,
             q_low=q_low,
             q_high=q_high,

@@ -10,6 +10,20 @@ from gymnasium import spaces
 import mujoco as mj
 import numpy as np
 
+from camera_calibration import (
+    D455_848_UNDISTORTED_BASE_POS,
+    D455_848_UNDISTORTED_BASE_ROT,
+    D455_848_UNDISTORTED_CX,
+    D455_848_UNDISTORTED_CY,
+    D455_848_UNDISTORTED_FX,
+    D455_848_UNDISTORTED_FY,
+    D455_848_UNDISTORTED_HEIGHT,
+    D455_848_UNDISTORTED_HFOV_DEG,
+    D455_848_UNDISTORTED_PIXEL_MARGIN,
+    D455_848_UNDISTORTED_VFOV_DEG,
+    D455_848_UNDISTORTED_WIDTH,
+)
+
 
 @dataclass
 class JuggleConfig:
@@ -24,6 +38,7 @@ class JuggleConfig:
     ball_spawn_z_jitter: float = 0.035
     ball_init_vxy_max: float = 0.012
     ball_init_vz: float = -0.28
+    ball_init_vz_jitter: float = 0.0
     ball_obs_rate_hz: float = 50.0
     ball_obs_pos_noise_std: float = 0.003
     ball_obs_vel_noise_std: float = 0.03
@@ -41,6 +56,9 @@ class JuggleConfig:
     post_hit_ball_vxy_penalty_weight: float = 0.18
     descending_intercept_reward_weight: float = 1.6
     descending_intercept_sigma: float = 0.10
+    pre_hit_intercept_reward_weight: float = 0.0
+    pre_hit_intercept_sigma: float = 0.08
+    pre_hit_intercept_time_max: float = 0.55
     non_racket_ball_contact_penalty_weight: float = 1.5
     failed_hit_penalty_weight: float = 1.0
     sticky_contact_penalty_growth: float = 0.6
@@ -67,6 +85,8 @@ class JuggleConfig:
     hit_height_center: float = 0.52
     hit_height_tolerance: float = 0.06
     hit_height_penalty_weight: float = 10.0
+    first_hit_apex_reward_weight: float = 0.0
+    first_hit_apex_sigma: float = 0.055
     racket_z_band_down: float = 0.00 # 0.06
     racket_z_band_up: float = 0.20 # 0.10
     racket_z_soft_penalty_weight: float = 1.2
@@ -113,21 +133,24 @@ class JuggleConfig:
     dr_obs_latency_steps_range: tuple[int, int] = (0, 2)
     dr_action_latency_steps_range: tuple[int, int] = (0, 2)
     camera_visibility_mode: str = "off"  # "off", "box", "frustum", "pixel"
+    virtual_camera_pose_mode: str = "base_extrinsic"  # "base_extrinsic" or legacy "body_mount"
     virtual_camera_body_name: str = "head22"
     virtual_camera_mount_pos: tuple[float, float, float] = (0.0, -0.068, 0.062)
     virtual_camera_mount_quat: tuple[float, float, float, float] = (0.707107, 0.0, 0.0, -0.707107)
     virtual_camera_optical_pos: tuple[float, float, float] = (0.048, 0.0, 0.0)
-    camera_image_width: int = 1280
-    camera_image_height: int = 720
-    camera_fx: float = 636.99
-    camera_fy: float = 636.84
-    camera_cx: float = 646.82
-    camera_cy: float = 373.21
-    camera_hfov_deg: float = 86.0
-    camera_vfov_deg: float = 57.0
+    virtual_camera_base_pos: tuple[float, float, float] = D455_848_UNDISTORTED_BASE_POS
+    virtual_camera_base_rot: tuple[float, ...] = D455_848_UNDISTORTED_BASE_ROT
+    camera_image_width: int = D455_848_UNDISTORTED_WIDTH
+    camera_image_height: int = D455_848_UNDISTORTED_HEIGHT
+    camera_fx: float = D455_848_UNDISTORTED_FX
+    camera_fy: float = D455_848_UNDISTORTED_FY
+    camera_cx: float = D455_848_UNDISTORTED_CX
+    camera_cy: float = D455_848_UNDISTORTED_CY
+    camera_hfov_deg: float = D455_848_UNDISTORTED_HFOV_DEG
+    camera_vfov_deg: float = D455_848_UNDISTORTED_VFOV_DEG
     camera_min_depth: float = 0.15
     camera_max_depth: float = 2.50
-    camera_pixel_margin: float = 80.0
+    camera_pixel_margin: float = D455_848_UNDISTORTED_PIXEL_MARGIN
     camera_center_weight: float = 0.0
     camera_visibility_penalty_weight: float = 0.0
     camera_depth_penalty_weight: float = 0.0
@@ -484,6 +507,8 @@ class JuggleEnv(gym.Env):
         self.ball_qadr = int(self.model.jnt_qposadr[self.ball_joint_id])
         self.ball_vadr = int(self.model.jnt_dofadr[self.ball_joint_id])
         self.base_body_id = mj.mj_name2id(self.model, mj.mjtObj.mjOBJ_BODY, "base_link")
+        if self.base_body_id < 0:
+            self.base_body_id = mj.mj_name2id(self.model, mj.mjtObj.mjOBJ_BODY, "base")
         self.waist_body_id = mj.mj_name2id(self.model, mj.mjtObj.mjOBJ_BODY, "waist03")
         head22_id = mj.mj_name2id(self.model, mj.mjtObj.mjOBJ_BODY, "head22")
         head21_id = mj.mj_name2id(self.model, mj.mjtObj.mjOBJ_BODY, "head21")
@@ -493,9 +518,19 @@ class JuggleEnv(gym.Env):
 
         vc_bid = mj.mj_name2id(self.model, mj.mjtObj.mjOBJ_BODY, self.cfg.virtual_camera_body_name)
         self.virtual_camera_body_id = int(vc_bid) if vc_bid >= 0 else -1
+        cfg_values = getattr(self.cfg, "__dict__", {})
+        self._vc_pose_mode = str(cfg_values.get("virtual_camera_pose_mode", "body_mount"))
         self._vc_mount_R = _quat_wxyz_to_mat(self.cfg.virtual_camera_mount_quat)
         self._vc_mount_pos = np.asarray(self.cfg.virtual_camera_mount_pos, dtype=np.float64)
         self._vc_optical_pos = np.asarray(self.cfg.virtual_camera_optical_pos, dtype=np.float64)
+        self._vc_base_pos = np.asarray(
+            cfg_values.get("virtual_camera_base_pos", D455_848_UNDISTORTED_BASE_POS),
+            dtype=np.float64,
+        )
+        self._vc_base_R = np.asarray(
+            cfg_values.get("virtual_camera_base_rot", D455_848_UNDISTORTED_BASE_ROT),
+            dtype=np.float64,
+        ).reshape(3, 3)
         # Reference mount frame uses +X as the optical axis. Convert to the
         # virtual camera frame used by projection: +X right, +Y up, +Z forward.
         self._vc_mount_to_camera_R = np.array(
@@ -721,6 +756,15 @@ class JuggleEnv(gym.Env):
         return center.astype(np.float32), normal.astype(np.float32)
 
     def _virtual_camera_pose(self) -> tuple[np.ndarray, np.ndarray, bool]:
+        if self._vc_pose_mode == "base_extrinsic":
+            if self.base_body_id < 0:
+                return np.zeros(3, dtype=np.float64), np.eye(3, dtype=np.float64), False
+            base_pos = np.asarray(self.data.xpos[self.base_body_id], dtype=np.float64)
+            base_R = np.asarray(self.data.xmat[self.base_body_id], dtype=np.float64).reshape(3, 3)
+            cam_pos_world = base_pos + base_R @ self._vc_base_pos
+            cam_R_world = base_R @ self._vc_base_R
+            return cam_pos_world, cam_R_world, True
+
         if self.virtual_camera_body_id < 0:
             return np.zeros(3, dtype=np.float64), np.eye(3, dtype=np.float64), False
         body_pos = np.asarray(self.data.xpos[self.virtual_camera_body_id], dtype=np.float64)
@@ -1155,7 +1199,9 @@ class JuggleEnv(gym.Env):
         self.data.qvel[self.ball_vadr : self.ball_vadr + 6] = 0.0
         self.data.qvel[self.ball_vadr + 0] = float(self.np_random.uniform(-float(self.cfg.ball_init_vxy_max), float(self.cfg.ball_init_vxy_max)))
         self.data.qvel[self.ball_vadr + 1] = float(self.np_random.uniform(-float(self.cfg.ball_init_vxy_max), float(self.cfg.ball_init_vxy_max)))
-        self.data.qvel[self.ball_vadr + 2] = float(self.cfg.ball_init_vz)
+        vz_jitter_mag = abs(float(self.cfg.ball_init_vz_jitter))
+        vz_jitter = self.np_random.uniform(-vz_jitter_mag, vz_jitter_mag)
+        self.data.qvel[self.ball_vadr + 2] = float(self.cfg.ball_init_vz + vz_jitter)
         mj.mj_forward(self.model, self.data)
 
         # Initialize prev_arm_qvel to avoid spurious acceleration on first step
@@ -1333,6 +1379,7 @@ class JuggleEnv(gym.Env):
         )
         descending_intercept_xy_err = 0.0
         descending_intercept_reward = 0.0
+        pre_hit_intercept_reward = 0.0
         racket_up_cos = max(0.0, float(np.dot(racket_normal, np.array([0.0, 0.0, 1.0], dtype=np.float32))))
         flatness_err = max(0.0, float(self.cfg.hit_flatness_target_cos) - racket_up_cos)
         flatness_score = float(np.exp(-0.5 * (flatness_err / max(1e-6, float(self.cfg.hit_flatness_sigma))) ** 2))
@@ -1573,6 +1620,23 @@ class JuggleEnv(gym.Env):
                     ** 2
                 )
             )
+        if self.hit_count <= 0 and float(bvel[2]) < -1e-4 and float(bpos[2]) > float(rpos[2]):
+            drop_dist = float(bpos[2] - rpos[2])
+            vz_abs = max(1e-5, -float(bvel[2]))
+            time_to_racket = drop_dist / vz_abs
+            if 0.0 <= time_to_racket <= float(self.cfg.pre_hit_intercept_time_max):
+                projected_ball_xy = bpos[:2] + bvel[:2] * time_to_racket
+                descending_intercept_xy_err = float(np.linalg.norm(projected_ball_xy - rpos[:2]))
+                pre_hit_intercept_reward = float(
+                    np.exp(
+                        -0.5
+                        * (
+                            descending_intercept_xy_err
+                            / max(1e-6, float(self.cfg.pre_hit_intercept_sigma))
+                        )
+                        ** 2
+                    )
+                )
         torque_pen = float(np.mean(np.square(self.data.actuator_force[self.arm_aids])))
         sticky_contact = bool(
             in_contact
@@ -1625,6 +1689,7 @@ class JuggleEnv(gym.Env):
         dense_reward -= ball_xy_soft_pen
         dense_reward += self.cfg.post_hit_survival_reward_weight * post_hit_survival_reward
         dense_reward += self.cfg.descending_intercept_reward_weight * descending_intercept_reward
+        dense_reward += self.cfg.pre_hit_intercept_reward_weight * pre_hit_intercept_reward
         dense_reward += self.cfg.racket_xy_gauss_reward_weight * racket_xy_gauss
         dense_reward -= self.cfg.racket_xy_gauss_penalty_weight * racket_xy_gauss_pen
         dense_reward -= self.cfg.racket_z_soft_penalty_weight * racket_z_band_pen
@@ -1655,6 +1720,7 @@ class JuggleEnv(gym.Env):
         dense_reward -= camera_dense_penalty
 
         reward = dense_reward * self.dt
+        first_hit_apex_reward = 0.0
         if new_hit and rewardable_hit:
             hit_bonus = self.cfg.hit_reward_base + self.cfg.hit_reward_combo * float(min(self.hit_count, 12))
             center_gain = float(np.exp(-0.5 * (contact_center_dist / max(1e-6, float(self.cfg.hit_center_sigma))) ** 2))
@@ -1664,8 +1730,20 @@ class JuggleEnv(gym.Env):
             hit_height_pen = float(self.cfg.hit_height_penalty_weight) * hit_height_excess * hit_height_excess
             low_hit_deficit = max(0.0, (target_ball_z - float(self.cfg.low_hit_apex_margin)) - predicted_apex_z)
             low_hit_pen = float(self.cfg.low_hit_penalty_weight) * low_hit_deficit * low_hit_deficit
+            if self.hit_count <= 1 and float(self.cfg.first_hit_apex_reward_weight) > 0.0:
+                first_hit_apex_err = (float(predicted_apex_z) - target_hit_apex_z) / max(
+                    1e-6,
+                    float(self.cfg.first_hit_apex_sigma),
+                )
+                first_hit_apex_score = float(np.exp(-0.5 * first_hit_apex_err * first_hit_apex_err))
+                first_hit_apex_reward = (
+                    float(self.cfg.first_hit_apex_reward_weight)
+                    * first_hit_apex_score
+                    * max(0.25, center_gain * flatness_score)
+                )
             reward += hit_bonus
             reward += center_flat_hit_reward
+            reward += first_hit_apex_reward
             reward += hit_cadence_rew
             reward -= hit_min_interval_pen
             if predicted_apex_z >= target_ball_z:
@@ -1757,6 +1835,7 @@ class JuggleEnv(gym.Env):
             "racket_up_cos": float(racket_up_cos),
             "flatness_score": float(flatness_score),
             "center_flat_hit_reward": float(center_flat_hit_reward),
+            "first_hit_apex_reward": float(first_hit_apex_reward),
             "non_racket_contact_pen": float(non_racket_contact_pen),
             "flat_contact_pen": float(flat_contact_pen),
             "racket_z_rel": racket_z_rel,
@@ -1781,6 +1860,7 @@ class JuggleEnv(gym.Env):
             "post_hit_survival_reward": float(post_hit_survival_reward),
             "descending_intercept_xy_err": float(descending_intercept_xy_err),
             "descending_intercept_reward": float(descending_intercept_reward),
+            "pre_hit_intercept_reward": float(pre_hit_intercept_reward),
             "chest_target_pos": np.array(self.chest_target_pos, dtype=np.float32),
             "head_front_center": np.array(head_front_center, dtype=np.float32),
             "head_front_normal": np.array(head_front_normal, dtype=np.float32),

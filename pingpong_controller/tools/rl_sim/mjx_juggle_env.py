@@ -40,6 +40,7 @@ from rl_juggle_env_random import RIGHT_ARM_JOINTS, TARGET_DEGREES, _build_temp_x
 
 
 BASE_ACTS = ("Base-X", "Base-Y", "Base-Yaw")
+BALL_OBS_FRAME_PIVOT_MODES = ("legacy_base_origin", "camera_center")
 
 D455_REAL_RIGHT_ARM_RESET_DEGREES = (
     5.736,
@@ -55,7 +56,7 @@ D455_REAL_VIEW_Y_BOUNDS_M = (-0.50, -0.20)
 # Physical z measurements are reported as XML/world z minus the 0.100m base height,
 # while MJX ball z metrics use the XML/world z directly.
 D455_REAL_VIEW_Z_BOUNDS_M = (1.00, 1.47)
-D455_REAL_VIEW_Z_IDEAL_M = (1.02, 1.30)
+D455_REAL_VIEW_Z_IDEAL_M = (1.02, 1.42)
 D455_REAL_VIEW_Y_TARGET_M = -0.35
 
 LEGACY_STAGE4G_RIGHT_ARM_PD: dict[str, tuple[float, float]] = {
@@ -68,27 +69,181 @@ LEGACY_STAGE4G_RIGHT_ARM_PD: dict[str, tuple[float, float]] = {
     "RightArm-6": (10000.0, 350.0),
 }
 
+# Fitted only on the three bounded comparison inverse-MPC replays.  Kp and the
+# five distal-joint Kv values stay identical to moz1_pd.xml; extra damping is
+# limited to the two joints that produced the 200 Hz acceleration overshoot.
+COMPARISON_SAFE_RIGHT_ARM_PD: dict[str, tuple[float, float]] = {
+    "RightArm-0": (80000.0, 2500.0),
+    "RightArm-1": (80000.0, 3240.0),
+    "RightArm-2": (67500.0, 435.0),
+    "RightArm-3": (50000.0, 337.5),
+    "RightArm-4": (32500.0, 187.5),
+    "RightArm-5": (37500.0, 212.5),
+    "RightArm-6": (25000.0, 131.25),
+}
+
+
+def stopping_velocity_limit_jax(
+    distance_rad: jax.Array,
+    acc_limit_rad_s2: jax.Array,
+    dt: float,
+) -> jax.Array:
+    """Exact discrete speed cap that leaves enough distance to stop.
+
+    This is the JAX equivalent of
+    :func:`pingpong_controller.safety_limiter.stopping_velocity_limit`.
+    The semi-implicit command update is ``q_next = q + v_next * dt``.
+    """
+
+    distance = jnp.maximum(jnp.asarray(distance_rad), 0.0)
+    acc_limit = jnp.asarray(acc_limit_rad_s2, dtype=distance.dtype)
+    dt_value = jnp.asarray(float(dt), dtype=distance.dtype)
+    accel_step = acc_limit * dt_value
+    scaled_distance = 8.0 * distance / jnp.maximum(acc_limit * dt_value**2, 1e-12)
+    brake_steps = jnp.floor(0.5 * (jnp.sqrt(1.0 + scaled_distance) - 1.0))
+    return distance / (dt_value * (brake_steps + 1.0)) + 0.5 * accel_step * brake_steps
+
+
+def project_safe_command_step_jax(
+    target_rad: jax.Array,
+    current_cmd_rad: jax.Array,
+    current_vel_rad_s: jax.Array,
+    pos_low_rad: jax.Array,
+    pos_high_rad: jax.Array,
+    vel_limit_rad_s: jax.Array,
+    acc_limit_rad_s2: jax.Array,
+    dt: float,
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
+    """Project a batched command onto a viable position/rate interval.
+
+    Returns ``q_next, v_next, interval_low, interval_high, feasible``.
+    ``feasible`` is per environment and should remain true when reset from a
+    bounded position with zero velocity.  It is exposed as a metric instead
+    of silently claiming safety if an externally modified state is invalid.
+    """
+
+    # Keep a sub-milliradian numerical buffer from the exact position limits.
+    # Without it, repeated float32 integration can land on a boundary with a
+    # tiny outward velocity and make the next discrete viability interval
+    # empty even though the mathematical float64 trajectory is feasible.
+    position_margin = jnp.asarray(2e-6, dtype=jnp.asarray(current_cmd_rad).dtype)
+    safe_pos_low = pos_low_rad + position_margin
+    safe_pos_high = pos_high_rad - position_margin
+    target = jnp.clip(target_rad, safe_pos_low, safe_pos_high)
+    braking_margin = jnp.asarray(2e-6, dtype=jnp.asarray(current_cmd_rad).dtype)
+    distance_low = jnp.maximum(
+        current_cmd_rad - safe_pos_low - braking_margin,
+        0.0,
+    )
+    distance_high = jnp.maximum(
+        safe_pos_high - current_cmd_rad - braking_margin,
+        0.0,
+    )
+    # A 0.02% internal derating absorbs float32 subtraction/accumulation error
+    # so finite-difference outputs remain inside the user-facing hard limits.
+    effective_acc_limit = acc_limit_rad_s2 * 0.9998
+    effective_vel_limit = vel_limit_rad_s * 0.99999
+    stop_low = stopping_velocity_limit_jax(distance_low, effective_acc_limit, dt)
+    stop_high = stopping_velocity_limit_jax(distance_high, effective_acc_limit, dt)
+    accel_step = effective_acc_limit * float(dt)
+
+    interval_low = jnp.maximum(
+        jnp.maximum(-effective_vel_limit, current_vel_rad_s - accel_step),
+        jnp.maximum((safe_pos_low - current_cmd_rad) / float(dt), -stop_low),
+    )
+    interval_high = jnp.minimum(
+        jnp.minimum(effective_vel_limit, current_vel_rad_s + accel_step),
+        jnp.minimum((safe_pos_high - current_cmd_rad) / float(dt), stop_high),
+    )
+    tolerance = 5e-5
+    feasible_joint = interval_low <= interval_high + tolerance
+    feasible = jnp.all(feasible_joint, axis=-1)
+    # Valid limiter states have a non-empty interval.  Collapsing only a
+    # numerically inverted interval keeps JAX execution defined while the
+    # metric makes any true invariant failure visible to validation.
+    interval_mid = 0.5 * (interval_low + interval_high)
+    safe_low = jnp.minimum(interval_low, interval_mid)
+    safe_high = jnp.maximum(interval_high, interval_mid)
+    desired_vel = (target - current_cmd_rad) / float(dt)
+    next_vel = jnp.minimum(jnp.maximum(desired_vel, safe_low), safe_high)
+    next_q = current_cmd_rad + next_vel * float(dt)
+    return next_q, next_vel, interval_low, interval_high, feasible
+
+
+def project_target_tracking_command_step_jax(
+    target_rad: jax.Array,
+    current_cmd_rad: jax.Array,
+    current_vel_rad_s: jax.Array,
+    pos_low_rad: jax.Array,
+    pos_high_rad: jax.Array,
+    vel_limit_rad_s: jax.Array,
+    acc_limit_rad_s2: jax.Array,
+    dt: float,
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
+    """Plan one viable trapezoidal-profile step toward a position target.
+
+    The feasible interval enforces joint position, velocity and acceleration
+    limits.  The additional target-distance stopping speed makes the planner
+    brake for the requested target instead of overshooting and chasing a
+    rapidly changing inverse-MPC/FOPDT position command.
+    """
+
+    _, _, interval_low, interval_high, feasible = project_safe_command_step_jax(
+        target_rad,
+        current_cmd_rad,
+        current_vel_rad_s,
+        pos_low_rad,
+        pos_high_rad,
+        vel_limit_rad_s,
+        acc_limit_rad_s2,
+        dt,
+    )
+    target = jnp.clip(target_rad, pos_low_rad, pos_high_rad)
+    position_error = target - current_cmd_rad
+    # Match the float32 safety margin used by the viable interval.
+    effective_acc_limit = acc_limit_rad_s2 * 0.9998
+    stop_speed = stopping_velocity_limit_jax(
+        jnp.abs(position_error),
+        effective_acc_limit,
+        dt,
+    )
+    desired_vel = jnp.sign(position_error) * jnp.minimum(
+        jnp.abs(position_error) / float(dt),
+        stop_speed,
+    )
+    interval_mid = 0.5 * (interval_low + interval_high)
+    safe_low = jnp.minimum(interval_low, interval_mid)
+    safe_high = jnp.maximum(interval_high, interval_mid)
+    next_vel = jnp.minimum(jnp.maximum(desired_vel, safe_low), safe_high)
+    next_q = current_cmd_rad + next_vel * float(dt)
+    return next_q, next_vel, interval_low, interval_high, feasible
+
 
 def _apply_right_arm_pd_profile(xml_path: Path, profile: str) -> Path:
     if profile in ("", "xml", "current"):
         return xml_path
-    if profile != "legacy_stage4g":
+    profiles = {
+        "legacy_stage4g": LEGACY_STAGE4G_RIGHT_ARM_PD,
+        "comparison_safe_v1": COMPARISON_SAFE_RIGHT_ARM_PD,
+    }
+    if profile not in profiles:
         raise ValueError(f"unknown right_arm_pd_profile={profile!r}")
+    pd_values = profiles[profile]
     tree = ET.parse(xml_path)
     root = tree.getroot()
     patched = 0
     for elem in root.findall(".//actuator/position"):
         name = elem.attrib.get("name", "")
-        if name not in LEGACY_STAGE4G_RIGHT_ARM_PD:
+        if name not in pd_values:
             continue
-        kp, kv = LEGACY_STAGE4G_RIGHT_ARM_PD[name]
+        kp, kv = pd_values[name]
         elem.set("kp", f"{kp:g}")
         elem.set("kv", f"{kv:g}")
         patched += 1
-    if patched != len(LEGACY_STAGE4G_RIGHT_ARM_PD):
+    if patched != len(pd_values):
         raise ValueError(
             f"right_arm_pd_profile={profile!r} patched {patched} actuators, "
-            f"expected {len(LEGACY_STAGE4G_RIGHT_ARM_PD)}"
+            f"expected {len(pd_values)}"
         )
     tree.write(xml_path, encoding="unicode")
     return xml_path
@@ -121,6 +276,11 @@ class MjxJuggleConfig:
     falling_reset_contact_xy_jitter: float = 0.0
     falling_reset_contact_rel_height: float = -1.0
     falling_reset_min_downward_speed: float = 0.12
+    racket_launch_surface_gap_range_m: tuple[float, float] = (0.005, 0.010)
+    racket_launch_xy_jitter: float = 0.004
+    racket_launch_vxy_max: float = 0.003
+    racket_launch_vnormal_max: float = 0.003
+    racket_launch_edge_margin: float = 0.005
     ball_obs_rate_hz: float = 50.0
     ball_obs_fractional_rate: bool = False
     ball_obs_pos_noise_std: float = 0.003
@@ -194,6 +354,9 @@ class MjxJuggleConfig:
     racket_z_soft_penalty_weight: float = 1.2
     racket_up_drift_penalty_weight: float = 0.3
     racket_up_drift_vel_thresh: float = 0.02
+    racket_flatness_penalty_weight: float = 0.0
+    racket_flatness_target_cos: float = 0.970
+    racket_flatness_sigma: float = 0.060
     racket_z_hard_limit_down: float = 0.12
     racket_z_hard_limit_up: float = 0.24
     terminate_on_racket_z_limit: bool = True
@@ -201,6 +364,9 @@ class MjxJuggleConfig:
     racket_z_limit_termination_penalty_per_hit: float = 0.0
     action_penalty_weight: float = 0.003
     action_delta_penalty_weight: float = 0.001
+    # Penalize only the part of the Gaussian policy sample outside the
+    # executable normalized action range. The command is still hard-clipped.
+    action_clip_excess_penalty_weight: float = 0.0
     termination_miss_penalty_base: float = 2.5
     termination_miss_penalty_per_hit: float = 0.8
     termination_miss_penalty_requires_hit: bool = True
@@ -279,9 +445,16 @@ class MjxJuggleConfig:
     actuator_mpc_nominal_weight: float = 0.25
     actuator_mpc_delta_weight: float = 0.08
     actuator_mpc_max_delta_rad: float = 0.0
+    actuator_mpc_command_dynamics_constraint: bool = False
+    actuator_mpc_command_velocity_weight: float = 0.0
+    actuator_mpc_command_acceleration_weight: float = 0.0
+    actuator_mpc_command_velocity_scale: float = 1.0
+    actuator_mpc_command_acceleration_scale: float = 1.0
+    actuator_mpc_feedback_source: str = "applied"  # "applied" or "actual"
     camera_visibility_mode: str = "off"
     virtual_camera_pose_mode: str = "base_extrinsic"  # "base_extrinsic" or legacy "body_mount"
     virtual_camera_base_body_name: str = D455_848_UNDISTORTED_SIM_BASE_BODY
+    virtual_camera_require_base_body: bool = False
     virtual_camera_body_name: str = "head22"
     virtual_camera_mount_pos: tuple[float, float, float] = (0.0, -0.068, 0.062)
     virtual_camera_mount_quat: tuple[float, float, float, float] = (0.707107, 0.0, 0.0, -0.707107)
@@ -316,6 +489,25 @@ class MjxJuggleConfig:
     camera_box_depth_min: float = 0.20
     camera_box_depth_max: float = 1.50
     arm_action_limiter: bool = False
+    # Final command projection after inverse-MPC/lead compensation and before
+    # the actuator delay/filter.  This mirrors the real publish-time safety
+    # layer and keeps old checkpoints bit-compatible unless explicitly enabled.
+    arm_post_compensation_limiter: bool = False
+    # Optional plant-side trajectory limiter after pure delay/FOPDT.  This
+    # models the drive/servo motion-profile limits observed on hardware while
+    # leaving the inverse-MPC command and parameters unchanged.
+    arm_servo_target_limiter: bool = False
+    # Target-aware drive-side trajectory planner used by constrained inverse
+    # MPC.  It acts on the delay/FOPDT output and sends position only to the
+    # unchanged XML position PD.  Scales reserve planner headroom without
+    # changing the physical/user-facing joint limits.
+    arm_servo_target_tracking_planner: bool = False
+    arm_servo_target_velocity_scale: float = 1.0
+    arm_servo_target_acceleration_scale: float = 1.0
+    # Drive-level guard on the simulated joint state after every MJX substep.
+    # It models a hardware motion-profile envelope while matching the
+    # finite-difference qdot/qddot reported by validation/action plots.
+    arm_actual_state_limiter: bool = False
     arm_vel_limit_deg_s: tuple[float, ...] = (210.0, 210.0, 240.0, 240.0, 300.0, 300.0, 300.0)
     arm_acc_limit_deg_s2: tuple[float, ...] = (1300.0, 1300.0, 1800.0, 3000.0, 3000.0, 3000.0, 3000.0)
     arm_vel_limit_penalty_weight: float = 0.0
@@ -352,6 +544,7 @@ class MjxJuggleConfig:
     ball_obs_view_z_high_missing_range_m: tuple[float, float] = (0.0, 0.0)
     ball_obs_nominal_pos_bias_base: tuple[float, float, float] = (0.0, 0.0, 0.0)
     ball_obs_nominal_vel_bias_base: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    ball_obs_frame_pivot_mode: str = "legacy_base_origin"
     dr_randomize_ball_obs_frame: bool = False
     dr_ball_obs_pos_bias_base_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
     dr_ball_obs_rot_bias_deg: tuple[float, float, float] = (0.0, 0.0, 0.0)
@@ -371,6 +564,12 @@ class MjxJuggleConfig:
     delay_bin_edges_ms: tuple[float, ...] = DEFAULT_DELAY_BIN_EDGES_MS
     delay_jitter_ms: float = 0.0
     delay_sampling_mode: str = "balanced_bins"
+    # Preserve the nominal hardware-delay command history used by the 67D
+    # policy features, while applying the latest command to the simulated
+    # servo immediately.  This models an upstream real compensator whose
+    # closed-loop residual delay is approximately zero without changing the
+    # deployed policy's 67D observation contract.
+    actuator_delay_observation_only: bool = False
     include_tau_act_norm: bool = False
     include_command_state: bool = False
     include_phase_features: bool = False
@@ -405,17 +604,22 @@ class EnvState(NamedTuple):
     reset_ball_vel: jax.Array
     reset_target_offset: jax.Array
     reset_disturbance_strength: jax.Array
+    reset_ball_surface_gap: jax.Array
+    reset_ball_racket_center_offset: jax.Array
     arm_cmd_q: jax.Array
     arm_cmd_qvel: jax.Array
     arm_q_ref_latest: jax.Array
     arm_q_ref_active: jax.Array
     arm_actuator_q_ref_latest: jax.Array
     arm_actuator_q_ref_active: jax.Array
+    arm_safe_q_ref_latest: jax.Array
+    arm_safe_qvel: jax.Array
     reset_ball_obs_missing: jax.Array
     ball_obs_missing_episode_coherent_enabled: jax.Array
     ball_obs_camera_missing_enabled: jax.Array
     ball_obs_view_bounds_missing_enabled: jax.Array
     arm_applied_q: jax.Array
+    arm_applied_qvel: jax.Array
     prev_action: jax.Array
     prev_arm_qvel: jax.Array
     prev_ball_pos: jax.Array
@@ -555,6 +759,42 @@ def _euler_xyz_to_mat_jax(euler_xyz: jax.Array) -> jax.Array:
     )
 
 
+def _apply_ball_obs_frame_transform(
+    bpos_base: jax.Array,
+    bvel_base: jax.Array,
+    rot: jax.Array,
+    scale: jax.Array,
+    pos_bias_base: jax.Array,
+    vel_bias_base: jax.Array,
+    pivot_base: jax.Array | None,
+) -> tuple[jax.Array, jax.Array]:
+    """Apply one batched observation-frame perturbation.
+
+    ``pivot_base=None`` preserves the historical base-origin transform exactly.
+    A supplied pivot rotates/scales positions around that point, while velocity
+    remains a free vector and therefore never receives a positional pivot.
+    """
+
+    scale_column = scale[:, None]
+    if pivot_base is None:
+        bpos_obs = (
+            scale_column * jnp.einsum("nij,nj->ni", rot, bpos_base)
+            + pos_bias_base
+        )
+    else:
+        bpos_obs = (
+            pivot_base
+            + scale_column
+            * jnp.einsum("nij,nj->ni", rot, bpos_base - pivot_base)
+            + pos_bias_base
+        )
+    bvel_obs = (
+        scale_column * jnp.einsum("nij,nj->ni", rot, bvel_base)
+        + vel_bias_base
+    )
+    return bpos_obs, bvel_obs
+
+
 def _batch_tree(tree, n_envs: int):
     def batch_leaf(x):
         if hasattr(x, "shape") and hasattr(x, "dtype"):
@@ -573,6 +813,43 @@ class MjxJuggleEnv:
         self.xml_path = Path(xml_path).resolve()
         self.n_envs = int(n_envs)
         self.cfg = cfg
+        cfg_values = getattr(cfg, "__dict__", {})
+        self.vc_pose_mode = str(cfg_values.get("virtual_camera_pose_mode", "body_mount"))
+        self.ball_obs_frame_pivot_mode = str(
+            cfg_values.get("ball_obs_frame_pivot_mode", "legacy_base_origin")
+        )
+        if self.ball_obs_frame_pivot_mode not in BALL_OBS_FRAME_PIVOT_MODES:
+            raise ValueError(
+                "unknown ball_obs_frame_pivot_mode="
+                f"{self.ball_obs_frame_pivot_mode!r}; expected one of "
+                f"{list(BALL_OBS_FRAME_PIVOT_MODES)}"
+            )
+        if (
+            self.ball_obs_frame_pivot_mode == "camera_center"
+            and self.vc_pose_mode not in {"base_extrinsic", "body_mount"}
+        ):
+            raise ValueError(
+                "camera-centered ball observation frame requires "
+                "virtual_camera_pose_mode='base_extrinsic' or 'body_mount', got "
+                f"{self.vc_pose_mode!r}"
+            )
+        self.ball_reset_mode = str(cfg.ball_reset_mode)
+        valid_ball_reset_modes = {"anchor_drop", "falling_contact", "racket_launch"}
+        if self.ball_reset_mode not in valid_ball_reset_modes:
+            raise ValueError(
+                f"unknown ball_reset_mode={self.ball_reset_mode!r}; "
+                f"expected one of {sorted(valid_ball_reset_modes)}"
+            )
+        if self.ball_reset_mode == "racket_launch":
+            gap_lo, gap_hi = [float(v) for v in cfg.racket_launch_surface_gap_range_m]
+            if min(gap_lo, gap_hi) < 0.0:
+                raise ValueError("racket_launch_surface_gap_range_m must be non-negative")
+            if float(cfg.racket_launch_xy_jitter) < 0.0:
+                raise ValueError("racket_launch_xy_jitter must be non-negative")
+            if float(cfg.racket_launch_vxy_max) < 0.0 or float(cfg.racket_launch_vnormal_max) < 0.0:
+                raise ValueError("racket-launch velocity limits must be non-negative")
+            if float(cfg.racket_launch_edge_margin) < 0.0:
+                raise ValueError("racket_launch_edge_margin must be non-negative")
         if bool(cfg.use_delay_bin_value_heads):
             raise NotImplementedError(
                 "use_delay_bin_value_heads is reserved for a future PPO critic "
@@ -580,6 +857,13 @@ class MjxJuggleEnv:
             )
         self.high_latency_obs = bool(cfg.high_latency_obs)
         self.delay_conditioning = bool(cfg.enable_delay_conditioning)
+        self.actuator_delay_observation_only = bool(
+            cfg.actuator_delay_observation_only
+        )
+        if self.actuator_delay_observation_only and not self.delay_conditioning:
+            raise ValueError(
+                "actuator_delay_observation_only requires enable_delay_conditioning"
+            )
         self.high_latency_history_frames = (
             max(1, int(cfg.high_latency_history_frames)) if self.high_latency_obs else 1
         )
@@ -683,14 +967,41 @@ class MjxJuggleEnv:
         self.base_body_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_BODY, "base_link")
         if self.base_body_id < 0:
             self.base_body_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_BODY, "base")
+        if self.base_body_id < 0 and self.ball_obs_frame_pivot_mode == "camera_center":
+            raise ValueError(
+                "camera-centered ball observation frame requires a 'base_link' or 'base' body"
+            )
         self.virtual_camera_base_body_id = mujoco.mj_name2id(
             self.mj_model, mujoco.mjtObj.mjOBJ_BODY, str(cfg.virtual_camera_base_body_name)
         )
+        if (
+            self.virtual_camera_base_body_id < 0
+            and (
+                bool(cfg.virtual_camera_require_base_body)
+                or (
+                    self.ball_obs_frame_pivot_mode == "camera_center"
+                    and self.vc_pose_mode == "base_extrinsic"
+                )
+            )
+        ):
+            raise ValueError(
+                "required virtual camera base body is missing: "
+                f"{cfg.virtual_camera_base_body_name!r}"
+            )
         if self.virtual_camera_base_body_id < 0:
             self.virtual_camera_base_body_id = self.base_body_id
         self.virtual_camera_body_id = mujoco.mj_name2id(
             self.mj_model, mujoco.mjtObj.mjOBJ_BODY, str(cfg.virtual_camera_body_name)
         )
+        if (
+            self.virtual_camera_body_id < 0
+            and self.ball_obs_frame_pivot_mode == "camera_center"
+            and self.vc_pose_mode == "body_mount"
+        ):
+            raise ValueError(
+                "camera-centered ball observation frame requires virtual camera body "
+                f"{cfg.virtual_camera_body_name!r}"
+            )
         non_racket_gids = []
         for gid in range(self.mj_model.ngeom):
             name = mujoco.mj_id2name(self.mj_model, mujoco.mjtObj.mjOBJ_GEOM, gid)
@@ -823,8 +1134,6 @@ class MjxJuggleEnv:
         self.max_obs_latency_steps = max(0, int(cfg.dr_obs_latency_steps_range[1])) if cfg.domain_randomization else 0
         self.max_action_latency_steps = max(0, int(cfg.dr_action_latency_steps_range[1])) if cfg.domain_randomization else 0
         self.hit_reward_count_cap_active = self._get_hit_reward_count_cap()
-        cfg_values = getattr(cfg, "__dict__", {})
-        self.vc_pose_mode = str(cfg_values.get("virtual_camera_pose_mode", "body_mount"))
         self.vc_mount_R = jnp.asarray(_quat_wxyz_to_mat_np(cfg.virtual_camera_mount_quat), dtype=jnp.float32)
         self.vc_mount_pos = jnp.asarray(cfg.virtual_camera_mount_pos, dtype=jnp.float32)
         self.vc_optical_pos = jnp.asarray(cfg.virtual_camera_optical_pos, dtype=jnp.float32)
@@ -988,16 +1297,25 @@ class MjxJuggleEnv:
         key_ball_obs_view_z_high = split_keys[:, 31]
         key_falling_tau = split_keys[:, 32]
         key_falling_apex = split_keys[:, 33]
-        falling_reset = str(self.cfg.ball_reset_mode) == "falling_contact"
+        falling_reset = self.ball_reset_mode == "falling_contact"
+        racket_launch_reset = self.ball_reset_mode == "racket_launch"
         xy_jitter_limit = (
             float(self.cfg.falling_reset_contact_xy_jitter)
             if falling_reset
-            else float(self.cfg.ball_spawn_xy_jitter)
+            else (
+                float(self.cfg.racket_launch_xy_jitter)
+                if racket_launch_reset
+                else float(self.cfg.ball_spawn_xy_jitter)
+            )
         )
         vxy_limit = (
             float(self.cfg.falling_reset_vxy_max)
             if falling_reset and float(self.cfg.falling_reset_vxy_max) > 0.0
-            else float(self.cfg.ball_init_vxy_max)
+            else (
+                float(self.cfg.racket_launch_vxy_max)
+                if racket_launch_reset
+                else float(self.cfg.ball_init_vxy_max)
+            )
         )
         xy_jitter = jax.vmap(
             lambda k: jax.random.uniform(
@@ -1007,14 +1325,27 @@ class MjxJuggleEnv:
                 maxval=xy_jitter_limit,
             )
         )(key_xy)
-        z_jitter = jax.vmap(
-            lambda k: jax.random.uniform(
-                k,
-                (),
-                minval=-float(self.cfg.ball_spawn_z_jitter),
-                maxval=float(self.cfg.ball_spawn_z_jitter),
-            )
-        )(key_z)
+        if racket_launch_reset:
+            gap_lo, gap_hi = sorted(float(v) for v in self.cfg.racket_launch_surface_gap_range_m)
+            racket_launch_surface_gap = jax.vmap(
+                lambda k: jax.random.uniform(
+                    k,
+                    (),
+                    minval=gap_lo,
+                    maxval=max(gap_lo + 1e-6, gap_hi),
+                )
+            )(key_z)
+            z_jitter = jnp.zeros((n_envs,), dtype=jnp.float32)
+        else:
+            racket_launch_surface_gap = jnp.zeros((n_envs,), dtype=jnp.float32)
+            z_jitter = jax.vmap(
+                lambda k: jax.random.uniform(
+                    k,
+                    (),
+                    minval=-float(self.cfg.ball_spawn_z_jitter),
+                    maxval=float(self.cfg.ball_spawn_z_jitter),
+                )
+            )(key_z)
         vxy = jax.vmap(
             lambda k: jax.random.uniform(
                 k,
@@ -1023,7 +1354,11 @@ class MjxJuggleEnv:
                 maxval=vxy_limit,
             )
         )(key_vel)
-        vz_jitter_mag = abs(float(self.cfg.ball_init_vz_jitter))
+        vz_jitter_mag = (
+            float(self.cfg.racket_launch_vnormal_max)
+            if racket_launch_reset
+            else abs(float(self.cfg.ball_init_vz_jitter))
+        )
         vz_jitter = jax.vmap(
             lambda k: jax.random.uniform(
                 k,
@@ -1032,7 +1367,7 @@ class MjxJuggleEnv:
                 maxval=vz_jitter_mag,
             )
         )(key_ball_init_vz)
-        init_vz = float(self.cfg.ball_init_vz) + vz_jitter
+        init_vz = vz_jitter if racket_launch_reset else float(self.cfg.ball_init_vz) + vz_jitter
         target_x_offset = jax.vmap(
             lambda k: jax.random.uniform(
                 k,
@@ -1511,6 +1846,47 @@ class MjxJuggleEnv:
             ball_xy = contact_xy - vxy * tau[:, None]
             ball_z = contact_z - init_vz * tau + 0.5 * g_abs * tau * tau
             ball_init = jnp.concatenate([ball_xy, ball_z[:, None]], axis=-1)
+            ball_init_vel = jnp.concatenate([vxy, init_vz[:, None]], axis=-1)
+            reset_ball_racket_center_offset = jnp.linalg.norm(xy_jitter, axis=-1)
+        elif racket_launch_reset:
+            racket_xmat = data.geom_xmat[:, self.racket_geom_id].reshape((-1, 3, 3))
+            tangent_x = racket_xmat[:, :, 0]
+            tangent_y = racket_xmat[:, :, 1]
+            normal_raw = racket_xmat[:, :, 2]
+            normal_sign = jnp.where(normal_raw[:, 2] >= 0.0, 1.0, -1.0)
+            racket_normal = normal_raw * normal_sign[:, None]
+            racket_half_thickness = model.geom_size[:, self.racket_geom_id, 1]
+            racket_radius = model.geom_size[:, self.racket_geom_id, 0]
+            ball_radius = model.geom_size[:, self.ball_geom_id, 0]
+            max_center_offset = jnp.maximum(
+                0.0,
+                racket_radius - ball_radius - float(self.cfg.racket_launch_edge_margin),
+            )
+            raw_offset_norm = jnp.linalg.norm(xy_jitter, axis=-1)
+            offset_scale = jnp.minimum(
+                1.0,
+                max_center_offset / jnp.maximum(raw_offset_norm, 1e-8),
+            )
+            launch_offset_uv = xy_jitter * offset_scale[:, None]
+            launch_tangent_offset = (
+                tangent_x * launch_offset_uv[:, 0:1]
+                + tangent_y * launch_offset_uv[:, 1:2]
+            )
+            racket_surface_center = (
+                data.geom_xpos[:, self.racket_geom_id]
+                + racket_normal * racket_half_thickness[:, None]
+            )
+            ball_init = (
+                racket_surface_center
+                + racket_normal * (ball_radius + racket_launch_surface_gap)[:, None]
+                + launch_tangent_offset
+            )
+            ball_init_vel = (
+                tangent_x * vxy[:, 0:1]
+                + tangent_y * vxy[:, 1:2]
+                + racket_normal * init_vz[:, None]
+            )
+            reset_ball_racket_center_offset = jnp.linalg.norm(launch_offset_uv, axis=-1)
         else:
             ball_init = jnp.concatenate(
                 [
@@ -1519,6 +1895,8 @@ class MjxJuggleEnv:
                 ],
                 axis=-1,
             )
+            ball_init_vel = jnp.concatenate([vxy, init_vz[:, None]], axis=-1)
+            reset_ball_racket_center_offset = jnp.linalg.norm(xy_jitter, axis=-1)
         qpos = data.qpos
         qvel = data.qvel
         qpos = qpos.at[:, self.ball_qadr : self.ball_qadr + 3].set(ball_init)
@@ -1526,9 +1904,7 @@ class MjxJuggleEnv:
             jnp.broadcast_to(jnp.asarray([1.0, 0.0, 0.0, 0.0], dtype=jnp.float32), (n_envs, 4))
         )
         qvel = qvel.at[:, self.ball_vadr : self.ball_vadr + 6].set(0.0)
-        qvel = qvel.at[:, self.ball_vadr : self.ball_vadr + 2].set(vxy)
-        qvel = qvel.at[:, self.ball_vadr + 2].set(init_vz)
-        ball_init_vel = jnp.concatenate([vxy, init_vz[:, None]], axis=-1)
+        qvel = qvel.at[:, self.ball_vadr : self.ball_vadr + 3].set(ball_init_vel)
         data = data.replace(qpos=qpos, qvel=qvel, ctrl=jnp.broadcast_to(self.default_ctrl, (n_envs, self.mj_model.nu)))
         data = self.batched_forward(model, data)
 
@@ -1609,6 +1985,8 @@ class MjxJuggleEnv:
             reset_ball_vel=ball_init_vel,
             reset_target_offset=episode_target_offset,
             reset_disturbance_strength=reset_disturbance_strength,
+            reset_ball_surface_gap=racket_launch_surface_gap,
+            reset_ball_racket_center_offset=reset_ball_racket_center_offset,
             reset_ball_obs_missing=reset_ball_obs_missing,
             arm_cmd_q=jnp.broadcast_to(self.warm_arm_q, (n_envs, self.act_dim)),
             arm_cmd_qvel=jnp.zeros((n_envs, self.act_dim), dtype=jnp.float32),
@@ -1616,10 +1994,13 @@ class MjxJuggleEnv:
             arm_q_ref_active=jnp.broadcast_to(self.warm_arm_q, (n_envs, self.act_dim)),
             arm_actuator_q_ref_latest=jnp.broadcast_to(self.warm_arm_q, (n_envs, self.act_dim)),
             arm_actuator_q_ref_active=jnp.broadcast_to(self.warm_arm_q, (n_envs, self.act_dim)),
+            arm_safe_q_ref_latest=jnp.broadcast_to(self.warm_arm_q, (n_envs, self.act_dim)),
+            arm_safe_qvel=jnp.zeros((n_envs, self.act_dim), dtype=jnp.float32),
             ball_obs_missing_episode_coherent_enabled=coherent_missing_enabled,
             ball_obs_camera_missing_enabled=camera_missing_enabled,
             ball_obs_view_bounds_missing_enabled=view_bounds_missing_enabled,
             arm_applied_q=jnp.broadcast_to(self.warm_arm_q, (n_envs, self.act_dim)),
+            arm_applied_qvel=jnp.zeros((n_envs, self.act_dim), dtype=jnp.float32),
             prev_action=zero_action,
             prev_arm_qvel=jnp.broadcast_to(self.warm_arm_qvel, (n_envs, self.act_dim)),
             prev_ball_pos=bpos,
@@ -2026,13 +2407,36 @@ class MjxJuggleEnv:
         bvel_base: jax.Array,
     ) -> tuple[jax.Array, jax.Array]:
         rot = jax.vmap(_euler_xyz_to_mat_jax)(state.ball_obs_rot_bias_rpy)
-        scale = state.ball_obs_scale[:, None]
-        bpos_obs = scale * jnp.einsum("nij,nj->ni", rot, bpos_base) + state.ball_obs_pos_bias_base
-        bvel_obs = scale * jnp.einsum("nij,nj->ni", rot, bvel_base) + state.ball_obs_vel_bias_base
-        return bpos_obs, bvel_obs
+        pivot_base = None
+        if self.ball_obs_frame_pivot_mode == "camera_center":
+            cam_pos, _, camera_available = self._virtual_camera_pose(state.data)
+            if not camera_available:
+                raise RuntimeError(
+                    "camera-centered ball observation frame has no virtual camera pose"
+                )
+            base_q = jnp.stack(
+                [
+                    state.data.qpos[:, self.base_x_qadr],
+                    state.data.qpos[:, self.base_y_qadr],
+                    state.data.qpos[:, self.base_yaw_qadr],
+                ],
+                axis=-1,
+            )
+            pivot_base = self._point_to_base(cam_pos, base_q)
+        return _apply_ball_obs_frame_transform(
+            bpos_base,
+            bvel_base,
+            rot,
+            state.ball_obs_scale,
+            state.ball_obs_pos_bias_base,
+            state.ball_obs_vel_bias_base,
+            pivot_base,
+        )
 
     def step(self, state: EnvState, action: jax.Array) -> tuple[EnvState, jax.Array, jax.Array, jax.Array, dict[str, jax.Array]]:
-        policy_action = jnp.clip(action, -1.0, 1.0)
+        raw_policy_action = action
+        policy_action = jnp.clip(raw_policy_action, -1.0, 1.0)
+        action_clip_excess = jnp.maximum(jnp.abs(raw_policy_action) - 1.0, 0.0)
         action_buffer = jnp.concatenate([state.action_buffer[:, 1:, :], policy_action[:, None, :]], axis=1)
         action_idx = (self.max_action_latency_steps - state.action_latency_steps).astype(jnp.int32)
         delayed_policy_action = action_buffer[jnp.arange(action_buffer.shape[0]), action_idx]
@@ -2119,7 +2523,15 @@ class MjxJuggleEnv:
                 [state.actuator_command_buffer[:, 1:, :], arm_cmd_q[:, None, :]],
                 axis=1,
             )
-            y_pred = state.arm_applied_q
+            mpc_feedback_source = str(self.cfg.actuator_mpc_feedback_source or "applied").strip().lower().replace("-", "_")
+            if mpc_feedback_source in {"actual", "sim", "joint", "joint_state"}:
+                y_pred = state.data.qpos[:, self.arm_qadr]
+            elif mpc_feedback_source in {"applied", "actuator", "servo", "servo_target"}:
+                y_pred = state.arm_applied_q
+            else:
+                raise ValueError(
+                    "actuator_mpc_feedback_source must be 'applied' or 'actual'"
+                )
             for s in range(self.command_buffer_len - 1):
                 idx = jnp.clip(self.command_buffer_len - 1 - comp_delay_steps + s, 0, self.command_buffer_len - 1)
                 queued = pred_buffer[jnp.arange(pred_buffer.shape[0]), idx]
@@ -2155,6 +2567,59 @@ class MjxJuggleEnv:
             if max_mpc > 0.0:
                 mpc_delta = jnp.clip(mpc_delta, -max_mpc, max_mpc)
             arm_actuator_q_ref_latest = jnp.clip(arm_cmd_q + mpc_delta, self.arm_lo, self.arm_hi)
+            mpc_command_velocity_scale = float(self.cfg.actuator_mpc_command_velocity_scale)
+            mpc_command_acceleration_scale = float(self.cfg.actuator_mpc_command_acceleration_scale)
+            if not (0.0 < mpc_command_velocity_scale <= 1.0):
+                raise ValueError("actuator_mpc_command_velocity_scale must be in (0, 1]")
+            if not (0.0 < mpc_command_acceleration_scale <= 1.0):
+                raise ValueError("actuator_mpc_command_acceleration_scale must be in (0, 1]")
+            mpc_command_velocity_limit = self.arm_vel_limit_rad_s * mpc_command_velocity_scale
+            mpc_command_acceleration_limit = self.arm_acc_limit_rad_s2 * mpc_command_acceleration_scale
+            mpc_velocity_weight = max(0.0, float(self.cfg.actuator_mpc_command_velocity_weight))
+            mpc_acceleration_weight = max(0.0, float(self.cfg.actuator_mpc_command_acceleration_weight))
+            if mpc_velocity_weight > 0.0 or mpc_acceleration_weight > 0.0:
+                refined_num = arm_actuator_q_ref_latest
+                refined_den = jnp.ones_like(arm_actuator_q_ref_latest)
+                if mpc_velocity_weight > 0.0:
+                    vel_scale = jnp.maximum(mpc_command_velocity_limit * self.dt, 1e-6)
+                    vel_weight = mpc_velocity_weight / (vel_scale * vel_scale)
+                    refined_num = refined_num + vel_weight[None, :] * state.arm_safe_q_ref_latest
+                    refined_den = refined_den + vel_weight[None, :]
+                if mpc_acceleration_weight > 0.0:
+                    acc_center = state.arm_safe_q_ref_latest + state.arm_safe_qvel * self.dt
+                    acc_scale = jnp.maximum(mpc_command_acceleration_limit * self.dt * self.dt, 1e-6)
+                    acc_weight = mpc_acceleration_weight / (acc_scale * acc_scale)
+                    refined_num = refined_num + acc_weight[None, :] * acc_center
+                    refined_den = refined_den + acc_weight[None, :]
+                arm_actuator_q_ref_latest = refined_num / jnp.maximum(refined_den, 1e-9)
+            if bool(self.cfg.actuator_mpc_command_dynamics_constraint):
+                command_low = self.arm_lo
+                command_high = self.arm_hi
+                command_low = jnp.maximum(
+                    command_low[None, :],
+                    state.arm_safe_q_ref_latest - mpc_command_velocity_limit[None, :] * self.dt,
+                )
+                command_high = jnp.minimum(
+                    command_high[None, :],
+                    state.arm_safe_q_ref_latest + mpc_command_velocity_limit[None, :] * self.dt,
+                )
+                command_acc_center = state.arm_safe_q_ref_latest + state.arm_safe_qvel * self.dt
+                command_low = jnp.maximum(
+                    command_low,
+                    command_acc_center - mpc_command_acceleration_limit[None, :] * self.dt * self.dt,
+                )
+                command_high = jnp.minimum(
+                    command_high,
+                    command_acc_center + mpc_command_acceleration_limit[None, :] * self.dt * self.dt,
+                )
+                command_mid = 0.5 * (command_low + command_high)
+                command_safe_low = jnp.minimum(command_low, command_mid)
+                command_safe_high = jnp.maximum(command_high, command_mid)
+                arm_actuator_q_ref_latest = jnp.minimum(
+                    jnp.maximum(arm_actuator_q_ref_latest, command_safe_low),
+                    command_safe_high,
+                )
+            arm_actuator_q_ref_latest = jnp.clip(arm_actuator_q_ref_latest, self.arm_lo, self.arm_hi)
         elif comp_mode in {"inverse_smith", "smith", "inverse"}:
             comp_delay_steps = jnp.rint(
                 delay_steps.astype(jnp.float32) * max(0.0, float(self.cfg.actuator_inverse_delay_scale))
@@ -2211,10 +2676,51 @@ class MjxJuggleEnv:
         else:
             arm_actuator_q_ref_latest = arm_q_ref_latest
 
+        if bool(self.cfg.arm_post_compensation_limiter):
+            (
+                arm_safe_q_ref_latest,
+                arm_safe_qvel,
+                arm_safe_interval_low,
+                arm_safe_interval_high,
+                arm_safe_feasible,
+            ) = project_safe_command_step_jax(
+                arm_actuator_q_ref_latest,
+                state.arm_safe_q_ref_latest,
+                state.arm_safe_qvel,
+                self.arm_lo,
+                self.arm_hi,
+                self.arm_vel_limit_rad_s,
+                self.arm_acc_limit_rad_s2,
+                self.dt,
+            )
+        else:
+            arm_safe_q_ref_latest = arm_actuator_q_ref_latest
+            arm_safe_qvel = (
+                arm_safe_q_ref_latest - state.arm_safe_q_ref_latest
+            ) / max(self.dt, 1e-6)
+            arm_safe_interval_low = -jnp.broadcast_to(
+                self.arm_vel_limit_rad_s,
+                arm_safe_qvel.shape,
+            )
+            arm_safe_interval_high = jnp.broadcast_to(
+                self.arm_vel_limit_rad_s,
+                arm_safe_qvel.shape,
+            )
+            arm_safe_feasible = jnp.ones(
+                (arm_safe_qvel.shape[0],),
+                dtype=bool,
+            )
+        arm_safe_qacc = (
+            arm_safe_qvel - state.arm_safe_qvel
+        ) / max(self.dt, 1e-6)
+        arm_safe_clip = jnp.abs(
+            arm_actuator_q_ref_latest - arm_safe_q_ref_latest
+        ) > 1e-7
+
         if self.delay_conditioning:
             command_buffer = jnp.concatenate([state.command_buffer[:, 1:, :], arm_q_ref_latest[:, None, :]], axis=1)
             actuator_command_buffer = jnp.concatenate(
-                [state.actuator_command_buffer[:, 1:, :], arm_actuator_q_ref_latest[:, None, :]],
+                [state.actuator_command_buffer[:, 1:, :], arm_safe_q_ref_latest[:, None, :]],
                 axis=1,
             )
             active_idx = (command_buffer.shape[1] - 1 - delay_steps).astype(jnp.int32)
@@ -2224,21 +2730,102 @@ class MjxJuggleEnv:
             command_buffer = state.command_buffer
             actuator_command_buffer = state.actuator_command_buffer
             arm_q_ref_active = arm_q_ref_latest
-            arm_actuator_q_ref_active = arm_actuator_q_ref_latest
+            arm_actuator_q_ref_active = arm_safe_q_ref_latest
+
+        # The observation-only-delay ablation intentionally keeps
+        # arm_*_q_ref_active on the nominal delayed history for the 67D actor
+        # and asymmetric critic, but bypasses that delay on the simulated
+        # plant.  No future reference is used: the servo receives only the
+        # current command that was just produced by the causal action
+        # integration path.
+        arm_servo_q_ref_active = (
+            arm_safe_q_ref_latest
+            if self.actuator_delay_observation_only
+            else arm_actuator_q_ref_active
+        )
+        servo_uses_delayed_reference = bool(
+            self.delay_conditioning
+            and not self.actuator_delay_observation_only
+        )
 
         if bool(self.cfg.actuator_cmd_filter):
             tau = jnp.maximum(state.actuator_cmd_tau, 0.0)
             alpha = jnp.where(tau <= 1e-6, 1.0, self.dt / (tau + self.dt))
             gain_target_q = self.warm_arm_q[None, :] + state.actuator_cmd_gain[:, None] * (
-                arm_actuator_q_ref_active - self.warm_arm_q[None, :]
+                arm_servo_q_ref_active - self.warm_arm_q[None, :]
             )
-            arm_applied_q = jnp.clip(
+            arm_servo_target_unlimited = jnp.clip(
                 state.arm_applied_q + alpha[:, None] * (gain_target_q - state.arm_applied_q),
                 self.arm_lo,
                 self.arm_hi,
             )
         else:
-            arm_applied_q = arm_actuator_q_ref_active
+            arm_servo_target_unlimited = arm_servo_q_ref_active
+        servo_velocity_scale = float(self.cfg.arm_servo_target_velocity_scale)
+        servo_acceleration_scale = float(self.cfg.arm_servo_target_acceleration_scale)
+        if not (0.0 < servo_velocity_scale <= 1.0):
+            raise ValueError("arm_servo_target_velocity_scale must be in (0, 1]")
+        if not (0.0 < servo_acceleration_scale <= 1.0):
+            raise ValueError("arm_servo_target_acceleration_scale must be in (0, 1]")
+        servo_velocity_limit = self.arm_vel_limit_rad_s * servo_velocity_scale
+        servo_acceleration_limit = self.arm_acc_limit_rad_s2 * servo_acceleration_scale
+        if bool(self.cfg.arm_servo_target_tracking_planner):
+            (
+                arm_applied_q,
+                arm_applied_qvel,
+                arm_servo_interval_low,
+                arm_servo_interval_high,
+                arm_servo_feasible,
+            ) = project_target_tracking_command_step_jax(
+                arm_servo_target_unlimited,
+                state.arm_applied_q,
+                state.arm_applied_qvel,
+                self.arm_lo,
+                self.arm_hi,
+                servo_velocity_limit,
+                servo_acceleration_limit,
+                self.dt,
+            )
+        elif bool(self.cfg.arm_servo_target_limiter):
+            (
+                arm_applied_q,
+                arm_applied_qvel,
+                arm_servo_interval_low,
+                arm_servo_interval_high,
+                arm_servo_feasible,
+            ) = project_safe_command_step_jax(
+                arm_servo_target_unlimited,
+                state.arm_applied_q,
+                state.arm_applied_qvel,
+                self.arm_lo,
+                self.arm_hi,
+                servo_velocity_limit,
+                servo_acceleration_limit,
+                self.dt,
+            )
+        else:
+            arm_applied_q = arm_servo_target_unlimited
+            arm_applied_qvel = (
+                arm_applied_q - state.arm_applied_q
+            ) / max(self.dt, 1e-6)
+            arm_servo_interval_low = -jnp.broadcast_to(
+                self.arm_vel_limit_rad_s,
+                arm_applied_qvel.shape,
+            )
+            arm_servo_interval_high = jnp.broadcast_to(
+                self.arm_vel_limit_rad_s,
+                arm_applied_qvel.shape,
+            )
+            arm_servo_feasible = jnp.ones(
+                (arm_applied_qvel.shape[0],),
+                dtype=bool,
+            )
+        arm_applied_qacc = (
+            arm_applied_qvel - state.arm_applied_qvel
+        ) / max(self.dt, 1e-6)
+        arm_servo_clip = jnp.abs(
+            arm_servo_target_unlimited - arm_applied_q
+        ) > 1e-7
 
         acc_clip_diff = desired_qdd_raw - desired_qdd
         vel_clip_diff = raw_cmd_qvel - cmd_qvel
@@ -2255,6 +2842,15 @@ class MjxJuggleEnv:
 
         contact_init = jnp.zeros((action.shape[0],), dtype=bool)
         contact_camera_v_frac_init = jnp.zeros((action.shape[0],), dtype=jnp.float32)
+        arm_actual_clip_count_init = jnp.zeros(
+            (action.shape[0], self.act_dim),
+            dtype=jnp.int32,
+        )
+        arm_actual_feasible_init = jnp.ones((action.shape[0],), dtype=bool)
+        arm_actual_intervention_pen_init = jnp.zeros(
+            (action.shape[0],),
+            dtype=jnp.float32,
+        )
 
         def one_substep(_, carry):
             (
@@ -2264,8 +2860,81 @@ class MjxJuggleEnv:
                 first_contact_camera_visible,
                 first_contact_camera_in_margin,
                 first_contact_camera_v_frac,
+                arm_actual_clip_count,
+                arm_actual_feasible,
+                arm_actual_intervention_pen,
             ) = carry
+            d_before = d
             d = self.batched_step(state.model, d.replace(ctrl=ctrl))
+            if bool(self.cfg.arm_actual_state_limiter):
+                arm_q_before = d_before.qpos[:, self.arm_qadr]
+                arm_qvel_before = d_before.qvel[:, self.arm_vadr]
+                arm_qpos_unlimited = d.qpos[:, self.arm_qadr]
+                arm_qvel_unlimited = d.qvel[:, self.arm_vadr]
+                (
+                    arm_q_guarded,
+                    arm_qvel_guarded,
+                    _arm_actual_interval_low,
+                    _arm_actual_interval_high,
+                    substep_feasible,
+                ) = project_safe_command_step_jax(
+                    arm_qpos_unlimited,
+                    arm_q_before,
+                    arm_qvel_before,
+                    self.arm_lo,
+                    self.arm_hi,
+                    self.arm_vel_limit_rad_s,
+                    self.arm_acc_limit_rad_s2,
+                    self.timestep,
+                )
+                arm_actual_clip = (
+                    (jnp.abs(arm_qvel_unlimited - arm_qvel_guarded) > 1e-7)
+                    | (jnp.abs(arm_qpos_unlimited - arm_q_guarded) > 1e-7)
+                )
+                arm_q_out = jnp.where(
+                    arm_actual_clip,
+                    arm_q_guarded,
+                    arm_qpos_unlimited,
+                )
+                arm_qvel_out = jnp.where(
+                    arm_actual_clip,
+                    arm_qvel_guarded,
+                    arm_qvel_unlimited,
+                )
+                arm_qacc_out = (
+                    arm_qvel_out - arm_qvel_before
+                ) / max(self.timestep, 1e-9)
+                arm_qacc_unlimited = (
+                    arm_qvel_unlimited - arm_qvel_before
+                ) / max(self.timestep, 1e-9)
+                arm_qacc_excess_ratio = jnp.maximum(
+                    jnp.abs(arm_qacc_unlimited)
+                    / jnp.maximum(self.arm_acc_limit_rad_s2[None, :], 1e-6)
+                    - 1.0,
+                    0.0,
+                )
+                # Measure the pre-projection violation. log1p prevents the
+                # unconstrained XML position servo from creating unbounded
+                # reward magnitudes while preserving a learning signal.
+                arm_actual_intervention_pen = arm_actual_intervention_pen + jnp.mean(
+                    jnp.log1p(arm_qacc_excess_ratio * arm_qacc_excess_ratio),
+                    axis=-1,
+                )
+                d = self.batched_forward(
+                    state.model,
+                    d.replace(
+                        qpos=d.qpos.at[:, self.arm_qadr].set(arm_q_out),
+                        qvel=d.qvel.at[:, self.arm_vadr].set(arm_qvel_out),
+                        qacc=d.qacc.at[:, self.arm_vadr].set(arm_qacc_out),
+                    ),
+                )
+                d = d.replace(
+                    qacc=d.qacc.at[:, self.arm_vadr].set(arm_qacc_out)
+                )
+                arm_actual_clip_count = (
+                    arm_actual_clip_count + arm_actual_clip.astype(jnp.int32)
+                )
+                arm_actual_feasible = arm_actual_feasible & substep_feasible
             substep_contact, substep_other_ball_contact = self._ball_contact_flags(d)
             first_contact = substep_contact & (~contact_any)
             substep_bpos = d.xpos[:, self.ball_body_id]
@@ -2283,6 +2952,9 @@ class MjxJuggleEnv:
                 jnp.where(first_contact, substep_camera_visible, first_contact_camera_visible),
                 jnp.where(first_contact, substep_camera_in_margin, first_contact_camera_in_margin),
                 jnp.where(first_contact, substep_camera_v_frac, first_contact_camera_v_frac),
+                arm_actual_clip_count,
+                arm_actual_feasible,
+                arm_actual_intervention_pen,
             )
 
         (
@@ -2292,6 +2964,9 @@ class MjxJuggleEnv:
             contact_camera_visible,
             contact_camera_in_margin,
             contact_camera_v_frac,
+            arm_actual_clip_count,
+            arm_actual_feasible,
+            arm_actual_intervention_pen,
         ) = jax.lax.fori_loop(
             0,
             int(self.cfg.frame_skip),
@@ -2303,8 +2978,16 @@ class MjxJuggleEnv:
                 contact_init,
                 contact_init,
                 contact_camera_v_frac_init,
+                arm_actual_clip_count_init,
+                arm_actual_feasible_init,
+                arm_actual_intervention_pen_init,
             ),
         )
+        arm_actual_intervention_pen = arm_actual_intervention_pen / max(
+            1,
+            int(self.cfg.frame_skip),
+        )
+        arm_limiter_pen = arm_limiter_pen + arm_actual_intervention_pen
 
         step_count = state.step_count + 1
         bpos = data.xpos[:, self.ball_body_id]
@@ -2445,6 +3128,7 @@ class MjxJuggleEnv:
             camera_terms=camera_terms,
             action=action,
             da=da,
+            action_clip_excess=action_clip_excess,
             arm_limiter_pen=arm_limiter_pen,
             bpos=bpos,
             bvel=bvel,
@@ -2534,6 +3218,8 @@ class MjxJuggleEnv:
             reset_ball_vel=state.reset_ball_vel,
             reset_target_offset=state.reset_target_offset,
             reset_disturbance_strength=state.reset_disturbance_strength,
+            reset_ball_surface_gap=state.reset_ball_surface_gap,
+            reset_ball_racket_center_offset=state.reset_ball_racket_center_offset,
             reset_ball_obs_missing=state.reset_ball_obs_missing,
             arm_cmd_q=arm_cmd_q,
             arm_cmd_qvel=cmd_qvel,
@@ -2541,10 +3227,13 @@ class MjxJuggleEnv:
             arm_q_ref_active=arm_q_ref_active,
             arm_actuator_q_ref_latest=arm_actuator_q_ref_latest,
             arm_actuator_q_ref_active=arm_actuator_q_ref_active,
+            arm_safe_q_ref_latest=arm_safe_q_ref_latest,
+            arm_safe_qvel=arm_safe_qvel,
             ball_obs_missing_episode_coherent_enabled=state.ball_obs_missing_episode_coherent_enabled,
             ball_obs_camera_missing_enabled=state.ball_obs_camera_missing_enabled,
             ball_obs_view_bounds_missing_enabled=state.ball_obs_view_bounds_missing_enabled,
             arm_applied_q=arm_applied_q,
+            arm_applied_qvel=arm_applied_qvel,
             prev_action=action,
             prev_arm_qvel=arm_qvel,
             prev_ball_pos=bpos,
@@ -2657,10 +3346,15 @@ class MjxJuggleEnv:
             "reset_ball_z": state.reset_ball_pos[:, 2],
             "reset_ball_vxy": jnp.linalg.norm(state.reset_ball_vel[:, :2], axis=-1),
             "reset_ball_vz": state.reset_ball_vel[:, 2],
+            "reset_ball_anchor_dx": state.reset_ball_pos[:, 0] - state.racket_anchor[:, 0],
+            "reset_ball_anchor_dy": state.reset_ball_pos[:, 1] - state.racket_anchor[:, 1],
+            "reset_ball_anchor_dz": state.reset_ball_pos[:, 2] - state.racket_anchor[:, 2],
             "reset_target_x": state.reset_target_offset[:, 0],
             "reset_target_y": state.reset_target_offset[:, 1],
             "reset_target_z": state.reset_target_offset[:, 2],
             "reset_disturbance_strength": state.reset_disturbance_strength,
+            "reset_ball_surface_gap": state.reset_ball_surface_gap,
+            "reset_ball_racket_center_offset": state.reset_ball_racket_center_offset,
             "action_scale_mult": state.action_scale_mult,
             "dr_gravity_z": state.dr_gravity_z,
             "reset_ball_obs_missing": state.reset_ball_obs_missing.astype(jnp.float32),
@@ -2684,6 +3378,31 @@ class MjxJuggleEnv:
             "arm_actuator_cmd_lag_norm": jnp.linalg.norm(arm_actuator_q_ref_latest - arm_applied_q, axis=-1),
             "actuator_lead_delta_norm": jnp.linalg.norm(arm_actuator_q_ref_latest - arm_q_ref_latest, axis=-1),
             "actuator_comp_delta_norm": jnp.linalg.norm(arm_actuator_q_ref_latest - arm_q_ref_latest, axis=-1),
+            "arm_post_comp_safety_delta_norm": jnp.linalg.norm(
+                arm_actuator_q_ref_latest - arm_safe_q_ref_latest,
+                axis=-1,
+            ),
+            "arm_post_comp_safety_clip_any": jnp.any(arm_safe_clip, axis=-1).astype(jnp.float32),
+            "arm_post_comp_safety_clip_fraction": jnp.mean(arm_safe_clip.astype(jnp.float32), axis=-1),
+            "arm_post_comp_safety_feasible": arm_safe_feasible.astype(jnp.float32),
+            "arm_servo_safety_delta_norm": jnp.linalg.norm(
+                arm_servo_target_unlimited - arm_applied_q,
+                axis=-1,
+            ),
+            "arm_servo_safety_clip_any": jnp.any(arm_servo_clip, axis=-1).astype(jnp.float32),
+            "arm_servo_safety_clip_fraction": jnp.mean(arm_servo_clip.astype(jnp.float32), axis=-1),
+            "arm_servo_safety_feasible": arm_servo_feasible.astype(jnp.float32),
+            "arm_actual_safety_clip_any": jnp.any(
+                arm_actual_clip_count > 0,
+                axis=-1,
+            ).astype(jnp.float32),
+            "arm_actual_safety_clip_fraction": jnp.mean(
+                arm_actual_clip_count.astype(jnp.float32),
+                axis=-1,
+            ) / max(1, int(self.cfg.frame_skip)),
+            "arm_actual_safety_feasible": arm_actual_feasible.astype(jnp.float32),
+            "arm_actual_safety_clip_count": arm_actual_clip_count,
+            "arm_actual_safety_intervention_penalty": arm_actual_intervention_pen,
             "ball_obs_pos_bias_norm": jnp.linalg.norm(state.ball_obs_pos_bias_base, axis=-1),
             "ball_obs_rot_bias_norm": jnp.linalg.norm(state.ball_obs_rot_bias_rpy, axis=-1),
             "ball_obs_vel_bias_norm": jnp.linalg.norm(state.ball_obs_vel_bias_base, axis=-1),
@@ -2696,6 +3415,14 @@ class MjxJuggleEnv:
             "action_norm": jnp.linalg.norm(action, axis=-1),
             "action_rate": action_rate_norm,
             "action_jerk": action_jerk_norm,
+            "raw_action_clip_fraction": jnp.mean(
+                (action_clip_excess > 0.0).astype(jnp.float32),
+                axis=-1,
+            ),
+            "raw_action_clip_excess_norm": jnp.linalg.norm(
+                action_clip_excess,
+                axis=-1,
+            ),
             "command_tracking_error": command_tracking_error,
             "actuator_command_tracking_error": jnp.linalg.norm(e_actuator_active, axis=-1),
             "tau_act_ms": tau_act * 1000.0,
@@ -2709,6 +3436,28 @@ class MjxJuggleEnv:
             "q_ref_active": arm_q_ref_active,
             "q_actuator_ref_latest": arm_actuator_q_ref_latest,
             "q_actuator_ref_active": arm_actuator_q_ref_active,
+            "q_servo_ref_active": arm_servo_q_ref_active,
+            "servo_execution_delay_steps": jnp.where(
+                servo_uses_delayed_reference,
+                delay_steps,
+                jnp.zeros_like(delay_steps),
+            ).astype(jnp.float32),
+            "servo_execution_delay_ms": jnp.where(
+                servo_uses_delayed_reference,
+                delay_steps.astype(jnp.float32) * float(self.dt) * 1000.0,
+                jnp.zeros_like(tau_act),
+            ),
+            "q_post_comp_safe_latest": arm_safe_q_ref_latest,
+            "dq_post_comp_safe_latest": arm_safe_qvel,
+            "ddq_post_comp_safe_latest": arm_safe_qacc,
+            "dq_post_comp_safe_interval_low": arm_safe_interval_low,
+            "dq_post_comp_safe_interval_high": arm_safe_interval_high,
+            "q_servo_target_unlimited": arm_servo_target_unlimited,
+            "q_servo_target": arm_applied_q,
+            "dq_servo_target": arm_applied_qvel,
+            "ddq_servo_target": arm_applied_qacc,
+            "dq_servo_safe_interval_low": arm_servo_interval_low,
+            "dq_servo_safe_interval_high": arm_servo_interval_high,
             "dq_ref_latest": cmd_qvel,
             "ball_obs_age": next_state.ball_obs_age_seconds,
             "ball_obs_view_z_high_m": next_state.ball_obs_view_z_high_m,
@@ -2993,6 +3742,7 @@ class MjxJuggleEnv:
         action: jax.Array,
         camera_terms: dict[str, jax.Array],
         da: jax.Array,
+        action_clip_excess: jax.Array,
         arm_limiter_pen: jax.Array,
         bpos: jax.Array,
         bvel: jax.Array,
@@ -3263,6 +4013,13 @@ class MjxJuggleEnv:
         term_racket_z_penalty = -float(self.cfg.racket_z_soft_penalty_weight) * racket_z_band_pen
         term_racket_up_drift_penalty = -float(self.cfg.racket_up_drift_penalty_weight) * up_drift_pen
         racket_up_cos = jnp.maximum(0.0, jnp.sum(racket_normal * jnp.asarray([0.0, 0.0, 1.0]), axis=-1))
+        racket_flatness_err = jnp.maximum(0.0, float(self.cfg.racket_flatness_target_cos) - racket_up_cos)
+        racket_flatness_pen = (
+            racket_flatness_err / max(1e-6, float(self.cfg.racket_flatness_sigma))
+        ) ** 2
+        term_racket_flatness_penalty = (
+            -float(self.cfg.racket_flatness_penalty_weight) * racket_flatness_pen
+        )
         flatness_err = jnp.maximum(0.0, float(self.cfg.hit_flatness_target_cos) - racket_up_cos)
         flatness_score = jnp.exp(-0.5 * (flatness_err / max(1e-6, float(self.cfg.hit_flatness_sigma))) ** 2)
         flat_contact_pen = jnp.where(
@@ -3273,6 +4030,9 @@ class MjxJuggleEnv:
         term_contact_flatness_penalty = -flat_contact_pen
         term_action_penalty = -float(self.cfg.action_penalty_weight) * jnp.sum(action**2, axis=-1)
         term_action_delta_penalty = -float(self.cfg.action_delta_penalty_weight) * jnp.sum(da**2, axis=-1)
+        term_action_clip_excess_penalty = -float(
+            self.cfg.action_clip_excess_penalty_weight
+        ) * jnp.sum(jnp.log1p(action_clip_excess * action_clip_excess), axis=-1)
         term_arm_vel_penalty = -float(self.cfg.arm_vel_limit_penalty_weight) * arm_vel_limit_pen
         term_arm_acc_penalty = -float(self.cfg.arm_acc_limit_penalty_weight) * arm_acc_limit_pen
         term_arm_limiter_penalty = -float(self.cfg.arm_limiter_penalty_weight) * arm_limiter_pen
@@ -3309,10 +4069,12 @@ class MjxJuggleEnv:
             + term_racket_xy_penalty
             + term_racket_z_penalty
             + term_racket_up_drift_penalty
+            + term_racket_flatness_penalty
             + term_contact_flatness_penalty
             + camera_terms["camera_reward_dense"]
             + term_action_penalty
             + term_action_delta_penalty
+            + term_action_clip_excess_penalty
             + term_arm_vel_penalty
             + term_arm_acc_penalty
             + term_arm_limiter_penalty
@@ -3459,6 +4221,9 @@ class MjxJuggleEnv:
             "racket_z_penalty": term_racket_z_penalty * self.dt,
             "racket_up_drift_penalty": term_racket_up_drift_penalty * self.dt,
             "contact_flatness_penalty": term_contact_flatness_penalty * self.dt,
+            "racket_flatness_penalty": term_racket_flatness_penalty * self.dt,
+            "metric/racket_up_cos": racket_up_cos,
+            "metric/racket_flatness_pen": racket_flatness_pen,
             "camera_reward_dense": camera_terms["camera_reward_dense"] * self.dt,
             "camera_pixel_center_penalty": camera_terms["camera_pixel_center_penalty"] * self.dt,
             "camera_visibility_penalty": camera_terms["camera_visibility_penalty"] * self.dt,
@@ -3468,6 +4233,7 @@ class MjxJuggleEnv:
             "camera_top_margin_penalty": camera_terms["camera_top_margin_penalty"] * self.dt,
             "action_penalty": term_action_penalty * self.dt,
             "action_delta_penalty": term_action_delta_penalty * self.dt,
+            "action_clip_excess_penalty": term_action_clip_excess_penalty * self.dt,
             "arm_vel_penalty": term_arm_vel_penalty * self.dt,
             "arm_acc_penalty": term_arm_acc_penalty * self.dt,
             "arm_limiter_penalty": term_arm_limiter_penalty * self.dt,
@@ -3484,7 +4250,15 @@ class MjxJuggleEnv:
                 hit_camera_v_frac,
                 0.0,
             ),
+            "metric/hit_event_count": new_hit.astype(jnp.float32),
             "metric/hit_vxy_sum": jnp.where(new_hit, hit_vxy, 0.0),
+            "metric/hit_contact_center_dist_sum": jnp.where(new_hit, contact_center_dist, 0.0),
+            "metric/hit_racket_up_cos_sum": jnp.where(new_hit, racket_up_cos, 0.0),
+            "metric/hit_apex_rel_height_sum": jnp.where(
+                new_hit,
+                predicted_apex_z - racket_anchor[:, 2],
+                0.0,
+            ),
             "first_hit_apex": term_first_hit_apex,
             "hit_cadence_reward": term_hit_cadence_reward,
             "hit_min_interval_penalty": term_hit_min_interval_penalty,

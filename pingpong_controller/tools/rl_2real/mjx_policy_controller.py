@@ -237,6 +237,11 @@ class MJXPolicyController:
         actuator_mpc_nominal_weight: Optional[float] = None,
         actuator_mpc_delta_weight: Optional[float] = None,
         actuator_mpc_max_delta_rad: Optional[float] = None,
+        actuator_mpc_command_dynamics_constraint: Optional[bool] = None,
+        actuator_mpc_command_velocity_weight: Optional[float] = None,
+        actuator_mpc_command_acceleration_weight: Optional[float] = None,
+        actuator_mpc_command_velocity_scale: Optional[float] = None,
+        actuator_mpc_command_acceleration_scale: Optional[float] = None,
         tau_act_ms: Optional[float] = None,
         logger: Optional[object] = None,
     ) -> None:
@@ -268,6 +273,29 @@ class MJXPolicyController:
         if arm_action_limiter is None:
             arm_action_limiter = bool(self.env_cfg.get("arm_action_limiter", False))
         self.arm_action_limiter = bool(arm_action_limiter)
+
+        # This is a deployment contract, not another software plant model.
+        # In simulation the fields configure the acceleration planner inside
+        # the modeled drive, after delay/FOPDT and before position PD.  The real
+        # drive already owns that layer, so predict() must continue returning a
+        # position goal and must not add a second 72/74 ms delay/filter here.
+        self.drive_target_tracking_planner = bool(
+            self.env_cfg.get("arm_servo_target_tracking_planner", False)
+        )
+        self.drive_target_velocity_scale = float(
+            self.env_cfg.get("arm_servo_target_velocity_scale", 1.0)
+        )
+        self.drive_target_acceleration_scale = float(
+            self.env_cfg.get("arm_servo_target_acceleration_scale", 1.0)
+        )
+        if not (0.0 < self.drive_target_velocity_scale <= 1.0):
+            raise ValueError(
+                "arm_servo_target_velocity_scale must be in (0, 1]"
+            )
+        if not (0.0 < self.drive_target_acceleration_scale <= 1.0):
+            raise ValueError(
+                "arm_servo_target_acceleration_scale must be in (0, 1]"
+            )
 
         if ball_obs_age_clip_s is None:
             ball_obs_age_clip_s = self.env_cfg.get(
@@ -427,6 +455,35 @@ class MJXPolicyController:
             if actuator_mpc_max_delta_rad is not None
             else self.env_cfg.get("actuator_mpc_max_delta_rad", 0.0)
         )
+        self.actuator_mpc_command_dynamics_constraint = bool(
+            actuator_mpc_command_dynamics_constraint
+            if actuator_mpc_command_dynamics_constraint is not None
+            else self.env_cfg.get("actuator_mpc_command_dynamics_constraint", False)
+        )
+        self.actuator_mpc_command_velocity_weight = float(
+            actuator_mpc_command_velocity_weight
+            if actuator_mpc_command_velocity_weight is not None
+            else self.env_cfg.get("actuator_mpc_command_velocity_weight", 0.0)
+        )
+        self.actuator_mpc_command_acceleration_weight = float(
+            actuator_mpc_command_acceleration_weight
+            if actuator_mpc_command_acceleration_weight is not None
+            else self.env_cfg.get("actuator_mpc_command_acceleration_weight", 0.0)
+        )
+        self.actuator_mpc_command_velocity_scale = float(
+            actuator_mpc_command_velocity_scale
+            if actuator_mpc_command_velocity_scale is not None
+            else self.env_cfg.get("actuator_mpc_command_velocity_scale", 1.0)
+        )
+        self.actuator_mpc_command_acceleration_scale = float(
+            actuator_mpc_command_acceleration_scale
+            if actuator_mpc_command_acceleration_scale is not None
+            else self.env_cfg.get("actuator_mpc_command_acceleration_scale", 1.0)
+        )
+        if not (0.0 < self.actuator_mpc_command_velocity_scale <= 1.0):
+            raise ValueError("actuator_mpc_command_velocity_scale must be in (0, 1]")
+        if not (0.0 < self.actuator_mpc_command_acceleration_scale <= 1.0):
+            raise ValueError("actuator_mpc_command_acceleration_scale must be in (0, 1]")
         self.delay_max_s = max(1e-6, float(self.env_cfg.get("delay_max_ms", 150.0)) * 1e-3)
         self.delay_min_s = max(0.0, float(self.env_cfg.get("delay_min_ms", 0.0)) * 1e-3)
         self.tau_act_s = (
@@ -488,7 +545,10 @@ class MJXPolicyController:
             f"inverse_max_delta_deg={np.rad2deg(self.actuator_inverse_max_delta_rad):.2f}, "
             f"mpc_beta={self.actuator_mpc_beta:.3g}, "
             f"mpc_horizon={self.actuator_mpc_horizon_steps}, "
-            f"mpc_max_delta_deg={np.rad2deg(self.actuator_mpc_max_delta_rad):.2f}"
+            f"mpc_max_delta_deg={np.rad2deg(self.actuator_mpc_max_delta_rad):.2f}, "
+            f"drive_target_planner={self.drive_target_tracking_planner}, "
+            f"drive_vel_scale={self.drive_target_velocity_scale:.3g}, "
+            f"drive_acc_scale={self.drive_target_acceleration_scale:.3g}"
         )
 
     def _delay_extra_dim(self) -> int:
@@ -637,8 +697,15 @@ class MJXPolicyController:
         self.arm_cmd_qvel = np.zeros(self.n_arm, dtype=np.float32)
         self.arm_q_ref_latest = self.arm_cmd_q.copy()
         self.arm_q_ref_active = self.arm_cmd_q.copy()
+        self.arm_actuator_q_ref_latest = self.arm_cmd_q.copy()
+        self.arm_actuator_q_ref_active = self.arm_cmd_q.copy()
+        self.arm_actuator_q_ref_vel_latest = np.zeros(self.n_arm, dtype=np.float32)
         self.command_buffer = np.broadcast_to(
             self.arm_q_ref_latest.astype(np.float32),
+            (self.command_buffer_len, self.n_arm),
+        ).copy()
+        self.actuator_command_buffer = np.broadcast_to(
+            self.arm_actuator_q_ref_latest.astype(np.float32),
             (self.command_buffer_len, self.n_arm),
         ).copy()
         self.prev_action = np.zeros(self.n_arm, dtype=np.float32)
@@ -655,10 +722,12 @@ class MJXPolicyController:
             self._prev_racket_pos_base = np.zeros(3, dtype=np.float32)
 
         self.last_action = np.zeros(self.n_arm, dtype=np.float32)
-        self.last_cmd_q = self.arm_q_ref_active.copy()
+        self.last_cmd_q = self.arm_actuator_q_ref_active.copy()
         self.last_q_cmd_nominal = self.arm_cmd_q.copy()
         self.last_q_ref_latest = self.arm_q_ref_latest.copy()
         self.last_q_ref_active = self.arm_q_ref_active.copy()
+        self.last_q_actuator_ref_latest = self.arm_actuator_q_ref_latest.copy()
+        self.last_q_actuator_ref_active = self.arm_actuator_q_ref_active.copy()
         self.last_cmd_qvel = np.zeros(self.n_arm, dtype=np.float32)
         self.last_cmd_qacc = np.zeros(self.n_arm, dtype=np.float32)
         self._obs_history = np.zeros((self.high_latency_prev_frames, self.base_obs_dim), dtype=np.float32)
@@ -667,7 +736,7 @@ class MJXPolicyController:
         self.last_obs = np.zeros(self.actor.obs_dim, dtype=np.float32)
 
     def current_arm_cmd_q(self) -> np.ndarray:
-        return self.arm_q_ref_active.copy()
+        return self.arm_actuator_q_ref_active.copy()
 
     def _build_obs(
         self,
@@ -851,7 +920,14 @@ class MJXPolicyController:
         arm_q: Optional[np.ndarray] = None,
         arm_dq: Optional[np.ndarray] = None,
     ) -> np.ndarray:
-        """Run one deterministic policy step and return 7 joint targets."""
+        """Run one causal deterministic policy step and return 7 position goals.
+
+        The calculation uses current feedback, retained command/history state,
+        and forward predictions from the fixed actuator model.  It never reads
+        a future measured joint state.  The physical drive performs the
+        checkpoint-declared target trajectory planning; duplicating its FOPDT
+        or planner here would add unmodeled delay on the robot.
+        """
         step_dt = float(dt) if dt is not None else self.dt
         if not np.isfinite(step_dt) or step_dt <= 0.0:
             step_dt = self.dt
@@ -887,13 +963,13 @@ class MJXPolicyController:
         action = action * np.float32(self.action_gain)
         if not np.all(np.isfinite(action)):
             self._logger.warn("MJX policy returned non-finite action; holding last")
-            return self.arm_cmd_q.copy()
+            return self.arm_actuator_q_ref_active.copy()
         action = np.clip(action, -1.0, 1.0)
 
         q_for_aw = (
             np.asarray(arm_q, dtype=np.float32)
             if arm_q is not None and np.asarray(arm_q).shape == (self.n_arm,) and np.all(np.isfinite(arm_q))
-            else self.arm_q_ref_active
+            else self.arm_actuator_q_ref_active
         )
         action, self.anti_windup_scale = smooth_action(
             action,
@@ -939,7 +1015,10 @@ class MJXPolicyController:
             self.arm_q_high,
         ).astype(np.float32)
         self.arm_cmd_qvel = cmd_qvel.astype(np.float32)
-        self.arm_q_ref_latest = compensate_q_ref(
+        self.arm_q_ref_latest = self.arm_cmd_q.copy()
+        prev_actuator_q_ref = self.arm_actuator_q_ref_latest.copy()
+        prev_actuator_q_ref_vel = self.arm_actuator_q_ref_vel_latest.copy()
+        self.arm_actuator_q_ref_latest = compensate_q_ref(
             self.actuator_compensation_mode,
             self.arm_cmd_q,
             self.arm_cmd_qvel,
@@ -964,12 +1043,26 @@ class MJXPolicyController:
             mpc_nominal_weight=self.actuator_mpc_nominal_weight,
             mpc_delta_weight=self.actuator_mpc_delta_weight,
             mpc_max_delta_rad=self.actuator_mpc_max_delta_rad,
+            mpc_command_dynamics_constraint=self.actuator_mpc_command_dynamics_constraint,
+            mpc_command_velocity_weight=self.actuator_mpc_command_velocity_weight,
+            mpc_command_acceleration_weight=self.actuator_mpc_command_acceleration_weight,
+            mpc_command_velocity_limit_rad_s=(
+                self.arm_vel_limit_rad_s * np.float32(self.actuator_mpc_command_velocity_scale)
+            ),
+            mpc_command_acceleration_limit_rad_s2=(
+                self.arm_acc_limit_rad_s2 * np.float32(self.actuator_mpc_command_acceleration_scale)
+            ),
+            mpc_previous_command_q=prev_actuator_q_ref,
+            mpc_previous_command_qvel=prev_actuator_q_ref_vel,
             applied_q=q_for_aw,
-            command_buffer=self.command_buffer,
+            command_buffer=self.actuator_command_buffer,
             warm_q=target_right_arm_q_rad().astype(np.float32),
             q_low=self.arm_q_low,
             q_high=self.arm_q_high,
         )
+        self.arm_actuator_q_ref_vel_latest = (
+            (self.arm_actuator_q_ref_latest - prev_actuator_q_ref) / step_dt
+        ).astype(np.float32)
         self.prev_action = action.astype(np.float32)
         if self.delay_conditioning:
             self.command_buffer, self.arm_q_ref_active = push_command_buffer(
@@ -977,9 +1070,20 @@ class MJXPolicyController:
                 self.arm_q_ref_latest,
                 self.delay_steps,
             )
+            self.actuator_command_buffer, self.arm_actuator_q_ref_active = push_command_buffer(
+                self.actuator_command_buffer,
+                self.arm_actuator_q_ref_latest,
+                self.delay_steps,
+            )
         else:
             self.arm_q_ref_active = self.arm_q_ref_latest.copy()
+            self.arm_actuator_q_ref_active = self.arm_actuator_q_ref_latest.copy()
             self.command_buffer, _ = push_command_buffer(self.command_buffer, self.arm_q_ref_latest, 0)
+            self.actuator_command_buffer, _ = push_command_buffer(
+                self.actuator_command_buffer,
+                self.arm_actuator_q_ref_latest,
+                0,
+            )
         self._push_history(self._last_built_base_obs, action)
 
         self.last_action = action.copy()
@@ -988,8 +1092,10 @@ class MJXPolicyController:
         self.last_q_cmd_nominal = self.arm_cmd_q.copy()
         self.last_q_ref_latest = self.arm_q_ref_latest.copy()
         self.last_q_ref_active = self.arm_q_ref_active.copy()
-        self.last_cmd_q = self.arm_q_ref_active.copy()
-        return self.arm_q_ref_active.copy()
+        self.last_q_actuator_ref_latest = self.arm_actuator_q_ref_latest.copy()
+        self.last_q_actuator_ref_active = self.arm_actuator_q_ref_active.copy()
+        self.last_cmd_q = self.arm_actuator_q_ref_active.copy()
+        return self.arm_actuator_q_ref_active.copy()
 
     def latest_command_state(self) -> dict[str, np.ndarray]:
         return {
@@ -1001,8 +1107,10 @@ class MJXPolicyController:
             "q_cmd_nominal": self.last_q_cmd_nominal.copy(),
             "q_ref_latest": self.last_q_ref_latest.copy(),
             "q_ref_active": self.last_q_ref_active.copy(),
+            "q_actuator_ref_latest": self.last_q_actuator_ref_latest.copy(),
+            "q_actuator_ref_active": self.last_q_actuator_ref_active.copy(),
             "dq_ref_latest": self.last_cmd_qvel.copy(),
-            "actuator_lead_delta": (self.last_q_ref_latest - self.last_q_cmd_nominal).copy(),
+            "actuator_lead_delta": (self.last_q_actuator_ref_latest - self.last_q_cmd_nominal).copy(),
             "tau_act_s": np.array(self.tau_act_s, dtype=np.float32),
             "delay_steps": np.array(self.delay_steps, dtype=np.float32),
             "delay_bin_id": np.array(
@@ -1027,6 +1135,9 @@ class MJXPolicyController:
             "action_gain": self.action_gain,
             "action_scale_mult": self.action_scale_mult,
             "arm_action_limiter": self.arm_action_limiter,
+            "drive_target_tracking_planner": self.drive_target_tracking_planner,
+            "drive_target_velocity_scale": self.drive_target_velocity_scale,
+            "drive_target_acceleration_scale": self.drive_target_acceleration_scale,
             "ball_obs_age_clip_s": self.ball_obs_age_clip_s,
             "high_latency_obs": self.high_latency_obs,
             "high_latency_history_frames": self.high_latency_history_frames,
@@ -1048,6 +1159,19 @@ class MJXPolicyController:
             "actuator_inverse_delay_scale": self.actuator_inverse_delay_scale,
             "actuator_inverse_tau_scale": self.actuator_inverse_tau_scale,
             "actuator_inverse_max_delta_rad": self.actuator_inverse_max_delta_rad,
+            "actuator_mpc_beta": self.actuator_mpc_beta,
+            "actuator_mpc_delay_scale": self.actuator_mpc_delay_scale,
+            "actuator_mpc_tau_scale": self.actuator_mpc_tau_scale,
+            "actuator_mpc_horizon_steps": self.actuator_mpc_horizon_steps,
+            "actuator_mpc_tracking_weight": self.actuator_mpc_tracking_weight,
+            "actuator_mpc_nominal_weight": self.actuator_mpc_nominal_weight,
+            "actuator_mpc_delta_weight": self.actuator_mpc_delta_weight,
+            "actuator_mpc_max_delta_rad": self.actuator_mpc_max_delta_rad,
+            "actuator_mpc_command_dynamics_constraint": self.actuator_mpc_command_dynamics_constraint,
+            "actuator_mpc_command_velocity_weight": self.actuator_mpc_command_velocity_weight,
+            "actuator_mpc_command_acceleration_weight": self.actuator_mpc_command_acceleration_weight,
+            "actuator_mpc_command_velocity_scale": self.actuator_mpc_command_velocity_scale,
+            "actuator_mpc_command_acceleration_scale": self.actuator_mpc_command_acceleration_scale,
             "fk_enabled": self.mj_model is not None,
         }
 
@@ -1108,6 +1232,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--actuator-mpc-delta-weight", type=float, default=None)
     parser.add_argument("--actuator-mpc-max-delta-rad", type=float, default=None)
     parser.add_argument("--actuator-mpc-max-delta-deg", type=float, default=None)
+    parser.add_argument(
+        "--actuator-mpc-command-dynamics-constraint",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+    )
+    parser.add_argument("--actuator-mpc-command-velocity-weight", type=float, default=None)
+    parser.add_argument("--actuator-mpc-command-acceleration-weight", type=float, default=None)
+    parser.add_argument("--actuator-mpc-command-velocity-scale", type=float, default=None)
+    parser.add_argument("--actuator-mpc-command-acceleration-scale", type=float, default=None)
     parser.add_argument(
         "--tau-act-ms",
         type=float,
@@ -1201,6 +1334,11 @@ def main() -> None:
                 else float(np.deg2rad(args.actuator_mpc_max_delta_deg))
             )
         ),
+        actuator_mpc_command_dynamics_constraint=args.actuator_mpc_command_dynamics_constraint,
+        actuator_mpc_command_velocity_weight=args.actuator_mpc_command_velocity_weight,
+        actuator_mpc_command_acceleration_weight=args.actuator_mpc_command_acceleration_weight,
+        actuator_mpc_command_velocity_scale=args.actuator_mpc_command_velocity_scale,
+        actuator_mpc_command_acceleration_scale=args.actuator_mpc_command_acceleration_scale,
         tau_act_ms=args.tau_act_ms,
     )
     print("[mjx_policy_controller] summary:")

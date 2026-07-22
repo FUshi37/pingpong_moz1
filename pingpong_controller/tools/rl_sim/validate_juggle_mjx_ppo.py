@@ -24,7 +24,11 @@ DEFAULT_RESULTS = OUTPUT_DIR / "logs_mjx_stage1a" / "validation.csv"
 if str(RL_SIM_DIR) not in sys.path:
     sys.path.insert(0, str(RL_SIM_DIR))
 
-from mjx_juggle_env import MjxJuggleConfig, MjxJuggleEnv
+from mjx_juggle_env import (
+    BALL_OBS_FRAME_PIVOT_MODES,
+    MjxJuggleConfig,
+    MjxJuggleEnv,
+)
 from rl_juggle_env_random import RIGHT_ARM_JOINTS
 from train_juggle_mjx_ppo import policy_mean
 
@@ -40,7 +44,7 @@ JOINT_PLOT_COLORS = {
 }
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Validate a MJX/JAX PPO juggling checkpoint.")
     p.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
     p.add_argument(
@@ -58,6 +62,63 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--seed", type=int, default=1000)
     p.add_argument("--deterministic", action="store_true", help="Use policy mean instead of sampling.")
     p.add_argument("--action-gain", type=float, default=1.0, help="Multiply policy action before clipping.")
+    p.add_argument(
+        "--arm-post-compensation-limiter",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Evaluation-only override for the position-aware velocity/acceleration "
+            "projection after inverse-MPC compensation. The default preserves the checkpoint."
+        ),
+    )
+    p.add_argument(
+        "--arm-servo-target-limiter",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Evaluation-only override for the position-aware trajectory projection "
+            "after actuator delay/FOPDT and before the MuJoCo position servo."
+        ),
+    )
+    p.add_argument(
+        "--arm-servo-target-tracking-planner",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Evaluation-only override for the target-aware acceleration "
+            "planner after delay/FOPDT and before the unchanged position PD."
+        ),
+    )
+    p.add_argument("--arm-servo-target-velocity-scale", type=float, default=None)
+    p.add_argument("--arm-servo-target-acceleration-scale", type=float, default=None)
+    p.add_argument(
+        "--actuator-mpc-command-dynamics-constraint",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Evaluation-only override for the original inverse-MPC output "
+            "position/velocity/acceleration command constraint."
+        ),
+    )
+    p.add_argument("--actuator-mpc-command-velocity-weight", type=float, default=None)
+    p.add_argument("--actuator-mpc-command-acceleration-weight", type=float, default=None)
+    p.add_argument("--actuator-mpc-command-velocity-scale", type=float, default=None)
+    p.add_argument("--actuator-mpc-command-acceleration-scale", type=float, default=None)
+    p.add_argument(
+        "--actuator-mpc-feedback-source",
+        choices=["applied", "actual"],
+        default=None,
+        help="Evaluation-only override for inverse-MPC feedback source.",
+    )
+    p.add_argument(
+        "--arm-actual-state-limiter",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Evaluation-only override for the actual q/dq/ddq projection "
+            "after every MJX 1 ms substep."
+        ),
+    )
     p.add_argument("--max-env-steps", type=int, default=0, help="0 means auto from episodes, envs, and horizon.")
     p.add_argument("--print-every", type=int, default=100)
     p.add_argument("--log-hit-events", action="store_true")
@@ -76,8 +137,18 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        "--ball-obs-frame-pivot-mode",
+        choices=BALL_OBS_FRAME_PIVOT_MODES,
+        default=None,
+        help=(
+            "Override the position pivot for ball observation frame rotation/scale during "
+            "evaluation only. The default preserves the checkpoint setting, including the "
+            "legacy base-origin behavior of checkpoints that predate this option."
+        ),
+    )
+    p.add_argument(
         "--right-arm-pd-profile",
-        choices=["xml", "legacy_stage4g"],
+        choices=["xml", "legacy_stage4g", "comparison_safe_v1"],
         default=None,
         help="Override the right-arm actuator KP/KV profile in the temporary MJX XML.",
     )
@@ -154,6 +225,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--video-width", type=int, default=1280)
     p.add_argument("--video-height", type=int, default=720)
     p.add_argument(
+        "--video-env",
+        type=int,
+        default=0,
+        help="Batched environment index to render into --video-out.",
+    )
+    p.add_argument(
         "--video-slowmo",
         type=float,
         default=1.0,
@@ -169,7 +246,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--action-trace-csv", type=Path, default=None, help="Save per-control-step policy action and joint trace CSV.")
     p.add_argument("--action-plot-out", type=Path, default=None, help="Save a PNG plot of policy action and joint trajectories.")
     p.add_argument("--obs-trace-csv", type=Path, default=None, help="Save the exact per-control-step policy observation CSV.")
-    return p.parse_args()
+    return p.parse_args(argv)
 
 
 def load_checkpoint(path: Path) -> dict:
@@ -209,8 +286,114 @@ def env_config_from_checkpoint(payload: dict, args: argparse.Namespace) -> MjxJu
     if "virtual_camera_pose_mode" not in cfg_payload:
         cfg_kwargs["virtual_camera_pose_mode"] = "body_mount"
     cfg = MjxJuggleConfig(**cfg_kwargs)
+    arm_post_compensation_limiter = getattr(
+        args,
+        "arm_post_compensation_limiter",
+        None,
+    )
+    if arm_post_compensation_limiter is not None:
+        cfg = replace(
+            cfg,
+            arm_post_compensation_limiter=bool(arm_post_compensation_limiter),
+        )
+    arm_servo_target_limiter = getattr(args, "arm_servo_target_limiter", None)
+    if arm_servo_target_limiter is not None:
+        cfg = replace(
+            cfg,
+            arm_servo_target_limiter=bool(arm_servo_target_limiter),
+        )
+    arm_servo_target_tracking_planner = getattr(
+        args,
+        "arm_servo_target_tracking_planner",
+        None,
+    )
+    if arm_servo_target_tracking_planner is not None:
+        cfg = replace(
+            cfg,
+            arm_servo_target_tracking_planner=bool(arm_servo_target_tracking_planner),
+        )
+    arm_servo_target_velocity_scale = getattr(
+        args,
+        "arm_servo_target_velocity_scale",
+        None,
+    )
+    if arm_servo_target_velocity_scale is not None:
+        cfg = replace(
+            cfg,
+            arm_servo_target_velocity_scale=float(arm_servo_target_velocity_scale),
+        )
+    arm_servo_target_acceleration_scale = getattr(
+        args,
+        "arm_servo_target_acceleration_scale",
+        None,
+    )
+    if arm_servo_target_acceleration_scale is not None:
+        cfg = replace(
+            cfg,
+            arm_servo_target_acceleration_scale=float(arm_servo_target_acceleration_scale),
+        )
+    actuator_mpc_command_dynamics_constraint = getattr(
+        args,
+        "actuator_mpc_command_dynamics_constraint",
+        None,
+    )
+    if actuator_mpc_command_dynamics_constraint is not None:
+        cfg = replace(
+            cfg,
+            actuator_mpc_command_dynamics_constraint=bool(actuator_mpc_command_dynamics_constraint),
+        )
+    actuator_mpc_command_velocity_weight = getattr(args, "actuator_mpc_command_velocity_weight", None)
+    if actuator_mpc_command_velocity_weight is not None:
+        cfg = replace(
+            cfg,
+            actuator_mpc_command_velocity_weight=float(actuator_mpc_command_velocity_weight),
+        )
+    actuator_mpc_command_acceleration_weight = getattr(
+        args,
+        "actuator_mpc_command_acceleration_weight",
+        None,
+    )
+    if actuator_mpc_command_acceleration_weight is not None:
+        cfg = replace(
+            cfg,
+            actuator_mpc_command_acceleration_weight=float(actuator_mpc_command_acceleration_weight),
+        )
+    actuator_mpc_command_velocity_scale = getattr(args, "actuator_mpc_command_velocity_scale", None)
+    if actuator_mpc_command_velocity_scale is not None:
+        cfg = replace(
+            cfg,
+            actuator_mpc_command_velocity_scale=float(actuator_mpc_command_velocity_scale),
+        )
+    actuator_mpc_command_acceleration_scale = getattr(
+        args,
+        "actuator_mpc_command_acceleration_scale",
+        None,
+    )
+    if actuator_mpc_command_acceleration_scale is not None:
+        cfg = replace(
+            cfg,
+            actuator_mpc_command_acceleration_scale=float(actuator_mpc_command_acceleration_scale),
+        )
+    actuator_mpc_feedback_source = getattr(args, "actuator_mpc_feedback_source", None)
+    if actuator_mpc_feedback_source is not None:
+        cfg = replace(
+            cfg,
+            actuator_mpc_feedback_source=str(actuator_mpc_feedback_source),
+        )
+    arm_actual_state_limiter = getattr(args, "arm_actual_state_limiter", None)
+    if arm_actual_state_limiter is not None:
+        cfg = replace(
+            cfg,
+            arm_actual_state_limiter=bool(arm_actual_state_limiter),
+        )
     if args.virtual_camera_base_body_name is not None:
         cfg = replace(cfg, virtual_camera_base_body_name=str(args.virtual_camera_base_body_name))
+    ball_obs_frame_pivot_mode = getattr(args, "ball_obs_frame_pivot_mode", None)
+    if ball_obs_frame_pivot_mode is not None:
+        cfg = replace(
+            cfg,
+            ball_obs_frame_pivot_mode=str(ball_obs_frame_pivot_mode),
+        )
     if args.right_arm_pd_profile is not None:
         cfg = replace(cfg, right_arm_pd_profile=str(args.right_arm_pd_profile))
     if args.racket_z_hard_limit_down is not None:
@@ -317,24 +500,43 @@ def env_config_from_checkpoint(payload: dict, args: argparse.Namespace) -> MjxJu
     return cfg
 
 
-def copy_env0_to_mujoco_data(env: MjxJuggleEnv, env_state, render_data: mj.MjData) -> None:
-    qpos = np.asarray(jax.device_get(env_state.data.qpos[0]))
-    qvel = np.asarray(jax.device_get(env_state.data.qvel[0]))
-    step_count = int(np.asarray(jax.device_get(env_state.step_count[0])))
+def copy_env_to_mujoco_data(
+    env: MjxJuggleEnv,
+    env_state,
+    render_data: mj.MjData,
+    env_index: int = 0,
+) -> None:
+    """Copy one batched MJX environment into MuJoCo render data."""
+
+    qpos = np.asarray(jax.device_get(env_state.data.qpos[env_index]))
+    qvel = np.asarray(jax.device_get(env_state.data.qvel[env_index]))
+    step_count = int(np.asarray(jax.device_get(env_state.step_count[env_index])))
     render_data.qpos[:] = qpos
     render_data.qvel[:] = qvel
-    render_data.ctrl[:] = np.asarray(jax.device_get(env_state.data.ctrl[0]))
+    render_data.ctrl[:] = np.asarray(jax.device_get(env_state.data.ctrl[env_index]))
     render_data.time = step_count * env.dt
     mj.mj_forward(env.mj_model, render_data)
 
 
-def append_video_frame(writer, renderer: mj.Renderer, env: MjxJuggleEnv, env_state, render_data: mj.MjData, camera) -> None:
-    copy_env0_to_mujoco_data(env, env_state, render_data)
+def append_video_frame(
+    writer,
+    renderer: mj.Renderer,
+    env: MjxJuggleEnv,
+    env_state,
+    render_data: mj.MjData,
+    camera,
+    env_index: int = 0,
+) -> None:
+    copy_env_to_mujoco_data(env, env_state, render_data, env_index)
     if camera is None:
         renderer.update_scene(render_data)
     else:
         renderer.update_scene(render_data, camera=camera)
     writer.append_data(np.asarray(renderer.render(), dtype=np.uint8))
+
+
+# Backward-compatible helper name for local callers/tests.
+copy_env0_to_mujoco_data = copy_env_to_mujoco_data
 
 
 def ensure_offscreen_framebuffer(model: mj.MjModel, width: int, height: int) -> tuple[int, int, int, int]:
@@ -448,7 +650,14 @@ def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float, i
         arm_qacc_mj = next_env_state.data.qacc[:, env.arm_vadr]
         arm_cmd_q = next_env_state.arm_cmd_q
         arm_cmd_qvel = next_env_state.arm_cmd_qvel
+        arm_raw_comp_q = next_env_state.arm_actuator_q_ref_latest
+        arm_safe_q = next_env_state.arm_safe_q_ref_latest
+        arm_safe_qvel = next_env_state.arm_safe_qvel
+        arm_safe_qacc = metrics["ddq_post_comp_safe_latest"]
+        arm_servo_target_unlimited = metrics["q_servo_target_unlimited"]
         arm_applied_q = next_env_state.arm_applied_q
+        arm_applied_qvel = next_env_state.arm_applied_qvel
+        arm_applied_qacc = metrics["ddq_servo_target"]
         desired_qdd_raw = (
             effective_action
             * env.arm_acc_limit_rad_s2[None, :]
@@ -491,7 +700,14 @@ def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float, i
             "arm_cmd_q": arm_cmd_q,
             "arm_cmd_qvel": arm_cmd_qvel,
             "arm_cmd_qdd": desired_qdd,
+            "arm_raw_comp_q": arm_raw_comp_q,
+            "arm_safe_q": arm_safe_q,
+            "arm_safe_qvel": arm_safe_qvel,
+            "arm_safe_qacc": arm_safe_qacc,
+            "arm_servo_target_unlimited": arm_servo_target_unlimited,
             "arm_applied_q": arm_applied_q,
+            "arm_applied_qvel": arm_applied_qvel,
+            "arm_applied_qacc": arm_applied_qacc,
             "arm_q": arm_q,
             "arm_qvel": arm_qvel,
             "arm_qacc": arm_qacc,
@@ -502,6 +718,13 @@ def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float, i
             if (
                 key.startswith("done/")
                 or key.startswith("reward/")
+                or key.startswith("arm_post_comp_safety_")
+                or key.startswith("arm_servo_safety_")
+                or (
+                    key.startswith("arm_actual_safety_")
+                    and key != "arm_actual_safety_clip_count"
+                )
+                or key.startswith("raw_action_clip_")
                 or key.startswith("ball_obs_")
                 or key.startswith("hit_camera_")
                 or key.startswith("reset_")
@@ -669,7 +892,14 @@ def trace_row_from_host(
         "arm_cmd_q",
         "arm_cmd_qvel",
         "arm_cmd_qdd",
+        "arm_raw_comp_q",
+        "arm_safe_q",
+        "arm_safe_qvel",
+        "arm_safe_qacc",
+        "arm_servo_target_unlimited",
         "arm_applied_q",
+        "arm_applied_qvel",
+        "arm_applied_qacc",
         "arm_q",
         "arm_qvel",
         "arm_qacc",
@@ -680,15 +910,37 @@ def trace_row_from_host(
         for key in vector_keys:
             value = float(host[key][env_i, i])
             row[f"{key}/{safe_joint}"] = value
-            if key in {"arm_cmd_q", "arm_applied_q", "arm_q"}:
+            if key in {
+                "arm_cmd_q",
+                "arm_raw_comp_q",
+                "arm_safe_q",
+                "arm_servo_target_unlimited",
+                "arm_applied_q",
+                "arm_q",
+            }:
                 row[f"{key}_deg/{safe_joint}"] = float(np.rad2deg(value))
-            elif key in {"arm_cmd_qvel", "arm_qvel"}:
+            elif key in {"arm_cmd_qvel", "arm_safe_qvel", "arm_applied_qvel", "arm_qvel"}:
                 row[f"{key}_deg_s/{safe_joint}"] = float(np.rad2deg(value))
-            elif key in {"desired_qdd_raw", "desired_qdd", "arm_cmd_qdd", "arm_qacc", "arm_qacc_mj"}:
+            elif key in {
+                "desired_qdd_raw",
+                "desired_qdd",
+                "arm_cmd_qdd",
+                "arm_safe_qacc",
+                "arm_applied_qacc",
+                "arm_qacc",
+                "arm_qacc_mj",
+            }:
                 row[f"{key}_deg_s2/{safe_joint}"] = float(np.rad2deg(value))
     for key, value in host.items():
         if (
             key.startswith("done/")
+            or key.startswith("arm_post_comp_safety_")
+            or key.startswith("arm_servo_safety_")
+            or (
+                key.startswith("arm_actual_safety_")
+                and key != "arm_actual_safety_clip_count"
+            )
+            or key.startswith("raw_action_clip_")
             or key.startswith("reset_")
             or key.startswith("ball_obs_")
             or key.startswith("hit_camera_")
@@ -810,62 +1062,112 @@ def plot_trace_rows(path: Path, rows: list[dict[str, float]]) -> None:
         color = JOINT_PLOT_COLORS.get(joint)
         axes[0].plot(
             t,
+            [row[f"raw_action/{name}"] for row in rows],
+            linewidth=0.7,
+            linestyle=":",
+            alpha=0.35,
+            color=color,
+        )
+        axes[0].plot(
+            t,
             [row[f"applied_action/{name}"] for row in rows],
             linewidth=1.25,
             color=color,
             label=joint,
         )
     axes[0].set_ylabel("policy action")
-    axes[0].set_title("Applied normalized joint acceleration actions")
-    axes[0].set_ylim(-1.05, 1.05)
+    axes[0].axhline(1.0, color="black", linewidth=0.9, alpha=0.65)
+    axes[0].axhline(-1.0, color="black", linewidth=0.9, alpha=0.65)
+    axes[0].set_title(
+        "Raw Gaussian samples (:), applied normalized acceleration actions (solid)"
+    )
     axes[0].grid(True, alpha=0.25)
     axes[0].legend(loc="upper right", ncol=2, fontsize=8)
 
-    for joint in RIGHT_ARM_JOINTS:
+    acc_limits_deg_s2 = np.asarray(
+        [1300.0, 1300.0, 1800.0, 3000.0, 3000.0, 3000.0, 3000.0],
+        dtype=float,
+    )
+    vel_limits_deg_s = np.asarray(
+        [210.0, 210.0, 240.0, 240.0, 300.0, 300.0, 300.0],
+        dtype=float,
+    )
+
+    for joint_idx, joint in enumerate(RIGHT_ARM_JOINTS):
         name = joint.replace("/", "_")
         color = JOINT_PLOT_COLORS.get(joint)
+        acc_limit = float(acc_limits_deg_s2[joint_idx])
         axes[1].plot(
             t,
-            [row[f"desired_qdd_deg_s2/{name}"] for row in rows],
+            [row[f"desired_qdd_deg_s2/{name}"] / acc_limit for row in rows],
             linewidth=1.25,
             color=color,
             label=joint,
         )
         qacc_key = f"arm_qacc_deg_s2/{name}"
+        applied_qacc_key = f"arm_applied_qacc_deg_s2/{name}"
+        if applied_qacc_key in rows[0]:
+            axes[1].plot(
+                t,
+                [row[applied_qacc_key] / acc_limit for row in rows],
+                linewidth=0.75,
+                color=color,
+                linestyle=":",
+                alpha=0.65,
+            )
         if qacc_key in rows[0]:
             axes[1].plot(
                 t,
-                [row[qacc_key] for row in rows],
+                [row[qacc_key] / acc_limit for row in rows],
                 linewidth=0.9,
                 color=color,
                 linestyle="--",
                 alpha=0.75,
             )
-    axes[1].set_ylabel("desired qdd deg/s^2")
-    axes[1].set_title("Mapped desired joint acceleration (solid) vs finite-difference simulated acceleration (dashed)")
+    axes[1].axhline(1.0, color="black", linewidth=0.9, alpha=0.65)
+    axes[1].axhline(-1.0, color="black", linewidth=0.9, alpha=0.65)
+    axes[1].set_ylabel("acceleration / joint limit")
+    axes[1].set_title(
+        "Nominal qdd (solid), servo target (:), simulated 200 Hz actual (--); raw compensation is in CSV"
+    )
     axes[1].grid(True, alpha=0.25)
     axes[1].legend(loc="upper right", ncol=2, fontsize=8)
 
-    for joint in RIGHT_ARM_JOINTS:
+    for joint_idx, joint in enumerate(RIGHT_ARM_JOINTS):
         name = joint.replace("/", "_")
         color = JOINT_PLOT_COLORS.get(joint)
+        vel_limit = float(vel_limits_deg_s[joint_idx])
         axes[2].plot(
             t,
-            [row[f"arm_cmd_qvel_deg_s/{name}"] for row in rows],
+            [row[f"arm_cmd_qvel_deg_s/{name}"] / vel_limit for row in rows],
             linewidth=1.25,
             color=color,
             label=joint,
         )
+        applied_qvel_key = f"arm_applied_qvel_deg_s/{name}"
+        if applied_qvel_key in rows[0]:
+            axes[2].plot(
+                t,
+                [row[applied_qvel_key] / vel_limit for row in rows],
+                linewidth=0.75,
+                color=color,
+                linestyle=":",
+                alpha=0.65,
+            )
         axes[2].plot(
             t,
-            [row[f"arm_qvel_deg_s/{name}"] for row in rows],
+            [row[f"arm_qvel_deg_s/{name}"] / vel_limit for row in rows],
             linewidth=0.9,
             color=color,
             linestyle="--",
             alpha=0.75,
         )
-    axes[2].set_ylabel("joint velocity deg/s")
-    axes[2].set_title("Commanded joint velocities (solid) vs simulated joint velocities (dashed)")
+    axes[2].axhline(1.0, color="black", linewidth=0.9, alpha=0.65)
+    axes[2].axhline(-1.0, color="black", linewidth=0.9, alpha=0.65)
+    axes[2].set_ylabel("velocity / joint limit")
+    axes[2].set_title(
+        "Nominal velocity (solid), servo target (:), simulated 200 Hz actual (--)"
+    )
     axes[2].grid(True, alpha=0.25)
     axes[2].legend(loc="upper right", ncol=2, fontsize=8)
 
@@ -934,8 +1236,13 @@ def main() -> None:
     if args.results_csv == DEFAULT_RESULTS:
         results_csv = args.checkpoint.parent / "validation.csv"
 
-    if (args.render or args.video_out is not None) and args.n_envs != 1:
-        print("[validate_mjx] render/video shows env 0 only; use --n-envs 1 for smoother visual validation.")
+    if args.render and args.n_envs != 1:
+        print("[validate_mjx] interactive render shows env 0; use --n-envs 1 for smoother visual validation.")
+    if args.video_out is not None and args.n_envs != 1:
+        print(
+            f"[validate_mjx] video records batched env {int(args.video_env)}; "
+            "use --n-envs 1 for smoother visual validation."
+        )
     trace_enabled = (
         args.action_trace_csv is not None
         or args.action_plot_out is not None
@@ -943,6 +1250,8 @@ def main() -> None:
     )
     if trace_enabled and not (0 <= int(args.trace_env) < int(args.n_envs)):
         raise SystemExit(f"--trace-env must be in [0, {args.n_envs - 1}]")
+    if args.video_out is not None and not (0 <= int(args.video_env) < int(args.n_envs)):
+        raise SystemExit(f"--video-env must be in [0, {args.n_envs - 1}]")
 
     env = MjxJuggleEnv(xml_path, n_envs=args.n_envs, cfg=cfg)
     print(f"[validate_mjx] JAX devices: {jax.devices()}")
@@ -975,6 +1284,7 @@ def main() -> None:
         f"camera_missing_prob={cfg.ball_obs_camera_missing_prob}, "
         f"view_missing_prob={cfg.ball_obs_view_bounds_missing_prob}, "
         f"episode_coherent_prob={cfg.ball_obs_missing_episode_coherent_prob}, "
+        f"frame_pivot_mode={cfg.ball_obs_frame_pivot_mode}, "
         f"obs_latency_steps={cfg.dr_obs_latency_steps_range}, action_latency_steps={cfg.dr_action_latency_steps_range}, "
         f"actuator_cmd_filter={cfg.actuator_cmd_filter}, tau_range={cfg.dr_actuator_cmd_tau_range}, "
         f"gain_range={cfg.dr_actuator_cmd_gain_range}, pos_bias={cfg.ball_obs_nominal_pos_bias_base}"
@@ -1031,11 +1341,20 @@ def main() -> None:
             width=video_width,
         )
         video_frame_interval = 1.0 / max(1e-6, float(args.video_fps) * max(1e-6, float(args.video_slowmo)))
-        append_video_frame(video_writer, video_renderer, env, env_state, render_data, args.video_camera)
+        append_video_frame(
+            video_writer,
+            video_renderer,
+            env,
+            env_state,
+            render_data,
+            args.video_camera,
+            int(args.video_env),
+        )
         next_video_time = video_frame_interval
         print(
             f"[validate_mjx] recording video: {args.video_out} "
-            f"({args.video_width}x{args.video_height}, fps={args.video_fps}, slowmo={args.video_slowmo})"
+            f"(env={int(args.video_env)}, {args.video_width}x{args.video_height}, "
+            f"fps={args.video_fps}, slowmo={args.video_slowmo})"
         )
 
     episode_rows: list[dict[str, float]] = []
@@ -1287,7 +1606,15 @@ def main() -> None:
             if video_writer is not None and video_renderer is not None and render_data is not None:
                 sim_time = step_idx * env.dt
                 while sim_time + 1e-9 >= next_video_time:
-                    append_video_frame(video_writer, video_renderer, env, env_state, render_data, args.video_camera)
+                    append_video_frame(
+                        video_writer,
+                        video_renderer,
+                        env,
+                        env_state,
+                        render_data,
+                        args.video_camera,
+                        int(args.video_env),
+                    )
                     next_video_time += video_frame_interval
 
             if args.print_every > 0 and step_idx % args.print_every == 0:

@@ -12,7 +12,7 @@ latency, camera, and DR knobs exposed by ``MjxJuggleConfig``.
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
 import pickle
 import signal
@@ -88,8 +88,8 @@ D455_REAL_VIEW_Y_BOUNDS_M = (-0.50, -0.20)
 # while MJX ball z metrics use the XML/world z directly.
 D455_REAL_VIEW_Z_BOUNDS_M = (1.00, 1.47)
 D455_REAL_VIEW_Y_TARGET_M = -0.35
-D455_STABLE_VIEW_Z_IDEAL_M = (1.02, 1.30)
-D455_RECOVERY_VIEW_Z_IDEAL_M = (1.00, 1.32)
+D455_STABLE_VIEW_Z_IDEAL_M = (1.02, 1.42)
+D455_RECOVERY_VIEW_Z_IDEAL_M = (1.02, 1.42)
 
 
 STAGE_NAME_ALIASES = {
@@ -117,8 +117,72 @@ ROBUST_JUGGLE_PROFILE = "robust_juggle_v1"
 D455_STABLE_4G_PROFILE = "d455_stable_4g_v1"
 D455_RECOVERY_PROFILE = "d455_recovery_v1"
 D455_FULL_CURRICULUM_PROFILE = "d455_full_curriculum_v1"
+D455_SUCCESS_REF_PROFILE = "d455_success_ref_v1"
+GOAL_D455_AUTOLAUNCH_PROFILE = "goal_d455_autolaunch_v1"
+GOAL_D455_AUTOLAUNCH_VIEWDENSE_PROFILE = "goal_d455_autolaunch_viewdense_v1"
+GOAL_D455_AUTOLAUNCH_VIEWDENSE_RELAXTRUNC_PROFILE = "goal_d455_autolaunch_viewdense_relaxtrunc_v1"
+GOAL_D455_AUTOLAUNCH_VIEWDENSE_FULLSAFE_PROFILE = "goal_d455_autolaunch_viewdense_fullsafe_v1"
+GOAL_D455_AUTOLAUNCH_IDEALPD_PROFILE = "goal_d455_autolaunch_idealpd_v1"
+GOAL_D455_AUTOLAUNCH_IDEALPD67_PROFILE = "goal_d455_autolaunch_idealpd67_v1"
+GOAL_D455_AUTOLAUNCH_IDEALPD67_VIEWDENSE_PROFILE = (
+    "goal_d455_autolaunch_idealpd67_viewdense_v1"
+)
+GOAL_D455_AUTOLAUNCH_IDEALPD67_FINAL_RECOVERY_PROFILE = (
+    "goal_d455_autolaunch_idealpd67_final_recovery_v1"
+)
+GOAL_D455_RELEASE_PROFILE = "goal_d455_release_v1"
+GOAL_D455_AUTOLAUNCH_PROFILES = (
+    GOAL_D455_AUTOLAUNCH_PROFILE,
+    GOAL_D455_AUTOLAUNCH_VIEWDENSE_PROFILE,
+    GOAL_D455_AUTOLAUNCH_VIEWDENSE_RELAXTRUNC_PROFILE,
+    GOAL_D455_AUTOLAUNCH_VIEWDENSE_FULLSAFE_PROFILE,
+)
+GOAL_D455_IDEALPD67_PROFILES = (
+    GOAL_D455_AUTOLAUNCH_IDEALPD67_PROFILE,
+    GOAL_D455_AUTOLAUNCH_IDEALPD67_VIEWDENSE_PROFILE,
+    GOAL_D455_AUTOLAUNCH_IDEALPD67_FINAL_RECOVERY_PROFILE,
+)
+GOAL_D455_IDEALPD_PROFILES = (
+    GOAL_D455_AUTOLAUNCH_IDEALPD_PROFILE,
+    *GOAL_D455_IDEALPD67_PROFILES,
+)
+GOAL_D455_PROFILES = (
+    *GOAL_D455_AUTOLAUNCH_PROFILES,
+    *GOAL_D455_IDEALPD_PROFILES,
+    GOAL_D455_RELEASE_PROFILE,
+)
+GOAL_D455_AUTOLAUNCH_TAIL_NEXT_CONTACT_PENALTY_WEIGHT = 0.03
+GOAL_D455_AUTOLAUNCH_VIEWDENSE_XY_WEIGHT = 0.05
+GOAL_D455_AUTOLAUNCH_VIEWDENSE_BOUNDS_WEIGHT = 8.0
+GOAL_D455_AUTOLAUNCH_VIEWDENSE_OOB_WEIGHT = 0.20
+GOAL_D455_AUTOLAUNCH_FULLSAFE_ACTION_CLIP_WEIGHT = 5.0
+GOAL_D455_AUTOLAUNCH_FULLSAFE_ACTION_JERK_WEIGHT = 3.0e-6
+GOAL_D455_AUTOLAUNCH_FULLSAFE_LIMITER_WEIGHT = 0.05
+GOAL_D455_AUTOLAUNCH_IDEALPD67_VIEWDENSE_MIN_UPDATES = {
+    14: 60,
+    15: 80,
+}
+GOAL_D455_AUTOLAUNCH_IDEALPD67_FINAL_SURVIVAL_WEIGHT = 0.50
+GOAL_D455_AUTOLAUNCH_IDEALPD67_FINAL_MIN_UPDATES = 60
+GOAL_D455_AUTOLAUNCH_RELAXED_EARLY_TRUNCATION = {
+    0: 0.0,
+    1: 0.0,
+    2: 0.0,
+    3: 0.0,
+    4: 0.05,
+    5: 0.13,
+    6: 0.22,
+    7: 0.30,
+}
+GOAL_D455_RELEASE_NEXT_CONTACT_PENALTY_WEIGHT = 0.03
 D455_TWO_PHASE_PROFILES = (D455_STABLE_4G_PROFILE, D455_RECOVERY_PROFILE)
-D455_67D_INVERSE_MPC_PROFILES = (*D455_TWO_PHASE_PROFILES, D455_FULL_CURRICULUM_PROFILE)
+D455_67D_INVERSE_MPC_PROFILES = (
+    *D455_TWO_PHASE_PROFILES,
+    D455_FULL_CURRICULUM_PROFILE,
+    D455_SUCCESS_REF_PROFILE,
+    *GOAL_D455_AUTOLAUNCH_PROFILES,
+    GOAL_D455_RELEASE_PROFILE,
+)
 STAGE4G_ROBUST15_MISSING_PROFILE = "standard_stage4g_robust15_missing_bridge"
 
 
@@ -158,9 +222,11 @@ class CurriculumStage:
     max_recent_hit_next_contact_anchor_err: float | None = None
     max_recent_mean_hit_camera_v_frac: float | None = None
     target_episode_truncation_rate: float | None = None
+    target_racket_up_cos: float | None = None
     min_ball_obs_missing_refresh_rate: float | None = None
     max_ball_obs_lost_rate: float | None = None
     policy_updates_enabled: bool = True
+    max_updates: int | None = None
 
 
 class StopRequest:
@@ -477,6 +543,930 @@ def _with_low_reset_ball_range(
         terminate_racket_z=terminate_racket_z,
     )
     return replace(cfg, ball_low_termination_z_m=0.58)
+
+
+def _goal_d455_from_scratch_stages(
+    *,
+    stack_kwargs: dict[str, object],
+    stage_steps_override: int | None,
+    critic_command_history_steps: int,
+    branch: str,
+    require_inverse_mpc_stack: bool = True,
+) -> list[CurriculumStage]:
+    """Build the two new GOAL.md curricula without reusing an old stage table.
+
+    The base task reward is deliberately minimal.  Stages only add one
+    already-declared difficulty axis at a time, both reset primitives remain
+    branch-invariant, and evidence-backed branch reward schedules are explicit.
+    """
+
+    if branch not in {"autolaunch", "release"}:
+        raise ValueError(f"unknown GOAL.md branch: {branch!r}")
+
+    common = _with_latest_d455_camera(MjxJuggleConfig(**stack_kwargs))
+    common = replace(
+        common,
+        horizon_sec=6.0,
+        right_arm_reset_degrees=D455_USER_REQUESTED_RACKET_RESET_DEGREES,
+        virtual_camera_require_base_body=True,
+        # The base-origin implementation was falsified on the stopped GPU0
+        # launch19 run.  Keep GPU1 byte-for-byte on its previously trained
+        # observation semantics until that independent branch is validated.
+        ball_obs_frame_pivot_mode=(
+            "camera_center" if branch == "autolaunch" else "legacy_base_origin"
+        ),
+        arm_action_limiter=True,
+        action_acc_scale=1.0,
+        # Minimal reward allowlist.  The environment's four fixed physical
+        # terms remain active: ball height, ball/racket XY tracking, racket
+        # anchor tracking, and the valid-hit center/flat/height multiplier.
+        # Everything else below is explicitly disabled unless it is a sparse
+        # hit, anti-cheat contact, or terminal event.  The controlled-release
+        # branch enables one evidence-backed, event-conditioned recoverability
+        # term below; the autonomous-launch branch keeps this base through its
+        # already-passed launch14 stage and enables it only in the unpassed tail.
+        action_penalty_weight=0.0,
+        action_delta_penalty_weight=0.0,
+        posture_weight=0.0,
+        base_pose_weight=0.0,
+        torque_penalty_weight=0.0,
+        arm_vel_limit_penalty_weight=0.0,
+        arm_acc_limit_penalty_weight=0.0,
+        arm_limiter_penalty_weight=0.0,
+        post_hit_survival_reward_weight=0.0,
+        post_hit_ball_vxy_penalty_weight=0.0,
+        descending_intercept_reward_weight=0.0,
+        pre_hit_intercept_reward_weight=0.0,
+        pre_hit_intercept_penalty_weight=0.0,
+        non_racket_ball_contact_penalty_weight=2.0,
+        failed_hit_penalty_weight=0.0,
+        stick_contact_penalty_weight=0.50,
+        hit_reward_base=1.0,
+        hit_reward_combo=0.0,
+        hit_reward_cap_mode="fixed",
+        hit_reward_count_cap=15,
+        hit_combo_count_cap=14,
+        rel_height_bonus_weight=0.0,
+        racket_xy_gauss_reward_weight=0.0,
+        racket_xy_gauss_penalty_weight=0.0,
+        racket_chest_xy_penalty_weight=0.0,
+        racket_chest_z_penalty_weight=0.0,
+        ball_anchor_xy_penalty_weight=0.0,
+        ball_base_x_penalty_weight=0.0,
+        ball_base_vxy_penalty_weight=0.0,
+        ball_vxy_penalty_weight=0.0,
+        apex_soft_penalty_weight=0.0,
+        ball_xy_soft_penalty_weight=0.0,
+        target_height=0.23,
+        hit_height_center=0.23,
+        hit_height_penalty_weight=0.0,
+        low_hit_penalty_weight=0.0,
+        hit_confirm_rel_height=0.050,
+        hit_confirm_abs_height=1.0,
+        hit_confirm_max_steps=70,
+        hit_center_local_sigma=0.040,
+        hit_center_sigma=0.085,
+        hit_flatness_target_cos=0.955,
+        hit_flatness_sigma=0.085,
+        center_flat_hit_reward_weight=0.0,
+        contact_flatness_penalty_weight=0.0,
+        hit_vxy_penalty_weight=0.0,
+        hit_apex_view_center_penalty_weight=0.0,
+        hit_next_contact_anchor_penalty_weight=0.0,
+        first_hit_apex_reward_weight=0.0,
+        hit_cadence_reward_weight=0.0,
+        hit_min_interval_penalty_weight=0.0,
+        hit_min_count_interval=0.32,
+        fast_hit_penalty_weight=0.0,
+        hit_reward_cap_target_interval=0.43,
+        termination_miss_penalty_base=2.5,
+        termination_miss_penalty_per_hit=0.0,
+        termination_miss_penalty_requires_hit=False,
+        termination_no_hit_miss_early_penalty=0.0,
+        racket_z_limit_termination_penalty_base=2.5,
+        racket_z_limit_termination_penalty_per_hit=0.0,
+        racket_z_soft_penalty_weight=0.0,
+        racket_up_drift_penalty_weight=0.0,
+        racket_flatness_penalty_weight=0.0,
+        ball_low_termination_z_m=0.98,
+        ball_high_termination_z_m=1.50,
+        terminate_on_ball_view_bounds=False,
+        terminate_on_ball_view_x_bounds=True,
+        terminate_on_ball_view_y_bounds=True,
+        terminate_on_ball_view_z_low=True,
+        terminate_on_ball_view_z_high=True,
+        ball_view_x_bounds_m=D455_REAL_VIEW_X_BOUNDS_M,
+        ball_view_y_bounds_m=D455_REAL_VIEW_Y_BOUNDS_M,
+        ball_view_z_bounds_m=D455_REAL_VIEW_Z_BOUNDS_M,
+        ball_view_z_ideal_m=D455_STABLE_VIEW_Z_IDEAL_M,
+        ball_view_x_target_m=0.0,
+        ball_view_y_target_m=D455_REAL_VIEW_Y_TARGET_M,
+        ball_view_xy_center_penalty_weight=0.0,
+        ball_view_z_ideal_penalty_weight=0.0,
+        ball_view_bounds_penalty_weight=0.0,
+        ball_view_out_of_bounds_penalty_weight=0.0,
+        ball_view_z_not_ideal_penalty_weight=0.0,
+        ball_view_vxy_excess_penalty_weight=0.0,
+        camera_center_weight=0.0,
+        camera_visibility_penalty_weight=0.0,
+        camera_depth_penalty_weight=0.0,
+        camera_box_penalty_weight=0.0,
+        camera_visible_penalty_weight=0.0,
+        camera_top_margin_penalty_weight=0.0,
+        hit_camera_reward_weight=0.0,
+        hit_camera_out_of_band_penalty_weight=0.0,
+        hit_camera_target_v_frac=0.67,
+        hit_camera_v_sigma_frac=0.16,
+        hit_camera_lower_band_frac=(0.48, 0.86),
+        ball_obs_rate_hz=60.0,
+        ball_obs_fractional_rate=True,
+        ball_obs_pos_noise_std=0.003,
+        ball_obs_vel_noise_std=0.030,
+        ball_obs_noise_warmup_ratio=0.0,
+        ball_obs_noise_ramp_ratio=0.0,
+        ball_obs_age_tracks_stale=True,
+        ball_obs_age_clip=0.50,
+        ball_obs_dropout_on_refresh_only=True,
+        ball_obs_require_camera_visible=False,
+        ball_obs_camera_missing_prob=0.0,
+        ball_obs_reset_respects_camera_visibility=False,
+        ball_obs_require_view_bounds=False,
+        ball_obs_view_bounds_missing_prob=0.0,
+        ball_obs_missing_episode_coherent_prob=0.0,
+        ball_obs_dropout_prob=0.0,
+        ball_obs_dropout_burst_prob=0.0,
+        lost_ball_timeout_ms=350.0,
+        domain_randomization=False,
+        dr_randomize_ball=False,
+        dr_randomize_contact=False,
+        dr_randomize_actuator=False,
+        dr_randomize_latency=False,
+        dr_randomize_pd=False,
+        dr_randomize_racket_mount=False,
+        dr_randomize_ball_obs_frame=False,
+        dr_randomize_actuator_cmd_filter=False,
+        episode_target_x_range_m=(0.0, 0.0),
+        episode_target_y_range_m=(0.0, 0.0),
+        episode_racket_anchor_z_range_m=(0.0, 0.0),
+        asymmetric_critic=True,
+        critic_command_history_steps=12,
+    )
+
+    if branch == "autolaunch":
+        common = replace(
+            common,
+            ball_reset_mode="racket_launch",
+            racket_launch_surface_gap_range_m=(0.005, 0.010),
+            racket_launch_xy_jitter=0.004,
+            racket_launch_vxy_max=0.003,
+            racket_launch_vnormal_max=0.003,
+            racket_launch_edge_margin=0.005,
+            ball_spawn_xy_jitter=0.0,
+            ball_spawn_z_jitter=0.0,
+            ball_init_vxy_max=0.0,
+            ball_init_vz=0.0,
+            ball_init_vz_jitter=0.0,
+        )
+    else:
+        # This controlled release primitive and the small recoverability term
+        # are invariant across every GPU1 stage.  The latter directly trains
+        # the strict next-contact gate that remained false throughout the
+        # release09 camera-missing plateau, without changing GPU0's reward.
+        common = replace(
+            common,
+            ball_reset_mode="anchor_drop",
+            ball_launch_height=0.32,
+            ball_spawn_xy_jitter=0.025,
+            ball_spawn_z_jitter=0.035,
+            ball_init_vxy_max=0.012,
+            ball_init_vz=-0.28,
+            ball_init_vz_jitter=0.0,
+            hit_next_contact_anchor_penalty_weight=(
+                GOAL_D455_RELEASE_NEXT_CONTACT_PENALTY_WEIGHT
+            ),
+        )
+
+    cfg_00 = common
+    cfg_01 = replace(
+        cfg_00,
+        episode_target_x_range_m=(-0.020, 0.020),
+        episode_target_y_range_m=(-0.015, 0.015),
+        episode_racket_anchor_z_range_m=(-0.008, 0.008),
+    )
+    cfg_02 = replace(
+        cfg_01,
+        episode_target_x_range_m=(-0.050, 0.050),
+        episode_target_y_range_m=(-0.040, 0.040),
+        episode_racket_anchor_z_range_m=(-0.018, 0.018),
+    )
+    cfg_03 = replace(
+        cfg_02,
+        domain_randomization=True,
+        dr_randomize_ball=True,
+        dr_ball_mass_range=(0.00260, 0.00280),
+        dr_gravity_z_range=(-9.83, -9.79),
+    )
+    cfg_04 = replace(
+        cfg_03,
+        dr_randomize_contact=True,
+        dr_ball_friction_range=(0.16, 0.28),
+        dr_racket_friction_range=(0.30, 0.48),
+        dr_ball_solref_time_range=(0.0030, 0.0060),
+        dr_ball_solref_damping_range=(0.74, 0.94),
+    )
+    cfg_05 = replace(
+        cfg_04,
+        dr_randomize_actuator=True,
+        dr_action_scale_mult_range=(0.97, 1.03),
+        dr_damping_mult_range=(0.94, 1.06),
+        dr_armature_mult_range=(0.96, 1.04),
+        dr_randomize_pd=True,
+        dr_pd_kp_mult_range=(0.98, 1.02),
+        dr_pd_kv_mult_range=(0.96, 1.04),
+        dr_pd_per_joint=True,
+        dr_randomize_actuator_cmd_filter=True,
+        dr_actuator_cmd_tau_range=(0.070, 0.078),
+        dr_actuator_cmd_gain_range=(0.995, 1.005),
+    )
+    cfg_06 = replace(
+        cfg_05,
+        dr_randomize_racket_mount=True,
+        dr_racket_pos_offset_m=0.0010,
+        dr_racket_rot_offset_rad=float(np.deg2rad(0.35)),
+        dr_racket_radius_offset_m=0.0007,
+    )
+    cfg_07 = replace(
+        cfg_06,
+        ball_obs_pos_noise_std=0.004,
+        ball_obs_vel_noise_std=0.040,
+        dr_randomize_ball_obs_frame=True,
+        dr_ball_obs_pos_bias_base_m=(0.002, 0.002, 0.002),
+        dr_ball_obs_rot_bias_deg=(0.35, 0.35, 0.50),
+        dr_ball_obs_vel_bias_base_m_s=(0.020, 0.020, 0.030),
+        dr_ball_obs_scale_range=(0.997, 1.003),
+    )
+    cfg_08 = replace(
+        cfg_07,
+        ball_obs_dropout_prob=0.002,
+        ball_obs_dropout_max_steps=1,
+    )
+    cfg_09 = replace(
+        cfg_08,
+        ball_obs_require_camera_visible=True,
+        ball_obs_camera_missing_prob=0.15,
+        ball_obs_reset_respects_camera_visibility=False,
+        ball_obs_require_view_bounds=True,
+        ball_obs_view_bounds_missing_prob=0.15,
+        ball_obs_missing_episode_coherent_prob=0.0,
+        ball_obs_dropout_prob=0.004,
+        ball_obs_dropout_max_steps=1,
+        ball_obs_dropout_burst_prob=0.0,
+        ball_obs_dropout_burst_max_steps=1,
+    )
+    cfg_10 = replace(
+        cfg_09,
+        episode_target_x_range_m=(-0.090, 0.090),
+        episode_target_y_range_m=(-0.070, 0.070),
+        episode_racket_anchor_z_range_m=(-0.035, 0.035),
+    )
+    cfg_11 = replace(
+        cfg_10,
+        dr_ball_mass_range=(0.00245, 0.00295),
+        dr_gravity_z_range=(-9.88, -9.72),
+    )
+    cfg_12 = replace(
+        cfg_11,
+        dr_ball_friction_range=(0.10, 0.38),
+        dr_racket_friction_range=(0.22, 0.62),
+        dr_ball_solref_time_range=(0.0020, 0.0080),
+        dr_ball_solref_damping_range=(0.62, 1.02),
+    )
+    cfg_13 = replace(
+        cfg_12,
+        dr_action_scale_mult_range=(0.93, 1.07),
+        dr_damping_mult_range=(0.84, 1.16),
+        dr_armature_mult_range=(0.90, 1.10),
+        dr_pd_kp_mult_range=(0.94, 1.06),
+        dr_pd_kv_mult_range=(0.90, 1.10),
+        dr_actuator_cmd_tau_range=(0.063, 0.085),
+        dr_actuator_cmd_gain_range=(0.980, 1.020),
+    )
+    cfg_14 = replace(
+        cfg_13,
+        dr_racket_pos_offset_m=0.0030,
+        dr_racket_rot_offset_rad=float(np.deg2rad(1.0)),
+        dr_racket_radius_offset_m=0.0018,
+    )
+    tail_next_contact_penalty_weight = (
+        GOAL_D455_AUTOLAUNCH_TAIL_NEXT_CONTACT_PENALTY_WEIGHT
+        if branch == "autolaunch"
+        else cfg_14.hit_next_contact_anchor_penalty_weight
+    )
+    # GPU0 plateau recovery: matched validation showed that the launch14 policy
+    # dropped from 13.37 to 5.61 mean hits when observation calibration moved
+    # directly from mild to the existing 50% bridge.  Add the exact 25% point
+    # before that unchanged 50% point; the wide distribution and all stages
+    # through launch14 remain unchanged.  The controlled-release branch
+    # deliberately does not include either GPU0-specific bridge.
+    cfg_15_micro_bridge = replace(
+        cfg_14,
+        hit_next_contact_anchor_penalty_weight=tail_next_contact_penalty_weight,
+        ball_obs_pos_noise_std=0.00475,
+        ball_obs_vel_noise_std=0.0475,
+        dr_ball_obs_pos_bias_base_m=(0.003, 0.003, 0.003),
+        dr_ball_obs_rot_bias_deg=(0.5125, 0.5125, 0.75),
+        dr_ball_obs_vel_bias_base_m_s=(0.030, 0.030, 0.0425),
+        dr_ball_obs_scale_range=(0.99525, 1.00475),
+    )
+    cfg_15_bridge = replace(
+        cfg_14,
+        hit_next_contact_anchor_penalty_weight=tail_next_contact_penalty_weight,
+        ball_obs_pos_noise_std=0.0055,
+        ball_obs_vel_noise_std=0.055,
+        dr_ball_obs_pos_bias_base_m=(0.004, 0.004, 0.004),
+        dr_ball_obs_rot_bias_deg=(0.675, 0.675, 1.0),
+        dr_ball_obs_vel_bias_base_m_s=(0.040, 0.040, 0.055),
+        dr_ball_obs_scale_range=(0.9935, 1.0065),
+    )
+    cfg_15 = replace(
+        cfg_14,
+        hit_next_contact_anchor_penalty_weight=tail_next_contact_penalty_weight,
+        ball_obs_pos_noise_std=0.007,
+        ball_obs_vel_noise_std=0.070,
+        dr_ball_obs_pos_bias_base_m=(0.006, 0.006, 0.006),
+        dr_ball_obs_rot_bias_deg=(1.0, 1.0, 1.5),
+        dr_ball_obs_vel_bias_base_m_s=(0.060, 0.060, 0.080),
+        dr_ball_obs_scale_range=(0.990, 1.010),
+    )
+    cfg_16 = replace(
+        cfg_15,
+        ball_obs_camera_missing_prob=0.50,
+        ball_obs_view_bounds_missing_prob=0.50,
+        ball_obs_dropout_prob=0.012,
+        ball_obs_dropout_max_steps=3,
+    )
+    cfg_17 = cfg_16
+
+    cfgs = [
+        cfg_00, cfg_01, cfg_02, cfg_03, cfg_04, cfg_05, cfg_06, cfg_07, cfg_08,
+        cfg_09, cfg_10, cfg_11, cfg_12, cfg_13, cfg_14, cfg_15, cfg_16, cfg_17,
+    ]
+    suffixes = [
+        "acquisition",
+        "local_workspace",
+        "workspace",
+        "ball_dynamics_mild",
+        "contact_dynamics_mild",
+        "actuator_pd_mild",
+        "racket_geometry_mild",
+        "observation_calibration_mild",
+        "single_dropout_preview",
+        "camera_missing_mild",
+        "workspace_wide",
+        "ball_dynamics_wide",
+        "contact_dynamics_wide",
+        "actuator_pd_wide",
+        "racket_geometry_wide",
+        "observation_calibration_wide",
+        "camera_missing_wide",
+        "final_consolidation",
+    ]
+    notes = [
+        "Acquire the branch task with final actuator, inverse-MPC, 67/231 stack, reset, and calibrated D455 geometry already active.",
+        "Introduce only a small episode-anchor workspace; the branch-local reset distribution is unchanged.",
+        "Widen only the episode-anchor workspace before dynamics uncertainty.",
+        "Introduce only mild ball-mass and gravity variation.",
+        "Introduce only mild contact-material and solver variation.",
+        "Introduce one mild control-realism axis: actuator, PD, and command-filter calibration uncertainty.",
+        "Introduce only mild racket mount and radius uncertainty.",
+        "Introduce only mild observation calibration and full-scale measurement noise; camera geometry stays fixed.",
+        "Preview the missing-observation axis with rare one-refresh dropouts only.",
+        "Add mild D455/view-conditioned missing without coherent episodes or bursts.",
+        "Widen only the already-learned episode-anchor workspace.",
+        "Widen only ball mass and gravity uncertainty.",
+        "Widen only contact uncertainty, after the mild contact stage has consolidated.",
+        "Widen only actuator, PD, and command-filter calibration uncertainty.",
+        "Widen only racket mount and radius uncertainty.",
+        "Widen only observation calibration and measurement noise.",
+        "Widen only the already-learned camera/view missing axis; no coherent missing or burst mechanism is added.",
+        "Keep the final distribution unchanged and train until the 1200-step, 13--15-hit stochastic CVaR gates pass.",
+    ]
+    min_updates = [30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 140, 160, 180, 200, 220, 240, 260, 360]
+    total_steps = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 28]
+    if branch == "autolaunch":
+        target_hits = [1.0, 2.0, 3.2, 4.5, 5.8, 7.0, 8.0, 8.8, 9.4, 9.8, 10.4, 10.8, 11.2, 11.5, 11.8, 12.1, 12.4, 13.0]
+        target_len = [0.10, 0.18, 0.28, 0.38, 0.48, 0.58, 0.66, 0.72, 0.76, 0.79, 0.82, 0.85, 0.87, 0.89, 0.90, 0.91, 0.93, 0.95]
+        hit1 = [0.60, 0.75, 0.82, 0.86, 0.89, 0.91, 0.93, 0.94, 0.95, 0.95, 0.96, 0.96, 0.96, 0.97, 0.97, 0.97, 0.97, 0.98]
+        hit3 = [None, 0.15, 0.30, 0.42, 0.52, 0.61, 0.68, 0.73, 0.76, 0.78, 0.81, 0.83, 0.85, 0.86, 0.87, 0.88, 0.89, 0.90]
+        hit12 = [None, None, None, None, None, None, 0.05, 0.10, 0.16, 0.22, 0.30, 0.38, 0.46, 0.53, 0.59, 0.64, 0.69, 0.76]
+    else:
+        target_hits = [2.0, 3.0, 4.2, 5.5, 6.8, 8.0, 9.0, 9.7, 10.2, 10.6, 11.0, 11.3, 11.6, 11.8, 12.0, 12.2, 12.5, 13.0]
+        target_len = [0.16, 0.24, 0.34, 0.44, 0.54, 0.63, 0.70, 0.75, 0.78, 0.81, 0.84, 0.86, 0.88, 0.89, 0.90, 0.92, 0.93, 0.95]
+        hit1 = [0.80, 0.85, 0.88, 0.90, 0.92, 0.93, 0.94, 0.95, 0.95, 0.96, 0.96, 0.96, 0.97, 0.97, 0.97, 0.97, 0.98, 0.98]
+        hit3 = [0.25, 0.36, 0.46, 0.55, 0.63, 0.69, 0.74, 0.77, 0.79, 0.81, 0.83, 0.84, 0.85, 0.86, 0.87, 0.88, 0.90, 0.91]
+        hit12 = [None, None, None, None, None, 0.05, 0.10, 0.16, 0.22, 0.28, 0.35, 0.42, 0.49, 0.55, 0.60, 0.65, 0.71, 0.78]
+    truncation = [0.02, 0.05, 0.10, 0.16, 0.23, 0.31, 0.40, 0.48, 0.54, 0.59, 0.64, 0.68, 0.72, 0.75, 0.78, 0.80, 0.82, 0.86]
+    camera_visible = [0.55, 0.57, 0.59, 0.60, 0.61, 0.62, 0.63, 0.64, 0.65, 0.66, 0.67, 0.68, 0.69, 0.70, 0.70, 0.71, 0.71, 0.72]
+    view_in_bounds = [0.62, 0.63, 0.64, 0.65, 0.66, 0.67, 0.68, 0.69, 0.70, 0.70, 0.71, 0.72, 0.72, 0.73, 0.73, 0.73, 0.72, 0.72]
+    view_z_ideal = [0.42, 0.44, 0.46, 0.48, 0.50, 0.52, 0.54, 0.55, 0.56, 0.57, 0.58, 0.59, 0.60, 0.60, 0.60, 0.60, 0.60, 0.60]
+
+    prefix = "launch" if branch == "autolaunch" else "release"
+    stages: list[CurriculumStage] = []
+    for index, cfg in enumerate(cfgs):
+        stages.append(
+            CurriculumStage(
+                name=f"{prefix}{index:02d}_{suffixes[index]}",
+                total_steps=int(total_steps[index] * 1_000_000),
+                cfg=cfg,
+                notes=notes[index],
+                target_mean_hits=target_hits[index],
+                gate_mode="strict",
+                advance_gate_mode="collapse",
+                target_mean_len_frac=target_len[index],
+                min_updates=min_updates[index],
+                target_camera_visible=camera_visible[index],
+                target_ball_view_in_bounds=view_in_bounds[index],
+                target_ball_view_z_ideal=view_z_ideal[index],
+                target_hit1_rate=hit1[index],
+                target_hit3_rate=hit3[index],
+                target_hit12_rate=hit12[index],
+                target_mean_hits_ge3=(target_hits[index] + 0.5) if index >= 2 else None,
+                target_min_hit_interval_s=0.32 if index >= 2 else None,
+                target_max_hit_interval_s=(0.56 - 0.004 * min(index - 2, 15)) if index >= 2 else None,
+                target_hit_camera_visible_rate=(0.76 + 0.01 * min(index - 2, 15)) if index >= 2 else None,
+                target_hit_camera_lower_band_rate=(0.50 + 0.02 * min(index - 2, 15)) if index >= 2 else None,
+                max_recent_mean_hit_vxy=(0.65 - 0.012 * min(index - 4, 13)) if index >= 4 else None,
+                max_recent_hit_next_contact_anchor_err=(0.18 - 0.0045 * min(index - 4, 13)) if index >= 4 else None,
+                max_recent_mean_hit_camera_v_frac=(0.84 - 0.003 * min(index - 6, 11)) if index >= 6 else None,
+                target_episode_truncation_rate=truncation[index],
+                target_racket_up_cos=(0.94 + 0.0025 * min(index - 5, 12)) if index >= 5 else None,
+                min_ball_obs_missing_refresh_rate=(
+                    0.001 if index == 8 else (
+                        0.002 if 9 <= index <= 15 else (0.004 if index == 16 else (0.006 if index == 17 else None))
+                    )
+                ),
+                max_ball_obs_lost_rate=(0.12 if index == 8 else (0.10 if 9 <= index <= 15 else (0.06 if index == 16 else (0.05 if index == 17 else None)))),
+                max_updates=None,
+            )
+        )
+
+    if branch == "autolaunch":
+        # One new mechanism only: refine the already isolated observation-
+        # calibration axis with a 25% point before the existing 50% bridge.
+        # Every stage through launch14 and every original post-launch14
+        # environment/numerical target remain unchanged.  The explicit tail
+        # reward schedule above is the only cfg difference; the evidence-backed
+        # intermediate readiness mode is declared below.
+        micro_bridge = CurriculumStage(
+            name="launch15_observation_calibration_micro_bridge",
+            total_steps=17_250_000,
+            cfg=cfg_15_micro_bridge,
+            notes=(
+                "Bridge only the observation-calibration axis at the exact "
+                "25% point between mild and wide after matched validation "
+                "showed the 50% entry jump was too large."
+            ),
+            target_mean_hits=11.875,
+            gate_mode="balanced_probe",
+            advance_gate_mode="collapse",
+            target_mean_len_frac=0.9025,
+            min_updates=225,
+            target_camera_visible=0.7025,
+            target_ball_view_in_bounds=0.73,
+            target_ball_view_z_ideal=0.60,
+            target_hit1_rate=0.97,
+            target_hit3_rate=0.8725,
+            target_hit12_rate=0.6025,
+            target_mean_hits_ge3=12.375,
+            target_min_hit_interval_s=0.32,
+            target_max_hit_interval_s=0.511,
+            target_hit_camera_visible_rate=0.8825,
+            target_hit_camera_lower_band_rate=0.745,
+            max_recent_mean_hit_vxy=0.527,
+            max_recent_hit_next_contact_anchor_err=0.133875,
+            max_recent_mean_hit_camera_v_frac=0.81525,
+            target_episode_truncation_rate=0.785,
+            target_racket_up_cos=0.963125,
+            min_ball_obs_missing_refresh_rate=0.002,
+            max_ball_obs_lost_rate=0.10,
+            max_updates=None,
+        )
+        bridge = CurriculumStage(
+            name="launch16_observation_calibration_bridge",
+            total_steps=17_500_000,
+            cfg=cfg_15_bridge,
+            notes=(
+                "Bridge only the observation-calibration axis at the exact "
+                "midpoint between mild and wide after the launch14 plateau."
+            ),
+            target_mean_hits=11.95,
+            gate_mode="balanced_probe",
+            advance_gate_mode="collapse",
+            target_mean_len_frac=0.905,
+            min_updates=230,
+            target_camera_visible=0.705,
+            target_ball_view_in_bounds=0.73,
+            target_ball_view_z_ideal=0.60,
+            target_hit1_rate=0.97,
+            target_hit3_rate=0.875,
+            target_hit12_rate=0.615,
+            target_mean_hits_ge3=12.45,
+            target_min_hit_interval_s=0.32,
+            target_max_hit_interval_s=0.510,
+            target_hit_camera_visible_rate=0.885,
+            target_hit_camera_lower_band_rate=0.75,
+            max_recent_mean_hit_vxy=0.524,
+            max_recent_hit_next_contact_anchor_err=0.13275,
+            max_recent_mean_hit_camera_v_frac=0.8145,
+            target_episode_truncation_rate=0.79,
+            target_racket_up_cos=0.96375,
+            min_ball_obs_missing_refresh_rate=0.002,
+            max_ball_obs_lost_rate=0.10,
+            max_updates=None,
+        )
+        # The unpassed GPU0 transition tail uses readiness gates, followed by
+        # the existing stochastic next-stage anti-collapse/reset-CVaR probe.
+        # launch19 remains strict on the unchanged final distribution, so the
+        # 1200-step/13--15-hit final contract is not relaxed.
+        shifted_tail = [
+            replace(
+                stage,
+                name=f"launch{index + 2:02d}_{suffixes[index]}",
+                gate_mode="strict" if index == 17 else "balanced_probe",
+            )
+            for index, stage in enumerate(stages[15:], start=15)
+        ]
+        stages = [*stages[:15], micro_bridge, bridge, *shifted_tail]
+
+    if stage_steps_override is not None:
+        stages = [replace(stage, total_steps=int(stage_steps_override)) for stage in stages]
+
+    camera_fields = (
+        "camera_visibility_mode",
+        "virtual_camera_pose_mode",
+        "virtual_camera_base_body_name",
+        "virtual_camera_require_base_body",
+        "ball_obs_frame_pivot_mode",
+        "virtual_camera_base_pos",
+        "virtual_camera_base_rot",
+        "camera_image_width",
+        "camera_image_height",
+        "camera_fx",
+        "camera_fy",
+        "camera_cx",
+        "camera_cy",
+        "camera_hfov_deg",
+        "camera_vfov_deg",
+        "camera_pixel_margin",
+    )
+    reward_contract_fields = tuple(
+        field.name
+        for field in fields(MjxJuggleConfig)
+        if (
+            ("reward" in field.name or "penalty" in field.name)
+            and field.name != "hit_next_contact_anchor_penalty_weight"
+        )
+    ) + (
+        "target_height",
+        "hit_height_center",
+        "hit_reward_cap_mode",
+        "hit_reward_count_cap",
+        "hit_combo_count_cap",
+        "hit_min_count_interval",
+        "termination_miss_penalty_requires_hit",
+        "terminate_on_ball_view_bounds",
+    )
+    first_cfg = stages[0].cfg
+    expected_next_contact_weights = (
+        [0.0] * 15
+        + [GOAL_D455_AUTOLAUNCH_TAIL_NEXT_CONTACT_PENALTY_WEIGHT]
+        * (len(stages) - 15)
+        if branch == "autolaunch"
+        else [GOAL_D455_RELEASE_NEXT_CONTACT_PENALTY_WEIGHT] * len(stages)
+    )
+    for stage_index, stage in enumerate(stages):
+        cfg = stage.cfg
+        if any(getattr(cfg, field) != getattr(first_cfg, field) for field in camera_fields):
+            raise ValueError(f"{stage.name} changed the fixed calibrated D455 geometry")
+        if tuple(cfg.right_arm_reset_degrees) != tuple(D455_USER_REQUESTED_RACKET_RESET_DEGREES):
+            raise ValueError(f"{stage.name} changed the required right-arm reset pose")
+        if any(getattr(cfg, field) != getattr(first_cfg, field) for field in reward_contract_fields):
+            raise ValueError(f"{stage.name} changed the fixed minimal reward contract")
+        if (
+            cfg.hit_next_contact_anchor_penalty_weight
+            != expected_next_contact_weights[stage_index]
+        ):
+            raise ValueError(
+                f"{stage.name} escaped the branch-specific next-contact reward schedule"
+            )
+        if require_inverse_mpc_stack:
+            if not (
+                cfg.enable_delay_conditioning
+                and cfg.include_tau_act_norm
+                and cfg.include_command_state
+                and cfg.include_active_command_error
+                and cfg.include_phase_features
+                and cfg.actuator_cmd_filter
+                and cfg.actuator_compensation_mode == "inverse_mpc"
+                and cfg.asymmetric_critic
+                and int(cfg.critic_command_history_steps) == 12
+            ):
+                raise ValueError(f"{stage.name} escaped the required 67D/inverse-MPC/asymmetric stack")
+        if branch == "autolaunch":
+            if not (
+                cfg.ball_reset_mode == "racket_launch"
+                and tuple(cfg.racket_launch_surface_gap_range_m) == (0.005, 0.010)
+                and float(cfg.racket_launch_xy_jitter) == 0.004
+                and float(cfg.racket_launch_vxy_max) == 0.003
+                and float(cfg.racket_launch_vnormal_max) == 0.003
+            ):
+                raise ValueError(f"{stage.name} failed to preserve autonomous launch")
+        else:
+            release_contract = (
+                cfg.ball_reset_mode,
+                cfg.ball_launch_height,
+                cfg.ball_spawn_xy_jitter,
+                cfg.ball_spawn_z_jitter,
+                cfg.ball_init_vxy_max,
+                cfg.ball_init_vz,
+                cfg.ball_init_vz_jitter,
+            )
+            if release_contract != ("anchor_drop", 0.32, 0.025, 0.035, 0.012, -0.28, 0.0):
+                raise ValueError(f"{stage.name} changed the controlled released-ball primitive")
+    return stages
+
+
+def _goal_d455_autolaunch_v1_stages(
+    *,
+    stack_kwargs: dict[str, object],
+    stage_steps_override: int | None,
+    critic_command_history_steps: int,
+    require_inverse_mpc_stack: bool = True,
+) -> list[CurriculumStage]:
+    return _goal_d455_from_scratch_stages(
+        stack_kwargs=stack_kwargs,
+        stage_steps_override=stage_steps_override,
+        critic_command_history_steps=critic_command_history_steps,
+        branch="autolaunch",
+        require_inverse_mpc_stack=require_inverse_mpc_stack,
+    )
+
+
+def _with_goal_d455_autolaunch_viewdense_shaping(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Add a W012 view-shaping variant without changing the W011 profile.
+
+    The bottom-hard-limited W011 plant can improve hit count and episode length
+    while drifting toward the calibrated D455 view edge.  The original
+    ``goal_d455_autolaunch_v1`` profile deliberately keeps view terms at zero,
+    so preserve it byte-for-byte and expose this separate profile for the
+    shaped experiment.
+    """
+
+    shaped: list[CurriculumStage] = []
+    for index, stage in enumerate(stages):
+        cfg = replace(
+            stage.cfg,
+            ball_view_xy_center_penalty_weight=GOAL_D455_AUTOLAUNCH_VIEWDENSE_XY_WEIGHT,
+            ball_view_bounds_penalty_weight=GOAL_D455_AUTOLAUNCH_VIEWDENSE_BOUNDS_WEIGHT,
+            ball_view_out_of_bounds_penalty_weight=GOAL_D455_AUTOLAUNCH_VIEWDENSE_OOB_WEIGHT,
+        )
+        stage_updates: dict[str, object] = {
+            "cfg": cfg,
+            "notes": (
+                f"{stage.notes}  W012 viewdense variant: add mild dense D455 "
+                "view centering/bounds penalties so reward and view gates are aligned."
+            ),
+        }
+        if index == 0:
+            # launch00 already has a mean-length gate.  Requiring a rare full
+            # 6 s truncation before the second stage made the W011 plant
+            # overtrain the one-hit acquisition behavior and drift out of
+            # view; later stages keep their stricter truncation gates.
+            stage_updates["target_episode_truncation_rate"] = 0.0
+        shaped.append(replace(stage, **stage_updates))
+    return shaped
+
+
+def _goal_d455_autolaunch_viewdense_v1_stages(
+    *,
+    stack_kwargs: dict[str, object],
+    stage_steps_override: int | None,
+    critic_command_history_steps: int,
+    require_inverse_mpc_stack: bool = True,
+) -> list[CurriculumStage]:
+    return _with_goal_d455_autolaunch_viewdense_shaping(
+        _goal_d455_autolaunch_v1_stages(
+            stack_kwargs=stack_kwargs,
+            stage_steps_override=stage_steps_override,
+            critic_command_history_steps=critic_command_history_steps,
+            require_inverse_mpc_stack=require_inverse_mpc_stack,
+        )
+    )
+
+
+def _with_goal_d455_autolaunch_idealpd67_viewdense_shaping(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Align ideal-PD67 launch14/15 optimization with their strict gates.
+
+    A stopped launch14 run reached every performance gate around updates
+    44--66, but the actuator-stack-era 220-update floor forced continued PPO
+    until view-in-bounds collapsed.  The ideal plant learns this transition
+    faster and has no inverse-MPC smoothing, so keep the original full-horizon
+    gates while adding the existing mild view shaping, enabling the existing
+    next-contact term one stage earlier, and shortening only the two measured
+    transition floors.  All actuator, observation, reset, DR, and safety
+    semantics remain owned by the ideal-PD67 profile.
+    """
+
+    shaped = _with_goal_d455_autolaunch_viewdense_shaping(stages)
+    patched: list[CurriculumStage] = []
+    for index, (original_stage, stage) in enumerate(zip(stages, shaped)):
+        cfg = stage.cfg
+        if index == 14:
+            cfg = replace(
+                cfg,
+                hit_next_contact_anchor_penalty_weight=(
+                    GOAL_D455_AUTOLAUNCH_TAIL_NEXT_CONTACT_PENALTY_WEIGHT
+                ),
+            )
+        patched.append(
+            replace(
+                stage,
+                cfg=cfg,
+                min_updates=GOAL_D455_AUTOLAUNCH_IDEALPD67_VIEWDENSE_MIN_UPDATES.get(
+                    index,
+                    original_stage.min_updates,
+                ),
+                target_episode_truncation_rate=(
+                    original_stage.target_episode_truncation_rate
+                ),
+                notes=(
+                    f"{stage.notes}  ideal-PD67 viewdense recovery: preserve "
+                    "the original full-horizon gate, align view/next-contact "
+                    "reward with the strict gates, and use the measured "
+                    "ideal-plant transition floor at launch14/15."
+                ),
+            )
+        )
+    return patched
+
+
+def _with_goal_d455_autolaunch_idealpd67_final_recovery(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Add one final-stage survival signal without relaxing acceptance gates.
+
+    The launch19 environment is byte-identical to launch18, but its strict
+    full/length/hit gates were never reached simultaneously because the GOAL
+    reward allowlist disabled post-hit survival.  Patch only the final stage:
+    keep its strict targets and plant/DR contract, add a moderate integrated
+    landing/survival reward, and avoid forcing hundreds of updates after a
+    recovered policy is already eligible for block validation.
+    """
+
+    if not stages or stages[-1].name != "launch19_final_consolidation":
+        raise ValueError("ideal-PD67 final recovery requires launch19 as the final stage")
+    final = stages[-1]
+    recovered_final = replace(
+        final,
+        cfg=replace(
+            final.cfg,
+            post_hit_survival_reward_weight=(
+                GOAL_D455_AUTOLAUNCH_IDEALPD67_FINAL_SURVIVAL_WEIGHT
+            ),
+        ),
+        min_updates=GOAL_D455_AUTOLAUNCH_IDEALPD67_FINAL_MIN_UPDATES,
+        notes=(
+            f"{final.notes}  ideal-PD67 final recovery: retain every strict "
+            "launch19 gate and add only a moderate post-hit landing/survival "
+            "reward; shorten the minimum-update floor for best-checkpoint "
+            "recovery while block validation remains mandatory."
+        ),
+    )
+    return [*stages[:-1], recovered_final]
+
+
+def _with_goal_d455_autolaunch_relaxed_early_truncation(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Relax early full-horizon gates while preserving later strictness.
+
+    W012 showed that the view-dense shaping fixes the early D455 view collapse,
+    but launch01 can still overtrain for thousands of updates because the
+    strict profile asks for non-zero full-episode truncation before the policy
+    has learned medium-length juggling.  Keep the hit, length, view, cadence and
+    final-stage contracts unchanged; only delay the full-horizon rate gate until
+    the curriculum is actually targeting longer survival.
+    """
+
+    relaxed: list[CurriculumStage] = []
+    for index, stage in enumerate(stages):
+        trunc_target = GOAL_D455_AUTOLAUNCH_RELAXED_EARLY_TRUNCATION.get(index)
+        if trunc_target is None:
+            relaxed.append(stage)
+            continue
+        relaxed.append(
+            replace(
+                stage,
+                target_episode_truncation_rate=float(trunc_target),
+                notes=(
+                    f"{stage.notes}  W013 relaxtrunc variant: early "
+                    "full-horizon truncation gate is relaxed so progression is "
+                    "driven by hit/length/view gates before long-survival stages."
+                ),
+            )
+        )
+    return relaxed
+
+
+def _goal_d455_autolaunch_viewdense_relaxtrunc_v1_stages(
+    *,
+    stack_kwargs: dict[str, object],
+    stage_steps_override: int | None,
+    critic_command_history_steps: int,
+    require_inverse_mpc_stack: bool = True,
+) -> list[CurriculumStage]:
+    return _with_goal_d455_autolaunch_relaxed_early_truncation(
+        _goal_d455_autolaunch_viewdense_v1_stages(
+            stack_kwargs=stack_kwargs,
+            stage_steps_override=stage_steps_override,
+            critic_command_history_steps=critic_command_history_steps,
+            require_inverse_mpc_stack=require_inverse_mpc_stack,
+        )
+    )
+
+
+def _goal_d455_autolaunch_viewdense_fullsafe_v1_stages(
+    *,
+    stack_kwargs: dict[str, object],
+    stage_steps_override: int | None,
+    critic_command_history_steps: int,
+    require_inverse_mpc_stack: bool = True,
+) -> list[CurriculumStage]:
+    """W014: preserve early full episodes and train away safety intervention.
+
+    W013 proved that post-step projection alone is not enough: the hard actual
+    state limiter stayed active on nearly every MJX substep while neither the
+    raw Gaussian action overflow nor the pre-projection acceleration violation
+    contributed to reward.  Keep the validated PD/FOPDT/inverse-MPC stack and
+    scalar parameters unchanged.  Restore the original full-horizon schedule,
+    retain W012 D455 view shaping, and add only safety/smoothness costs that are
+    observable and causal at the current step.
+    """
+
+    original = _goal_d455_autolaunch_v1_stages(
+        stack_kwargs=stack_kwargs,
+        stage_steps_override=stage_steps_override,
+        critic_command_history_steps=critic_command_history_steps,
+        require_inverse_mpc_stack=require_inverse_mpc_stack,
+    )
+    viewdense = _with_goal_d455_autolaunch_viewdense_shaping(original)
+    patched: list[CurriculumStage] = []
+    for original_stage, stage in zip(original, viewdense):
+        patched.append(
+            replace(
+                stage,
+                cfg=replace(
+                    stage.cfg,
+                    action_clip_excess_penalty_weight=(
+                        GOAL_D455_AUTOLAUNCH_FULLSAFE_ACTION_CLIP_WEIGHT
+                    ),
+                    delay_action_jerk_penalty_weight=(
+                        GOAL_D455_AUTOLAUNCH_FULLSAFE_ACTION_JERK_WEIGHT
+                    ),
+                    arm_limiter_penalty_weight=(
+                        GOAL_D455_AUTOLAUNCH_FULLSAFE_LIMITER_WEIGHT
+                    ),
+                ),
+                target_episode_truncation_rate=(
+                    original_stage.target_episode_truncation_rate
+                ),
+                notes=(
+                    f"{stage.notes}  W014 fullsafe variant: restore the "
+                    "original early full-horizon gate and penalize raw action "
+                    "overflow, action jerk, and pre-projection actual-state "
+                    "limiter intervention."
+                ),
+            )
+        )
+    return patched
+
+
+def _goal_d455_release_v1_stages(
+    *,
+    stack_kwargs: dict[str, object],
+    stage_steps_override: int | None,
+    critic_command_history_steps: int,
+) -> list[CurriculumStage]:
+    return _goal_d455_from_scratch_stages(
+        stack_kwargs=stack_kwargs,
+        stage_steps_override=stage_steps_override,
+        critic_command_history_steps=critic_command_history_steps,
+        branch="release",
+    )
 
 
 def _robust_juggle_v1_stages(
@@ -2019,9 +3009,9 @@ def _d455_stable_4g_v1_stages(
         target_y=(0.065, 0.145),
         anchor_z=(-0.034, 0.028),
         launch_height=0.225,
-        target_height=0.205,
-        hit_height_center=0.242,
-        hit_height_tolerance=0.058,
+        target_height=0.198,
+        hit_height_center=0.228,
+        hit_height_tolerance=0.050,
         xy_jitter=0.018,
         z_jitter=0.011,
         init_vxy=0.014,
@@ -2032,7 +3022,7 @@ def _d455_stable_4g_v1_stages(
         hit_camera_weight=1.25,
         hit_camera_oob=0.50,
         view_xy_weight=0.68,
-        view_z_weight=1.05,
+        view_z_weight=1.20,
         view_bounds_weight=3.20,
         view_oob_weight=0.80,
         view_vxy_weight=0.55,
@@ -2041,15 +3031,275 @@ def _d455_stable_4g_v1_stages(
         next_contact_weight=0.20,
         apex_center_weight=0.15,
     )
+    cfg_4b = replace(
+        cfg_4b,
+        rel_height_center=0.178,
+        low_hit_apex_margin=0.024,
+        apex_soft_limit_margin=0.050,
+        hit_cadence_target_interval=0.425,
+        hit_cadence_sigma=0.090,
+        hit_reward_combo=0.34,
+        post_hit_survival_reward_weight=2.55,
+        ball_view_z_not_ideal_penalty_weight=max(float(cfg_4b.ball_view_z_not_ideal_penalty_weight), 0.55),
+        hit_next_contact_anchor_penalty_weight=0.450,
+    )
+    cfg_4ab = replace(
+        cfg_4a,
+        dr_randomize_contact=True,
+        dr_randomize_actuator_cmd_filter=True,
+        dr_actuator_cmd_tau_range=(0.071, 0.077),
+        dr_actuator_cmd_gain_range=(0.992, 1.008),
+    )
+    cfg_4ac = replace(
+        cfg_4b,
+        # 4ac was plateauing with high hit count but low z_ideal: the old
+        # hit apex target sat at the 1.30 m ideal-z ceiling, and the tolerance
+        # allowed many rewardable hits above it.  Align the post-hit target
+        # with the D455 ideal band before adding more sim2real DR.
+        target_height=0.198,
+        rel_height_center=0.178,
+        hit_height_center=0.228,
+        hit_height_tolerance=0.050,
+        apex_soft_limit_margin=0.045,
+        hit_cadence_target_interval=0.425,
+        hit_cadence_sigma=0.090,
+        episode_target_x_range_m=(-0.060, 0.068),
+        episode_target_y_range_m=(0.060, 0.138),
+        episode_racket_anchor_z_range_m=(-0.032, 0.027),
+        ball_spawn_xy_jitter=0.017,
+        ball_spawn_z_jitter=0.0105,
+        ball_init_vxy_max=0.013,
+        ball_init_vz_jitter=0.026,
+        ball_obs_pos_noise_std=0.0065,
+        ball_obs_vel_noise_std=0.065,
+        dr_randomize_racket_mount=False,
+        dr_randomize_ball_obs_frame=False,
+        dr_action_scale_mult_range=(0.94, 1.06),
+        dr_damping_mult_range=(0.86, 1.14),
+        dr_armature_mult_range=(0.90, 1.10),
+        dr_pd_kp_mult_range=(0.95, 1.05),
+        dr_pd_kv_mult_range=(0.90, 1.10),
+        dr_actuator_cmd_tau_range=(0.071, 0.077),
+        dr_actuator_cmd_gain_range=(0.992, 1.008),
+        ball_view_xy_center_penalty_weight=0.63,
+        ball_view_z_ideal_penalty_weight=1.20,
+        ball_view_z_not_ideal_penalty_weight=0.55,
+        ball_view_bounds_penalty_weight=2.80,
+        ball_view_out_of_bounds_penalty_weight=0.65,
+        ball_view_vxy_excess_penalty_weight=0.52,
+        hit_camera_reward_weight=1.22,
+        hit_camera_out_of_band_penalty_weight=0.46,
+        hit_vxy_soft_limit_m_s=0.47,
+        hit_vxy_penalty_weight=1.72,
+        hit_next_contact_anchor_penalty_weight=0.19,
+        hit_apex_view_center_penalty_weight=0.14,
+        camera_center_weight=0.73,
+    )
+    cfg_4ad = replace(
+        cfg_4ac,
+        # First racket/observation-frame bridge.  Keep it deliberately close
+        # to 4ac so advance validation checks for collapse instead of asking
+        # an untrained policy to solve the full obs-frame DR jump at once.
+        dr_randomize_racket_mount=True,
+        dr_randomize_ball_obs_frame=True,
+        dr_action_scale_mult_range=(0.935, 1.065),
+        dr_damping_mult_range=(0.85, 1.15),
+        dr_armature_mult_range=(0.895, 1.105),
+        dr_pd_kp_mult_range=(0.945, 1.055),
+        dr_pd_kv_mult_range=(0.895, 1.105),
+        dr_actuator_cmd_tau_range=(0.070, 0.080),
+        dr_actuator_cmd_gain_range=(0.989, 1.011),
+        dr_racket_pos_offset_m=0.0008,
+        dr_racket_rot_offset_rad=float(np.deg2rad(0.30)),
+        dr_racket_radius_offset_m=0.0005,
+        dr_ball_obs_pos_bias_base_m=(0.0015, 0.0015, 0.0015),
+        dr_ball_obs_rot_bias_deg=(0.25, 0.25, 0.35),
+        dr_ball_obs_vel_bias_base_m_s=(0.015, 0.015, 0.022),
+        dr_ball_obs_scale_range=(0.996, 1.004),
+        camera_center_weight=0.76,
+        ball_view_z_ideal_penalty_weight=1.25,
+        ball_view_z_not_ideal_penalty_weight=0.58,
+        ball_view_bounds_penalty_weight=3.00,
+        ball_view_out_of_bounds_penalty_weight=0.72,
+        hit_camera_reward_weight=1.24,
+        hit_camera_out_of_band_penalty_weight=0.48,
+        hit_vxy_soft_limit_m_s=0.465,
+        hit_vxy_penalty_weight=1.82,
+        hit_next_contact_anchor_penalty_weight=0.195,
+    )
+    cfg_4ae = replace(
+        cfg_4ad,
+        # Mid obs-frame bridge.  The direct jump from 4ad to the old 4ae
+        # plateaued around 8 hits / 0.58 length on 2026-07-15, so split the
+        # camera/racket-frame perturbation ramp instead of changing PPO.
+        dr_action_scale_mult_range=(0.9325, 1.0675),
+        dr_damping_mult_range=(0.845, 1.155),
+        dr_armature_mult_range=(0.8925, 1.1075),
+        dr_pd_kp_mult_range=(0.9425, 1.0575),
+        dr_pd_kv_mult_range=(0.8925, 1.1075),
+        dr_actuator_cmd_tau_range=(0.0695, 0.0805),
+        dr_actuator_cmd_gain_range=(0.9885, 1.0115),
+        dr_racket_pos_offset_m=0.00115,
+        dr_racket_rot_offset_rad=float(np.deg2rad(0.43)),
+        dr_racket_radius_offset_m=0.00075,
+        dr_ball_obs_pos_bias_base_m=(0.0020, 0.0020, 0.0020),
+        dr_ball_obs_rot_bias_deg=(0.35, 0.35, 0.50),
+        dr_ball_obs_vel_bias_base_m_s=(0.020, 0.020, 0.028),
+        dr_ball_obs_scale_range=(0.995, 1.005),
+        ball_view_z_ideal_penalty_weight=1.28,
+        ball_view_z_not_ideal_penalty_weight=0.59,
+        hit_apex_view_center_penalty_weight=0.145,
+    )
+    cfg_4af = replace(
+        cfg_4ad,
+        # Full obs-frame bridge: previous 4ae-sized racket/obs-frame
+        # perturbations, kept as a separate stage after the easier 4ae ramp.
+        dr_action_scale_mult_range=(0.93, 1.07),
+        dr_damping_mult_range=(0.84, 1.16),
+        dr_armature_mult_range=(0.89, 1.11),
+        dr_pd_kp_mult_range=(0.94, 1.06),
+        dr_pd_kv_mult_range=(0.89, 1.11),
+        dr_actuator_cmd_tau_range=(0.069, 0.081),
+        dr_actuator_cmd_gain_range=(0.988, 1.012),
+        dr_racket_pos_offset_m=0.0015,
+        dr_racket_rot_offset_rad=float(np.deg2rad(0.55)),
+        dr_racket_radius_offset_m=0.0010,
+        dr_ball_obs_pos_bias_base_m=(0.0025, 0.0025, 0.0025),
+        dr_ball_obs_rot_bias_deg=(0.45, 0.45, 0.65),
+        dr_ball_obs_vel_bias_base_m_s=(0.025, 0.025, 0.035),
+        dr_ball_obs_scale_range=(0.994, 1.006),
+        ball_view_z_ideal_penalty_weight=1.30,
+        ball_view_z_not_ideal_penalty_weight=0.60,
+        hit_apex_view_center_penalty_weight=0.15,
+    )
+    cfg_4ag = replace(
+        cfg_4af,
+        # Dynamics bridge.  4af can pass the collapse probe, but the direct
+        # jump to 4b plateaued near 4--5 hits on 2026-07-15.  Split the
+        # remaining racket/obs-frame and dynamics DR ramp before asking for
+        # the full 4b gate.
+        episode_target_x_range_m=(-0.0625, 0.069),
+        episode_target_y_range_m=(0.0625, 0.1415),
+        episode_racket_anchor_z_range_m=(-0.033, 0.0275),
+        ball_spawn_xy_jitter=0.0175,
+        ball_spawn_z_jitter=0.01075,
+        ball_init_vxy_max=0.0135,
+        ball_init_vz_jitter=0.027,
+        ball_obs_pos_noise_std=0.00675,
+        ball_obs_vel_noise_std=0.0675,
+        dr_action_scale_mult_range=(0.925, 1.075),
+        dr_damping_mult_range=(0.83, 1.17),
+        dr_armature_mult_range=(0.885, 1.115),
+        dr_pd_kp_mult_range=(0.935, 1.065),
+        dr_pd_kv_mult_range=(0.885, 1.115),
+        dr_actuator_cmd_tau_range=(0.0685, 0.0815),
+        dr_actuator_cmd_gain_range=(0.9865, 1.0135),
+        dr_racket_pos_offset_m=0.00175,
+        dr_racket_rot_offset_rad=float(np.deg2rad(0.675)),
+        dr_racket_radius_offset_m=0.00125,
+        dr_ball_obs_pos_bias_base_m=(0.00325, 0.00325, 0.00325),
+        dr_ball_obs_rot_bias_deg=(0.575, 0.575, 0.825),
+        dr_ball_obs_vel_bias_base_m_s=(0.0325, 0.0325, 0.0425),
+        dr_ball_obs_scale_range=(0.992, 1.008),
+        ball_view_z_ideal_penalty_weight=1.25,
+        ball_view_bounds_penalty_weight=3.10,
+        hit_vxy_penalty_weight=1.86,
+        hit_reward_combo=0.28,
+        post_hit_survival_reward_weight=2.25,
+        hit_next_contact_anchor_penalty_weight=0.340,
+        camera_center_weight=0.77,
+        hit_camera_reward_weight=1.245,
+        hit_camera_out_of_band_penalty_weight=0.49,
+    )
+    cfg_4ag2 = replace(
+        cfg_4ag,
+        # Flatness/DR bridge.  Strict 4ag learned the D455 dynamics but
+        # direct 4ah still plateaued near 6.7 hits / 0.54 length, so ramp
+        # the last flatness and observation-frame DR step before the 4ah gate.
+        episode_target_x_range_m=(-0.0632, 0.0693),
+        episode_target_y_range_m=(0.0632, 0.1425),
+        episode_racket_anchor_z_range_m=(-0.03325, 0.02765),
+        ball_spawn_xy_jitter=0.01765,
+        ball_spawn_z_jitter=0.01085,
+        ball_init_vxy_max=0.01365,
+        ball_init_vz_jitter=0.02725,
+        ball_obs_pos_noise_std=0.00682,
+        ball_obs_vel_noise_std=0.0682,
+        dr_action_scale_mult_range=(0.92375, 1.07625),
+        dr_damping_mult_range=(0.8275, 1.1725),
+        dr_armature_mult_range=(0.88375, 1.11625),
+        dr_pd_kp_mult_range=(0.93375, 1.06625),
+        dr_pd_kv_mult_range=(0.88375, 1.11625),
+        dr_actuator_cmd_tau_range=(0.06838, 0.08162),
+        dr_actuator_cmd_gain_range=(0.9861, 1.0139),
+        dr_racket_pos_offset_m=0.00182,
+        dr_racket_rot_offset_rad=float(np.deg2rad(0.7125)),
+        dr_racket_radius_offset_m=0.00133,
+        dr_ball_obs_pos_bias_base_m=(0.00345, 0.00345, 0.00345),
+        dr_ball_obs_rot_bias_deg=(0.61, 0.61, 0.88),
+        dr_ball_obs_vel_bias_base_m_s=(0.0345, 0.0345, 0.0445),
+        dr_ball_obs_scale_range=(0.9915, 1.0085),
+        ball_view_z_ideal_penalty_weight=1.24,
+        ball_view_z_not_ideal_penalty_weight=0.585,
+        ball_view_bounds_penalty_weight=3.12,
+        hit_vxy_penalty_weight=1.87,
+        hit_reward_combo=0.30,
+        post_hit_survival_reward_weight=2.35,
+        hit_next_contact_anchor_penalty_weight=0.380,
+        camera_center_weight=0.772,
+        hit_camera_reward_weight=1.246,
+        hit_camera_out_of_band_penalty_weight=0.492,
+    )
+    cfg_4ah = replace(
+        cfg_4ag,
+        # Near-4b bridge.  The flat985 run reached a long-window plateau in
+        # 4b around 5.4 hits / 0.41 length while the racket stayed near an
+        # 11 deg average tilt.  Move the last dynamics/obs-frame DR step and
+        # stricter flat-racket reward into a separate stage before the full
+        # 4b gate.
+        episode_target_x_range_m=(-0.064, 0.0695),
+        episode_target_y_range_m=(0.064, 0.1435),
+        episode_racket_anchor_z_range_m=(-0.0335, 0.0278),
+        ball_spawn_xy_jitter=0.0178,
+        ball_spawn_z_jitter=0.0109,
+        ball_init_vxy_max=0.0138,
+        ball_init_vz_jitter=0.0275,
+        ball_obs_pos_noise_std=0.0069,
+        ball_obs_vel_noise_std=0.069,
+        dr_action_scale_mult_range=(0.9225, 1.0775),
+        dr_damping_mult_range=(0.825, 1.175),
+        dr_armature_mult_range=(0.8825, 1.1175),
+        dr_pd_kp_mult_range=(0.9325, 1.0675),
+        dr_pd_kv_mult_range=(0.8825, 1.1175),
+        dr_actuator_cmd_tau_range=(0.06825, 0.08175),
+        dr_actuator_cmd_gain_range=(0.98575, 1.01425),
+        dr_racket_pos_offset_m=0.0019,
+        dr_racket_rot_offset_rad=float(np.deg2rad(0.75)),
+        dr_racket_radius_offset_m=0.0014,
+        dr_ball_obs_pos_bias_base_m=(0.00365, 0.00365, 0.00365),
+        dr_ball_obs_rot_bias_deg=(0.65, 0.65, 0.93),
+        dr_ball_obs_vel_bias_base_m_s=(0.0365, 0.0365, 0.0465),
+        dr_ball_obs_scale_range=(0.991, 1.009),
+        ball_view_z_ideal_penalty_weight=1.23,
+        ball_view_z_not_ideal_penalty_weight=0.57,
+        ball_view_bounds_penalty_weight=3.15,
+        hit_vxy_penalty_weight=1.88,
+        hit_reward_combo=0.32,
+        post_hit_survival_reward_weight=2.45,
+        hit_next_contact_anchor_penalty_weight=0.420,
+        camera_center_weight=0.775,
+        hit_camera_reward_weight=1.248,
+        hit_camera_out_of_band_penalty_weight=0.495,
+    )
     cfg_4g = stable_cfg(
         "09_final",
         target_x=(-0.075, 0.075),
         target_y=(0.070, 0.155),
         anchor_z=(-0.038, 0.030),
         launch_height=0.225,
-        target_height=0.205,
-        hit_height_center=0.242,
-        hit_height_tolerance=0.055,
+        target_height=0.198,
+        hit_height_center=0.228,
+        hit_height_tolerance=0.050,
         xy_jitter=0.020,
         z_jitter=0.012,
         init_vxy=0.015,
@@ -2060,14 +3310,25 @@ def _d455_stable_4g_v1_stages(
         hit_camera_weight=1.35,
         hit_camera_oob=0.60,
         view_xy_weight=0.78,
-        view_z_weight=1.35,
+        view_z_weight=1.45,
         view_bounds_weight=4.00,
         view_oob_weight=1.10,
         view_vxy_weight=0.62,
         hit_vxy_limit=0.44,
         hit_vxy_weight=2.25,
-        next_contact_weight=0.22,
+        next_contact_weight=0.48,
         apex_center_weight=0.16,
+    )
+    cfg_4g = replace(
+        cfg_4g,
+        rel_height_center=0.178,
+        low_hit_apex_margin=0.024,
+        apex_soft_limit_margin=0.050,
+        hit_cadence_target_interval=0.425,
+        hit_cadence_sigma=0.090,
+        hit_reward_combo=0.35,
+        post_hit_survival_reward_weight=2.65,
+        ball_view_z_not_ideal_penalty_weight=max(float(cfg_4g.ball_view_z_not_ideal_penalty_weight), 0.60),
     )
     cfg_4h = replace(
         cfg_4g,
@@ -2081,8 +3342,73 @@ def _d455_stable_4g_v1_stages(
         hit_camera_reward_weight=1.45,
         hit_camera_out_of_band_penalty_weight=0.70,
         hit_vxy_penalty_weight=2.50,
-        hit_next_contact_anchor_penalty_weight=0.25,
+        hit_reward_combo=0.35,
+        post_hit_survival_reward_weight=2.70,
+        hit_next_contact_anchor_penalty_weight=0.50,
         hit_apex_view_center_penalty_weight=0.18,
+    )
+
+    def flat_cfg(
+        cfg: MjxJuggleConfig,
+        weight: float,
+        *,
+        target_cos: float = 0.985,
+        sigma: float = 0.035,
+        hit_sigma: float = 0.045,
+        contact_weight: float = 0.70,
+    ) -> MjxJuggleConfig:
+        return replace(
+            cfg,
+            racket_flatness_penalty_weight=float(weight),
+            # Keep the D455 sim-to-real policy close to a horizontal racket.
+            # Late stages use cos(8.1 deg) ~= 0.990: enough for small
+            # corrective tilt, but it removes the visible press-down/recover
+            # behavior that is risky on the real racket.
+            racket_flatness_target_cos=float(target_cos),
+            racket_flatness_sigma=float(sigma),
+            hit_flatness_target_cos=float(target_cos),
+            hit_flatness_sigma=float(hit_sigma),
+            contact_flatness_penalty_weight=max(float(cfg.contact_flatness_penalty_weight), float(contact_weight)),
+        )
+
+    (
+        cfg_1a,
+        cfg_1b,
+        cfg_2a,
+        cfg_2b,
+        cfg_3a,
+        cfg_3b,
+        cfg_4a,
+        cfg_4ab,
+        cfg_4ac,
+        cfg_4ad,
+        cfg_4ae,
+        cfg_4af,
+        cfg_4ag,
+        cfg_4ag2,
+        cfg_4ah,
+        cfg_4b,
+        cfg_4g,
+        cfg_4h,
+    ) = (
+        flat_cfg(cfg_1a, 0.04),
+        flat_cfg(cfg_1b, 0.05),
+        flat_cfg(cfg_2a, 0.07),
+        flat_cfg(cfg_2b, 0.09),
+        flat_cfg(cfg_3a, 0.12),
+        flat_cfg(cfg_3b, 0.15),
+        flat_cfg(cfg_4a, 0.20),
+        flat_cfg(cfg_4ab, 0.24),
+        flat_cfg(cfg_4ac, 0.36),
+        flat_cfg(cfg_4ad, 0.40),
+        flat_cfg(cfg_4ae, 0.43),
+        flat_cfg(cfg_4af, 0.46),
+        flat_cfg(cfg_4ag, 0.60, target_cos=0.988, sigma=0.032, hit_sigma=0.042, contact_weight=0.90),
+        flat_cfg(cfg_4ag2, 0.68, target_cos=0.989, sigma=0.031, hit_sigma=0.041, contact_weight=0.98),
+        flat_cfg(cfg_4ah, 0.75, target_cos=0.990, sigma=0.030, hit_sigma=0.040, contact_weight=1.05),
+        flat_cfg(cfg_4b, 0.85, target_cos=0.990, sigma=0.030, hit_sigma=0.040, contact_weight=1.10),
+        flat_cfg(cfg_4g, 1.00, target_cos=0.990, sigma=0.030, hit_sigma=0.040, contact_weight=1.15),
+        flat_cfg(cfg_4h, 1.10, target_cos=0.990, sigma=0.030, hit_sigma=0.040, contact_weight=1.20),
     )
 
     return [
@@ -2223,27 +3549,222 @@ def _d455_stable_4g_v1_stages(
             target_episode_truncation_rate=0.40,
         ),
         CurriculumStage(
+            "stage4ab_d455_contact_cmd_bridge",
+            steps(5_500_000),
+            cfg_4ab,
+            "Bridge stage: keep the stage4a geometry but enable contact and actuator command-filter DR before full actuator/PD DR.",
+            gate_mode="balanced",
+            advance_gate_mode="collapse",
+            target_mean_hits=7.0,
+            target_mean_len_frac=0.55,
+            min_updates=55,
+            target_camera_visible=0.76,
+            target_ball_view_in_bounds=0.68,
+            target_ball_view_z_ideal=0.56,
+            target_hit1_rate=0.93,
+            target_hit3_rate=0.58,
+            target_mean_hits_ge3=8.0,
+            target_min_hit_interval_s=0.38,
+            target_max_hit_interval_s=0.58,
+            target_hit_camera_visible_rate=0.90,
+            target_hit_camera_lower_band_rate=0.68,
+            target_episode_truncation_rate=0.40,
+        ),
+        CurriculumStage(
+            "stage4ac_d455_light_actuator_pd_bridge",
+            steps(6_000_000),
+            cfg_4ac,
+            "Bridge stage: add mild actuator and PD DR with an intermediate reset bucket before racket/observation-frame DR.",
+            gate_mode="balanced",
+            advance_gate_mode="collapse",
+            target_mean_hits=8.0,
+            target_mean_len_frac=0.62,
+            min_updates=60,
+            target_camera_visible=0.77,
+            target_ball_view_in_bounds=0.69,
+            target_ball_view_z_ideal=0.57,
+            target_hit1_rate=0.94,
+            target_hit3_rate=0.64,
+            target_hit12_rate=0.12,
+            target_mean_hits_ge3=9.0,
+            target_min_hit_interval_s=0.38,
+            target_max_hit_interval_s=0.56,
+            target_hit_camera_visible_rate=0.92,
+            target_hit_camera_lower_band_rate=0.72,
+            target_episode_truncation_rate=0.48,
+            max_recent_hit_next_contact_anchor_err=0.082,
+        ),
+        CurriculumStage(
+            "stage4ad_d455_racket_obs_frame_bridge",
+            steps(5_500_000),
+            cfg_4ad,
+            "Micro bridge: add small racket-mount and ball-observation-frame DR after the height-aligned 4ac policy.",
+            gate_mode="balanced",
+            advance_gate_mode="collapse",
+            target_mean_hits=8.0,
+            target_mean_len_frac=0.62,
+            min_updates=60,
+            target_camera_visible=0.775,
+            target_ball_view_in_bounds=0.695,
+            target_ball_view_z_ideal=0.56,
+            target_hit1_rate=0.94,
+            target_hit3_rate=0.64,
+            target_hit12_rate=0.14,
+            target_mean_hits_ge3=9.0,
+            target_min_hit_interval_s=0.38,
+            target_max_hit_interval_s=0.55,
+            target_hit_camera_visible_rate=0.92,
+            target_hit_camera_lower_band_rate=0.73,
+            target_episode_truncation_rate=0.50,
+            max_recent_hit_next_contact_anchor_err=0.094,
+        ),
+        CurriculumStage(
+            "stage4ae_d455_obs_frame_dr_bridge",
+            steps(5_500_000),
+            cfg_4ae,
+            "Mid bridge: split the 4ad to full obs-frame DR ramp after the direct jump plateaued.",
+            gate_mode="balanced",
+            advance_gate_mode="collapse",
+            target_mean_hits=8.3,
+            target_mean_len_frac=0.64,
+            min_updates=60,
+            target_camera_visible=0.78,
+            target_ball_view_in_bounds=0.70,
+            target_ball_view_z_ideal=0.57,
+            target_hit1_rate=0.94,
+            target_hit3_rate=0.66,
+            target_hit12_rate=0.18,
+            target_mean_hits_ge3=9.4,
+            target_min_hit_interval_s=0.38,
+            target_max_hit_interval_s=0.54,
+            target_hit_camera_visible_rate=0.93,
+            target_hit_camera_lower_band_rate=0.74,
+            target_episode_truncation_rate=0.52,
+            max_recent_hit_next_contact_anchor_err=0.102,
+        ),
+        CurriculumStage(
+            "stage4af_d455_full_obs_frame_dr_bridge",
+            steps(6_000_000),
+            cfg_4af,
+            "Full obs-frame bridge: previous 4ae racket/obs-frame DR magnitude before the full stage4b DR/gate.",
+            gate_mode="balanced",
+            advance_gate_mode="collapse",
+            target_mean_hits=8.7,
+            target_mean_len_frac=0.67,
+            min_updates=65,
+            target_camera_visible=0.78,
+            target_ball_view_in_bounds=0.70,
+            target_ball_view_z_ideal=0.57,
+            target_hit1_rate=0.945,
+            target_hit3_rate=0.68,
+            target_hit12_rate=0.20,
+            target_mean_hits_ge3=9.8,
+            target_min_hit_interval_s=0.38,
+            target_max_hit_interval_s=0.54,
+            target_hit_camera_visible_rate=0.93,
+            target_hit_camera_lower_band_rate=0.75,
+            target_episode_truncation_rate=0.55,
+            max_recent_hit_next_contact_anchor_err=0.101,
+        ),
+        CurriculumStage(
+            "stage4ag_d455_dynamics_dr_bridge",
+            steps(6_000_000),
+            cfg_4ag,
+            "Dynamics bridge: midpoint between 4af and full 4b after the direct 4b jump plateaued.",
+            gate_mode="strict",
+            advance_gate_mode="strict",
+            target_mean_hits=8.2,
+            target_mean_len_frac=0.61,
+            min_updates=65,
+            target_camera_visible=0.78,
+            target_ball_view_in_bounds=0.70,
+            target_ball_view_z_ideal=0.57,
+            target_hit1_rate=0.945,
+            target_hit3_rate=0.67,
+            target_hit12_rate=0.28,
+            target_mean_hits_ge3=10.3,
+            target_min_hit_interval_s=0.38,
+            target_max_hit_interval_s=0.54,
+            target_hit_camera_visible_rate=0.93,
+            target_hit_camera_lower_band_rate=0.755,
+            target_episode_truncation_rate=0.48,
+            max_recent_hit_next_contact_anchor_err=0.112,
+            target_racket_up_cos=0.982,
+        ),
+        CurriculumStage(
+            "stage4ag2_d455_flatness_dr_bridge",
+            steps(6_000_000),
+            cfg_4ag2,
+            "Flatness/DR bridge between strict 4ag and the full late-dynamics 4ah gate.",
+            gate_mode="strict",
+            advance_gate_mode="strict",
+            target_mean_hits=8.6,
+            target_mean_len_frac=0.63,
+            min_updates=60,
+            target_camera_visible=0.78,
+            target_ball_view_in_bounds=0.70,
+            target_ball_view_z_ideal=0.57,
+            target_hit1_rate=0.945,
+            target_hit3_rate=0.70,
+            target_hit12_rate=0.38,
+            target_mean_hits_ge3=11.2,
+            target_min_hit_interval_s=0.38,
+            target_max_hit_interval_s=0.54,
+            target_hit_camera_visible_rate=0.93,
+            target_hit_camera_lower_band_rate=0.756,
+            target_episode_truncation_rate=0.50,
+            max_recent_hit_next_contact_anchor_err=0.110,
+            target_racket_up_cos=0.984,
+        ),
+        CurriculumStage(
+            "stage4ah_d455_late_dynamics_flat_bridge",
+            steps(6_000_000),
+            cfg_4ah,
+            "Late bridge: near-4b DR plus stricter flat-racket shaping before the full 4b gate.",
+            gate_mode="strict",
+            advance_gate_mode="strict",
+            target_mean_hits=9.5,
+            target_mean_len_frac=0.68,
+            min_updates=70,
+            target_camera_visible=0.78,
+            target_ball_view_in_bounds=0.70,
+            target_ball_view_z_ideal=0.57,
+            target_hit1_rate=0.947,
+            target_hit3_rate=0.72,
+            target_hit12_rate=0.45,
+            target_mean_hits_ge3=11.8,
+            target_min_hit_interval_s=0.38,
+            target_max_hit_interval_s=0.54,
+            target_hit_camera_visible_rate=0.93,
+            target_hit_camera_lower_band_rate=0.758,
+            target_episode_truncation_rate=0.56,
+            max_recent_hit_next_contact_anchor_err=0.106,
+            target_racket_up_cos=0.985,
+        ),
+        CurriculumStage(
             "stage4b_d455_contact_actuator_dr",
             steps(6_000_000),
             cfg_4b,
             "Add contact, actuator, and PD DR after the nominal trajectory is already multi-hit.",
-            gate_mode="balanced",
-            advance_gate_mode="collapse",
-            target_mean_hits=9.5,
-            target_mean_len_frac=0.72,
-            min_updates=70,
+            gate_mode="strict",
+            advance_gate_mode="strict",
+            target_mean_hits=10.5,
+            target_mean_len_frac=0.75,
+            min_updates=75,
             target_camera_visible=0.78,
             target_ball_view_in_bounds=0.70,
             target_ball_view_z_ideal=0.58,
             target_hit1_rate=0.95,
-            target_hit3_rate=0.72,
-            target_hit12_rate=0.28,
-            target_mean_hits_ge3=10.5,
+            target_hit3_rate=0.76,
+            target_hit12_rate=0.55,
+            target_mean_hits_ge3=12.3,
             target_min_hit_interval_s=0.38,
             target_max_hit_interval_s=0.54,
             target_hit_camera_visible_rate=0.93,
             target_hit_camera_lower_band_rate=0.76,
-            target_episode_truncation_rate=0.60,
+            target_episode_truncation_rate=0.64,
+            max_recent_hit_next_contact_anchor_err=0.102,
+            target_racket_up_cos=0.986,
         ),
         CurriculumStage(
             "stage4g_d455_stable_dr",
@@ -2267,6 +3788,8 @@ def _d455_stable_4g_v1_stages(
             target_hit_camera_visible_rate=0.96,
             target_hit_camera_lower_band_rate=0.84,
             target_episode_truncation_rate=0.86,
+            max_recent_hit_next_contact_anchor_err=0.090,
+            target_racket_up_cos=0.987,
             max_ball_obs_lost_rate=0.010,
         ),
         CurriculumStage(
@@ -2291,9 +3814,1343 @@ def _d455_stable_4g_v1_stages(
             target_hit_camera_visible_rate=0.98,
             target_hit_camera_lower_band_rate=0.88,
             target_episode_truncation_rate=0.90,
+            target_racket_up_cos=0.988,
+            max_recent_hit_next_contact_anchor_err=0.086,
             max_ball_obs_lost_rate=0.008,
         ),
     ]
+
+
+
+def _d455_success_ref_v1_stages(
+    *,
+    stack_kwargs: dict[str, object],
+    stage_steps_override: int | None,
+    critic_command_history_steps: int,
+) -> list[CurriculumStage]:
+    """D455 reference-structured profile rebuilt from the successful legacy curricula.
+
+    The two reference runs used the old low-gate 18-stage progression and did
+    not need the dense recoverability/flatness gates that later caused the
+    D455 profile to stall.  This profile keeps the current real D455 reset
+    pose, view bounds, and done conditions from the first stage, but rebuilds
+    the course distribution by difficulty: nominal closed-loop juggling,
+    visible sim2real DR, visible range expansion, missing ramp, and final
+    full-missing/large-DR polish.
+    """
+
+    base = MjxJuggleConfig(**stack_kwargs)
+    base = _with_latest_d455_camera(base)
+    base = replace(
+        base,
+        horizon_sec=6.0,
+        right_arm_pd_profile="xml",
+        right_arm_reset_degrees=D455_USER_TARGET_RACKET_RESET_DEGREES,
+        ball_reset_mode="anchor_drop",
+        ball_launch_height=0.225,
+        target_height=0.198,
+        rel_height_center=0.178,
+        hit_height_center=0.228,
+        hit_confirm_rel_height=0.055,
+        hit_height_tolerance=0.050,
+        low_hit_apex_margin=0.024,
+        apex_soft_limit_margin=0.050,
+        ball_init_vz=-0.28,
+        arm_action_limiter=True,
+        action_acc_scale=1.0,
+        action_penalty_weight=0.0018,
+        action_delta_penalty_weight=0.0012,
+        posture_weight=0.80,
+        base_pose_weight=0.15,
+        torque_penalty_weight=0.0005,
+        arm_vel_limit_penalty_weight=0.06,
+        arm_acc_limit_penalty_weight=0.08,
+        arm_limiter_penalty_weight=0.08,
+        ball_anchor_xy_penalty_weight=0.60,
+        ball_base_x_penalty_weight=0.20,
+        ball_base_x_soft_limit=0.12,
+        ball_base_vxy_penalty_weight=0.45,
+        ball_vxy_penalty_weight=0.12,
+        ball_xy_soft_limit_radius=0.18,
+        ball_xy_soft_penalty_weight=2.0,
+        post_hit_survival_reward_weight=1.40,
+        hit_reward_base=0.50,
+        hit_reward_combo=0.02,
+        center_flat_hit_reward_weight=0.80,
+        hit_reward_cap_mode="auto",
+        hit_reward_cap_target_interval=0.425,
+        hit_reward_count_cap=0,
+        hit_combo_count_cap=14,
+        hit_cadence_reward_weight=0.10,
+        hit_cadence_target_interval=0.425,
+        hit_cadence_sigma=0.11,
+        hit_min_interval_penalty_weight=1.35,
+        hit_min_interval=0.34,
+        hit_min_count_interval=0.32,
+        fast_hit_penalty_weight=0.90,
+        hit_camera_reward_weight=0.70,
+        hit_camera_out_of_band_penalty_weight=0.0,
+        hit_camera_target_v_frac=0.66,
+        hit_camera_v_sigma_frac=0.12,
+        hit_camera_lower_band_frac=(0.50, 0.82),
+        ball_obs_rate_hz=60.0,
+        ball_obs_fractional_rate=True,
+        ball_obs_age_clip=0.35,
+        lost_ball_timeout_ms=450.0,
+        terminate_on_ball_view_bounds=True,
+        terminate_on_ball_view_x_bounds=True,
+        terminate_on_ball_view_y_bounds=True,
+        terminate_on_ball_view_z_low=True,
+        terminate_on_ball_view_z_high=False,
+        terminate_on_racket_z_limit=True,
+        racket_z_limit_termination_penalty_base=4.0,
+        racket_z_limit_termination_penalty_per_hit=0.30,
+        ball_low_termination_z_m=D455_REAL_VIEW_Z_BOUNDS_M[0],
+        ball_high_termination_z_m=max(float(base.ball_high_termination_z_m), D455_REAL_VIEW_Z_BOUNDS_M[1] + 0.20),
+        ball_view_x_bounds_m=D455_REAL_VIEW_X_BOUNDS_M,
+        ball_view_y_bounds_m=D455_REAL_VIEW_Y_BOUNDS_M,
+        ball_view_z_bounds_m=D455_REAL_VIEW_Z_BOUNDS_M,
+        ball_view_z_ideal_m=D455_STABLE_VIEW_Z_IDEAL_M,
+        ball_view_x_target_m=0.0,
+        ball_view_y_target_m=D455_REAL_VIEW_Y_TARGET_M,
+        ball_view_x_sigma_m=0.10,
+        ball_view_y_sigma_m=0.12,
+        ball_view_z_sigma_m=0.11,
+        ball_view_xy_center_penalty_weight=0.45,
+        ball_view_z_ideal_penalty_weight=0.90,
+        ball_view_bounds_penalty_weight=2.00,
+        ball_view_out_of_bounds_penalty_weight=0.0,
+        ball_view_z_not_ideal_penalty_weight=0.25,
+        ball_view_vxy_excess_penalty_weight=0.30,
+        ball_view_vxy_soft_limit_m_s=0.80,
+        camera_center_weight=0.50,
+        camera_visibility_penalty_weight=8.0,
+        camera_depth_penalty_weight=0.5,
+        camera_visible_penalty_weight=3.0,
+        camera_top_margin_penalty_weight=12.0,
+        camera_pixel_margin=D455_848_UNDISTORTED_PIXEL_MARGIN,
+        camera_min_depth=0.15,
+        camera_max_depth=2.50,
+        asymmetric_critic=True,
+        critic_command_history_steps=max(12, int(critic_command_history_steps)),
+    )
+
+    def steps(default_steps: int) -> int:
+        return int(stage_steps_override) if stage_steps_override is not None else int(default_steps)
+
+    def cfg_for(
+        *,
+        target_x: tuple[float, float],
+        target_y: tuple[float, float],
+        anchor_z: tuple[float, float],
+        xy_jitter: float,
+        z_jitter: float,
+        init_vxy: float,
+        init_vz_jitter: float,
+        obs_pos_noise: float,
+        obs_vel_noise: float,
+        dr_level: int,
+        view_xy_weight: float,
+        view_z_weight: float,
+        view_bounds_weight: float,
+        camera_center_weight: float,
+        view_missing_prob: float = 0.0,
+        camera_missing_prob: float = 0.0,
+        dropout_prob: float = 0.0,
+        burst_prob: float = 0.0,
+        dropout_steps: int = 1,
+        burst_steps: int = 1,
+        z_high_missing_range: tuple[float, float] = (0.0, 0.0),
+    ) -> MjxJuggleConfig:
+        has_missing = bool(
+            view_missing_prob > 0.0
+            or camera_missing_prob > 0.0
+            or dropout_prob > 0.0
+            or burst_prob > 0.0
+        )
+        cfg = replace(
+            base,
+            episode_target_x_range_m=target_x,
+            episode_target_y_range_m=target_y,
+            episode_racket_anchor_z_range_m=anchor_z,
+            ball_spawn_xy_jitter=float(xy_jitter),
+            ball_spawn_z_jitter=float(z_jitter),
+            ball_init_vxy_max=float(init_vxy),
+            ball_init_vz_jitter=float(init_vz_jitter),
+            ball_obs_pos_noise_std=float(obs_pos_noise),
+            ball_obs_vel_noise_std=float(obs_vel_noise),
+            ball_obs_age_tracks_stale=has_missing,
+            ball_obs_age_clip=0.60 if has_missing else 0.35,
+            ball_obs_dropout_on_refresh_only=has_missing,
+            ball_obs_require_camera_visible=camera_missing_prob > 0.0,
+            ball_obs_camera_missing_prob=float(camera_missing_prob),
+            ball_obs_reset_respects_camera_visibility=camera_missing_prob > 0.0,
+            ball_obs_require_view_bounds=view_missing_prob > 0.0,
+            ball_obs_view_bounds_missing_prob=float(view_missing_prob),
+            ball_obs_view_z_high_missing_range_m=(
+                z_high_missing_range if view_missing_prob > 0.0 else (0.0, 0.0)
+            ),
+            ball_obs_missing_episode_coherent_prob=1.0 if has_missing else 0.0,
+            ball_obs_dropout_prob=float(dropout_prob),
+            ball_obs_dropout_burst_prob=float(burst_prob),
+            ball_obs_dropout_max_steps=int(dropout_steps) if has_missing else 1,
+            ball_obs_dropout_burst_max_steps=int(burst_steps) if has_missing else 1,
+            lost_ball_timeout_ms=500.0 if has_missing else 450.0,
+            ball_view_xy_center_penalty_weight=float(view_xy_weight),
+            ball_view_z_ideal_penalty_weight=float(view_z_weight),
+            ball_view_bounds_penalty_weight=float(view_bounds_weight),
+            ball_view_out_of_bounds_penalty_weight=1.20 if has_missing else 0.0,
+            ball_view_vxy_excess_penalty_weight=0.45 if has_missing else 0.30,
+            camera_center_weight=float(camera_center_weight),
+            camera_visible_penalty_weight=3.0 if not has_missing else 2.0,
+            racket_z_hard_limit_up=max(float(base.racket_z_hard_limit_up), max(0.0, -float(anchor_z[0])) + 0.14),
+        )
+        if dr_level <= 0:
+            return replace(
+                cfg,
+                domain_randomization=False,
+                dr_randomize_ball=False,
+                dr_randomize_contact=False,
+                dr_randomize_actuator=False,
+                dr_randomize_latency=False,
+                dr_randomize_pd=False,
+                dr_randomize_racket_mount=False,
+                dr_randomize_ball_obs_frame=False,
+                dr_randomize_actuator_cmd_filter=False,
+            )
+
+        cfg = replace(
+            cfg,
+            domain_randomization=True,
+            dr_randomize_ball=True,
+            dr_randomize_contact=dr_level >= 2,
+            dr_randomize_actuator=dr_level >= 3,
+            dr_randomize_pd=dr_level >= 3,
+            dr_pd_per_joint=True,
+            dr_randomize_latency=dr_level >= 4,
+            dr_randomize_racket_mount=dr_level >= 5,
+            dr_randomize_ball_obs_frame=dr_level >= 6,
+            dr_randomize_actuator_cmd_filter=dr_level >= 3,
+            dr_action_scale_mult_range=(0.93, 1.07),
+            dr_damping_mult_range=(0.85, 1.15),
+            dr_armature_mult_range=(0.90, 1.10),
+            dr_pd_kp_mult_range=(0.95, 1.05),
+            dr_pd_kv_mult_range=(0.90, 1.10),
+        )
+        if dr_level == 1:
+            return replace(
+                cfg,
+                dr_randomize_actuator_cmd_filter=False,
+                dr_ball_friction_range=(0.16, 0.30),
+                dr_racket_friction_range=(0.32, 0.56),
+                dr_ball_solref_time_range=(0.0025, 0.0060),
+                dr_ball_solref_damping_range=(0.70, 0.96),
+            )
+        if dr_level == 2:
+            return replace(
+                cfg,
+                dr_randomize_actuator_cmd_filter=False,
+                dr_ball_friction_range=(0.12, 0.36),
+                dr_racket_friction_range=(0.26, 0.64),
+                dr_ball_solref_time_range=(0.0020, 0.0080),
+                dr_ball_solref_damping_range=(0.62, 1.05),
+            )
+
+        actuator_level = "real" if dr_level >= 6 else "medium"
+        cfg = replace(cfg, **_actuator_response_dr_kwargs(actuator_level))
+        if dr_level >= 4:
+            cfg = replace(cfg, dr_obs_latency_steps_range=(0, 2), dr_action_latency_steps_range=(0, 2))
+        if dr_level >= 5:
+            cfg = replace(
+                cfg,
+                dr_racket_pos_offset_m=0.0025,
+                dr_racket_rot_offset_rad=float(np.deg2rad(0.9)),
+                dr_racket_radius_offset_m=0.0018,
+            )
+        if dr_level >= 6:
+            cfg = replace(
+                cfg,
+                dr_action_scale_mult_range=(0.88, 1.12),
+                dr_damping_mult_range=(0.75, 1.25),
+                dr_armature_mult_range=(0.82, 1.18),
+                dr_pd_kp_mult_range=(0.88, 1.12),
+                dr_pd_kv_mult_range=(0.82, 1.18),
+                dr_obs_latency_steps_range=(0, 3),
+                dr_action_latency_steps_range=(0, 3),
+                dr_racket_pos_offset_m=0.004,
+                dr_racket_rot_offset_rad=float(np.deg2rad(1.5)),
+                dr_racket_radius_offset_m=0.0025,
+                dr_ball_obs_pos_bias_base_m=(0.008, 0.008, 0.008),
+                dr_ball_obs_rot_bias_deg=(1.5, 1.5, 2.0),
+                dr_ball_obs_vel_bias_base_m_s=(0.08, 0.08, 0.10),
+                dr_ball_obs_scale_range=(0.98, 1.02),
+                dr_ball_friction_range=(0.08, 0.45),
+                dr_racket_friction_range=(0.18, 0.75),
+                dr_ball_solref_time_range=(0.0015, 0.010),
+                dr_ball_solref_damping_range=(0.55, 1.10),
+            )
+        return cfg
+
+    cfgs = {
+        "1a": cfg_for(target_x=(0.055, 0.055), target_y=(0.095, 0.095), anchor_z=(0.0, 0.0), xy_jitter=0.002, z_jitter=0.002, init_vxy=0.0, init_vz_jitter=0.0, obs_pos_noise=0.0, obs_vel_noise=0.0, dr_level=0, view_xy_weight=0.25, view_z_weight=0.55, view_bounds_weight=1.20, camera_center_weight=0.35),
+        "1b": cfg_for(target_x=(0.035, 0.075), target_y=(0.080, 0.115), anchor_z=(-0.006, 0.006), xy_jitter=0.006, z_jitter=0.004, init_vxy=0.004, init_vz_jitter=0.010, obs_pos_noise=0.001, obs_vel_noise=0.010, dr_level=0, view_xy_weight=0.30, view_z_weight=0.65, view_bounds_weight=1.40, camera_center_weight=0.40),
+        "1c": cfg_for(target_x=(0.025, 0.085), target_y=(0.072, 0.123), anchor_z=(-0.010, 0.010), xy_jitter=0.008, z_jitter=0.006, init_vxy=0.006, init_vz_jitter=0.014, obs_pos_noise=0.0015, obs_vel_noise=0.015, dr_level=0, view_xy_weight=0.42, view_z_weight=0.70, view_bounds_weight=1.50, camera_center_weight=0.46),
+        "1d": cfg_for(target_x=(0.015, 0.090), target_y=(0.065, 0.130), anchor_z=(-0.014, 0.014), xy_jitter=0.010, z_jitter=0.007, init_vxy=0.008, init_vz_jitter=0.018, obs_pos_noise=0.002, obs_vel_noise=0.020, dr_level=0, view_xy_weight=0.56, view_z_weight=0.75, view_bounds_weight=1.80, camera_center_weight=0.58),
+        "2a": cfg_for(target_x=(0.000, 0.100), target_y=(0.060, 0.138), anchor_z=(-0.020, 0.020), xy_jitter=0.012, z_jitter=0.008, init_vxy=0.010, init_vz_jitter=0.022, obs_pos_noise=0.0025, obs_vel_noise=0.025, dr_level=0, view_xy_weight=0.62, view_z_weight=0.80, view_bounds_weight=2.00, camera_center_weight=0.62),
+        "2b": cfg_for(target_x=(-0.020, 0.105), target_y=(0.055, 0.145), anchor_z=(-0.024, 0.022), xy_jitter=0.014, z_jitter=0.009, init_vxy=0.011, init_vz_jitter=0.024, obs_pos_noise=0.003, obs_vel_noise=0.030, dr_level=0, view_xy_weight=0.66, view_z_weight=0.85, view_bounds_weight=2.15, camera_center_weight=0.66),
+        "3a": cfg_for(target_x=(-0.030, 0.110), target_y=(0.052, 0.148), anchor_z=(-0.028, 0.024), xy_jitter=0.016, z_jitter=0.010, init_vxy=0.012, init_vz_jitter=0.026, obs_pos_noise=0.0035, obs_vel_noise=0.035, dr_level=1, view_xy_weight=0.45, view_z_weight=0.90, view_bounds_weight=2.00, camera_center_weight=0.50),
+        "3b": cfg_for(target_x=(-0.030, 0.110), target_y=(0.052, 0.148), anchor_z=(-0.028, 0.024), xy_jitter=0.016, z_jitter=0.010, init_vxy=0.012, init_vz_jitter=0.026, obs_pos_noise=0.0035, obs_vel_noise=0.035, dr_level=2, view_xy_weight=0.45, view_z_weight=0.90, view_bounds_weight=2.00, camera_center_weight=0.50),
+        "4a": cfg_for(target_x=(-0.035, 0.112), target_y=(0.050, 0.150), anchor_z=(-0.030, 0.026), xy_jitter=0.017, z_jitter=0.011, init_vxy=0.013, init_vz_jitter=0.028, obs_pos_noise=0.004, obs_vel_noise=0.040, dr_level=3, view_xy_weight=0.48, view_z_weight=0.95, view_bounds_weight=2.20, camera_center_weight=0.55),
+        "4b": cfg_for(target_x=(-0.040, 0.115), target_y=(0.049, 0.151), anchor_z=(-0.031, 0.027), xy_jitter=0.0175, z_jitter=0.0115, init_vxy=0.0135, init_vz_jitter=0.029, obs_pos_noise=0.0042, obs_vel_noise=0.042, dr_level=3, view_xy_weight=0.49, view_z_weight=0.98, view_bounds_weight=2.30, camera_center_weight=0.56),
+        # Stage4c previously jumped directly from no raw action latency to
+        # action-latency DR in [0, 2] steps.  Validation at stage4c update 54
+        # showed a stable ~2-hit plateau with large post-hit vxy and y/x view
+        # exits.  A first split to random [0, 1] action latency also plateaued
+        # near 2.1 hits by update 84, so first teach the deterministic 1-step
+        # phase shift, then introduce the random range.
+        "4c0": replace(
+            cfg_for(target_x=(-0.040, 0.115), target_y=(0.049, 0.151), anchor_z=(-0.031, 0.027), xy_jitter=0.0175, z_jitter=0.0115, init_vxy=0.0135, init_vz_jitter=0.029, obs_pos_noise=0.0042, obs_vel_noise=0.042, dr_level=3, view_xy_weight=0.49, view_z_weight=0.98, view_bounds_weight=2.30, camera_center_weight=0.56),
+            dr_randomize_latency=True,
+            dr_obs_latency_steps_range=(0, 2),
+            dr_action_latency_steps_range=(1, 1),
+        ),
+        "4c1": replace(
+            cfg_for(target_x=(-0.040, 0.115), target_y=(0.049, 0.151), anchor_z=(-0.031, 0.027), xy_jitter=0.0175, z_jitter=0.0115, init_vxy=0.0135, init_vz_jitter=0.029, obs_pos_noise=0.0042, obs_vel_noise=0.042, dr_level=3, view_xy_weight=0.49, view_z_weight=0.98, view_bounds_weight=2.30, camera_center_weight=0.56),
+            dr_randomize_latency=True,
+            dr_obs_latency_steps_range=(0, 2),
+            dr_action_latency_steps_range=(0, 1),
+        ),
+        "4c2": replace(
+            cfg_for(target_x=(-0.045, 0.118), target_y=(0.048, 0.152), anchor_z=(-0.032, 0.028), xy_jitter=0.018, z_jitter=0.012, init_vxy=0.014, init_vz_jitter=0.030, obs_pos_noise=0.0045, obs_vel_noise=0.045, dr_level=3, view_xy_weight=0.50, view_z_weight=1.00, view_bounds_weight=2.40, camera_center_weight=0.58),
+            dr_randomize_latency=True,
+            dr_obs_latency_steps_range=(0, 2),
+            dr_action_latency_steps_range=(0, 1),
+        ),
+        "4c3": cfg_for(target_x=(-0.045, 0.118), target_y=(0.048, 0.152), anchor_z=(-0.032, 0.028), xy_jitter=0.018, z_jitter=0.012, init_vxy=0.014, init_vz_jitter=0.030, obs_pos_noise=0.0045, obs_vel_noise=0.045, dr_level=4, view_xy_weight=0.50, view_z_weight=1.00, view_bounds_weight=2.40, camera_center_weight=0.58),
+        "4d": cfg_for(target_x=(-0.050, 0.120), target_y=(0.046, 0.154), anchor_z=(-0.034, 0.030), xy_jitter=0.019, z_jitter=0.013, init_vxy=0.015, init_vz_jitter=0.032, obs_pos_noise=0.005, obs_vel_noise=0.050, dr_level=5, view_xy_weight=0.52, view_z_weight=1.05, view_bounds_weight=2.60, camera_center_weight=0.60),
+        "4e": cfg_for(target_x=(-0.055, 0.125), target_y=(0.045, 0.155), anchor_z=(-0.036, 0.032), xy_jitter=0.020, z_jitter=0.014, init_vxy=0.016, init_vz_jitter=0.034, obs_pos_noise=0.006, obs_vel_noise=0.060, dr_level=6, view_xy_weight=0.55, view_z_weight=1.10, view_bounds_weight=2.80, camera_center_weight=0.65),
+        "5a": cfg_for(target_x=(-0.075, 0.155), target_y=(0.020, 0.180), anchor_z=(-0.045, 0.050), xy_jitter=0.024, z_jitter=0.016, init_vxy=0.018, init_vz_jitter=0.036, obs_pos_noise=0.008, obs_vel_noise=0.080, dr_level=6, view_xy_weight=0.65, view_z_weight=1.25, view_bounds_weight=3.40, camera_center_weight=0.75),
+        "5b": cfg_for(target_x=(-0.095, 0.200), target_y=(0.000, 0.205), anchor_z=(-0.055, 0.060), xy_jitter=0.028, z_jitter=0.020, init_vxy=0.020, init_vz_jitter=0.042, obs_pos_noise=0.010, obs_vel_noise=0.100, dr_level=6, view_xy_weight=0.75, view_z_weight=1.45, view_bounds_weight=4.20, camera_center_weight=0.85, view_missing_prob=0.25, camera_missing_prob=0.02, dropout_prob=0.002, burst_prob=0.0005, dropout_steps=5, burst_steps=18, z_high_missing_range=(1.36, 1.47)),
+        "5c": cfg_for(target_x=(-0.115, 0.235), target_y=(-0.010, 0.225), anchor_z=(-0.060, 0.070), xy_jitter=0.032, z_jitter=0.024, init_vxy=0.023, init_vz_jitter=0.048, obs_pos_noise=0.012, obs_vel_noise=0.120, dr_level=6, view_xy_weight=0.85, view_z_weight=1.70, view_bounds_weight=5.00, camera_center_weight=0.95, view_missing_prob=0.50, camera_missing_prob=0.04, dropout_prob=0.004, burst_prob=0.0010, dropout_steps=8, burst_steps=28, z_high_missing_range=(1.30, 1.47)),
+        "5d": cfg_for(target_x=(-0.135, 0.280), target_y=(-0.020, 0.245), anchor_z=(-0.065, 0.080), xy_jitter=0.036, z_jitter=0.028, init_vxy=0.026, init_vz_jitter=0.054, obs_pos_noise=0.014, obs_vel_noise=0.140, dr_level=6, view_xy_weight=0.95, view_z_weight=2.00, view_bounds_weight=5.80, camera_center_weight=1.05, view_missing_prob=0.75, camera_missing_prob=0.06, dropout_prob=0.006, burst_prob=0.0015, dropout_steps=10, burst_steps=40, z_high_missing_range=(1.24, 1.47)),
+        "5e": cfg_for(target_x=(-0.150, 0.300), target_y=(-0.025, 0.255), anchor_z=(-0.070, 0.085), xy_jitter=0.040, z_jitter=0.030, init_vxy=0.030, init_vz_jitter=0.060, obs_pos_noise=0.016, obs_vel_noise=0.160, dr_level=6, view_xy_weight=1.05, view_z_weight=2.30, view_bounds_weight=6.50, camera_center_weight=1.15, view_missing_prob=1.00, camera_missing_prob=0.08, dropout_prob=0.008, burst_prob=0.0020, dropout_steps=12, burst_steps=48, z_high_missing_range=(1.20, 1.47)),
+    }
+
+    cfgs.update({
+        "4e0": cfg_for(target_x=(-0.055, 0.125), target_y=(0.045, 0.155), anchor_z=(-0.036, 0.032), xy_jitter=0.020, z_jitter=0.014, init_vxy=0.016, init_vz_jitter=0.034, obs_pos_noise=0.006, obs_vel_noise=0.060, dr_level=5, view_xy_weight=0.55, view_z_weight=1.10, view_bounds_weight=2.80, camera_center_weight=0.65),
+        # The first obs-frame bridge at update50 plateaued around 2.4 hits on
+        # two seeds and validation died from x/y view exits.  That is too big a
+        # sensor-model jump for the 4e0 attractor, so ramp structured ball
+        # observation-frame error in three small steps before real-light DR.
+        "4e1a": replace(
+            cfg_for(target_x=(-0.055, 0.125), target_y=(0.045, 0.155), anchor_z=(-0.036, 0.032), xy_jitter=0.020, z_jitter=0.014, init_vxy=0.016, init_vz_jitter=0.034, obs_pos_noise=0.006, obs_vel_noise=0.060, dr_level=5, view_xy_weight=0.55, view_z_weight=1.10, view_bounds_weight=2.80, camera_center_weight=0.65),
+            dr_randomize_ball_obs_frame=True,
+            dr_ball_obs_pos_bias_base_m=(0.0004, 0.0004, 0.0004),
+            dr_ball_obs_rot_bias_deg=(0.08, 0.08, 0.12),
+            dr_ball_obs_vel_bias_base_m_s=(0.004, 0.004, 0.006),
+            dr_ball_obs_scale_range=(0.999, 1.001),
+        ),
+        "4e1b": replace(
+            cfg_for(target_x=(-0.055, 0.125), target_y=(0.045, 0.155), anchor_z=(-0.036, 0.032), xy_jitter=0.020, z_jitter=0.014, init_vxy=0.016, init_vz_jitter=0.034, obs_pos_noise=0.006, obs_vel_noise=0.060, dr_level=5, view_xy_weight=0.55, view_z_weight=1.10, view_bounds_weight=2.80, camera_center_weight=0.65),
+            dr_randomize_ball_obs_frame=True,
+            dr_ball_obs_pos_bias_base_m=(0.0008, 0.0008, 0.0008),
+            dr_ball_obs_rot_bias_deg=(0.15, 0.15, 0.22),
+            dr_ball_obs_vel_bias_base_m_s=(0.008, 0.008, 0.010),
+            dr_ball_obs_scale_range=(0.998, 1.002),
+        ),
+        "4e1b2": replace(
+            cfg_for(target_x=(-0.055, 0.125), target_y=(0.045, 0.155), anchor_z=(-0.036, 0.032), xy_jitter=0.020, z_jitter=0.014, init_vxy=0.016, init_vz_jitter=0.034, obs_pos_noise=0.006, obs_vel_noise=0.060, dr_level=5, view_xy_weight=0.55, view_z_weight=1.10, view_bounds_weight=2.80, camera_center_weight=0.65),
+            dr_randomize_ball_obs_frame=True,
+            dr_ball_obs_pos_bias_base_m=(0.0011, 0.0011, 0.0011),
+            dr_ball_obs_rot_bias_deg=(0.22, 0.22, 0.32),
+            dr_ball_obs_vel_bias_base_m_s=(0.011, 0.011, 0.014),
+            dr_ball_obs_scale_range=(0.997, 1.003),
+        ),
+        "4e1b3": replace(
+            cfg_for(target_x=(-0.075, 0.085), target_y=(0.045, 0.155), anchor_z=(-0.036, 0.032), xy_jitter=0.021, z_jitter=0.014, init_vxy=0.016, init_vz_jitter=0.034, obs_pos_noise=0.006, obs_vel_noise=0.060, dr_level=5, view_xy_weight=0.56, view_z_weight=1.10, view_bounds_weight=2.80, camera_center_weight=0.66),
+            dr_randomize_ball_obs_frame=True,
+            dr_ball_obs_pos_bias_base_m=(0.0013, 0.0013, 0.0013),
+            dr_ball_obs_rot_bias_deg=(0.26, 0.26, 0.38),
+            dr_ball_obs_vel_bias_base_m_s=(0.013, 0.013, 0.017),
+            dr_ball_obs_scale_range=(0.9965, 1.0035),
+        ),
+        "4e1b3b": replace(
+            cfg_for(target_x=(-0.085, 0.065), target_y=(0.045, 0.155), anchor_z=(-0.036, 0.032), xy_jitter=0.022, z_jitter=0.014, init_vxy=0.016, init_vz_jitter=0.034, obs_pos_noise=0.006, obs_vel_noise=0.060, dr_level=5, view_xy_weight=0.58, view_z_weight=1.10, view_bounds_weight=2.80, camera_center_weight=0.68),
+            dr_randomize_ball_obs_frame=True,
+            dr_ball_obs_pos_bias_base_m=(0.0013, 0.0013, 0.0013),
+            dr_ball_obs_rot_bias_deg=(0.26, 0.26, 0.38),
+            dr_ball_obs_vel_bias_base_m_s=(0.013, 0.013, 0.017),
+            dr_ball_obs_scale_range=(0.9965, 1.0035),
+        ),
+        "4e1b3b1": replace(
+            # v34 diagnostics showed that the softer low-x edge still loses too
+            # many episodes before the first hit.  First tighten y/jitter and
+            # shift x only partway left, then return to the wider soft edge.
+            cfg_for(target_x=(-0.070, 0.045), target_y=(0.055, 0.145), anchor_z=(-0.034, 0.030), xy_jitter=0.014, z_jitter=0.012, init_vxy=0.014, init_vz_jitter=0.030, obs_pos_noise=0.006, obs_vel_noise=0.060, dr_level=5, view_xy_weight=0.59, view_z_weight=1.11, view_bounds_weight=2.85, camera_center_weight=0.69),
+            dr_randomize_ball_obs_frame=True,
+            dr_ball_obs_pos_bias_base_m=(0.0013, 0.0013, 0.0013),
+            dr_ball_obs_rot_bias_deg=(0.26, 0.26, 0.38),
+            dr_ball_obs_vel_bias_base_m_s=(0.013, 0.013, 0.017),
+            dr_ball_obs_scale_range=(0.9965, 1.0035),
+        ),
+        "4e1b3b1h": replace(
+            # v35 learned the average 4e1b3b1 distribution, but repeated
+            # next-stage probes still failed only in the target_x-low and
+            # target_y-high reset buckets.  Make that corner the whole stage so
+            # the mean gate cannot hide it behind easier high-x episodes.
+            cfg_for(target_x=(-0.078, -0.028), target_y=(0.095, 0.155), anchor_z=(-0.034, 0.030), xy_jitter=0.012, z_jitter=0.012, init_vxy=0.012, init_vz_jitter=0.028, obs_pos_noise=0.006, obs_vel_noise=0.060, dr_level=5, view_xy_weight=0.60, view_z_weight=1.11, view_bounds_weight=2.90, camera_center_weight=0.70),
+            dr_randomize_ball_obs_frame=True,
+            dr_ball_obs_pos_bias_base_m=(0.0013, 0.0013, 0.0013),
+            dr_ball_obs_rot_bias_deg=(0.26, 0.26, 0.38),
+            dr_ball_obs_vel_bias_base_m_s=(0.013, 0.013, 0.017),
+            dr_ball_obs_scale_range=(0.9965, 1.0035),
+        ),
+        "4e1b3b2": replace(
+            # v33 showed that the pure low-x edge remains too hard even with
+            # mid obs-frame DR.  Move the distribution left in a smaller step
+            # before making the edge the entire reset bucket.
+            cfg_for(target_x=(-0.075, 0.025), target_y=(0.045, 0.155), anchor_z=(-0.036, 0.032), xy_jitter=0.016, z_jitter=0.014, init_vxy=0.016, init_vz_jitter=0.034, obs_pos_noise=0.006, obs_vel_noise=0.060, dr_level=5, view_xy_weight=0.59, view_z_weight=1.11, view_bounds_weight=2.85, camera_center_weight=0.69),
+            dr_randomize_ball_obs_frame=True,
+            dr_ball_obs_pos_bias_base_m=(0.0013, 0.0013, 0.0013),
+            dr_ball_obs_rot_bias_deg=(0.26, 0.26, 0.38),
+            dr_ball_obs_vel_bias_base_m_s=(0.013, 0.013, 0.017),
+            dr_ball_obs_scale_range=(0.9965, 1.0035),
+        ),
+        "4e1b3c0": replace(
+            # v32 showed that low-x edge plus full obs-frame DR is too hard
+            # directly from 4e1b3b.  First make the weak edge the whole
+            # distribution while keeping the 4e1b3b mid obs-frame bias.
+            cfg_for(target_x=(-0.095, -0.015), target_y=(0.045, 0.155), anchor_z=(-0.036, 0.032), xy_jitter=0.018, z_jitter=0.014, init_vxy=0.016, init_vz_jitter=0.034, obs_pos_noise=0.006, obs_vel_noise=0.060, dr_level=5, view_xy_weight=0.60, view_z_weight=1.12, view_bounds_weight=2.90, camera_center_weight=0.70),
+            dr_randomize_ball_obs_frame=True,
+            dr_ball_obs_pos_bias_base_m=(0.0013, 0.0013, 0.0013),
+            dr_ball_obs_rot_bias_deg=(0.26, 0.26, 0.38),
+            dr_ball_obs_vel_bias_base_m_s=(0.013, 0.013, 0.017),
+            dr_ball_obs_scale_range=(0.9965, 1.0035),
+        ),
+        "4e1b3c": replace(
+            # The 4e1b3b -> 4e1b4 probe repeatedly failed only in the low-x
+            # reset buckets.  Train that tail as the whole stage so the mean
+            # gate can no longer hide the weak bucket before full obs-frame DR.
+            cfg_for(target_x=(-0.095, -0.015), target_y=(0.045, 0.155), anchor_z=(-0.036, 0.032), xy_jitter=0.018, z_jitter=0.014, init_vxy=0.016, init_vz_jitter=0.034, obs_pos_noise=0.006, obs_vel_noise=0.060, dr_level=5, view_xy_weight=0.60, view_z_weight=1.12, view_bounds_weight=2.90, camera_center_weight=0.70),
+            dr_randomize_ball_obs_frame=True,
+            dr_ball_obs_pos_bias_base_m=(0.0015, 0.0015, 0.0015),
+            dr_ball_obs_rot_bias_deg=(0.30, 0.30, 0.45),
+            dr_ball_obs_vel_bias_base_m_s=(0.015, 0.015, 0.020),
+            dr_ball_obs_scale_range=(0.996, 1.004),
+        ),
+        "4e1b4": replace(
+            cfg_for(target_x=(-0.085, 0.065), target_y=(0.045, 0.155), anchor_z=(-0.036, 0.032), xy_jitter=0.022, z_jitter=0.014, init_vxy=0.016, init_vz_jitter=0.034, obs_pos_noise=0.006, obs_vel_noise=0.060, dr_level=5, view_xy_weight=0.58, view_z_weight=1.10, view_bounds_weight=2.80, camera_center_weight=0.68),
+            dr_randomize_ball_obs_frame=True,
+            dr_ball_obs_pos_bias_base_m=(0.0015, 0.0015, 0.0015),
+            dr_ball_obs_rot_bias_deg=(0.30, 0.30, 0.45),
+            dr_ball_obs_vel_bias_base_m_s=(0.015, 0.015, 0.020),
+            dr_ball_obs_scale_range=(0.996, 1.004),
+        ),
+        "4e1c": replace(
+            cfg_for(target_x=(-0.055, 0.125), target_y=(0.045, 0.155), anchor_z=(-0.036, 0.032), xy_jitter=0.020, z_jitter=0.014, init_vxy=0.016, init_vz_jitter=0.034, obs_pos_noise=0.006, obs_vel_noise=0.060, dr_level=5, view_xy_weight=0.55, view_z_weight=1.10, view_bounds_weight=2.80, camera_center_weight=0.65),
+            dr_randomize_ball_obs_frame=True,
+            dr_ball_obs_pos_bias_base_m=(0.0015, 0.0015, 0.0015),
+            dr_ball_obs_rot_bias_deg=(0.30, 0.30, 0.45),
+            dr_ball_obs_vel_bias_base_m_s=(0.015, 0.015, 0.020),
+            dr_ball_obs_scale_range=(0.996, 1.004),
+        ),
+        "4e1d": replace(
+            cfg_for(target_x=(-0.055, 0.125), target_y=(0.045, 0.155), anchor_z=(-0.036, 0.032), xy_jitter=0.020, z_jitter=0.014, init_vxy=0.016, init_vz_jitter=0.034, obs_pos_noise=0.006, obs_vel_noise=0.060, dr_level=6, view_xy_weight=0.55, view_z_weight=1.10, view_bounds_weight=2.80, camera_center_weight=0.65),
+            dr_action_scale_mult_range=(0.91, 1.09),
+            dr_damping_mult_range=(0.82, 1.18),
+            dr_armature_mult_range=(0.88, 1.12),
+            dr_pd_kp_mult_range=(0.92, 1.08),
+            dr_pd_kv_mult_range=(0.88, 1.12),
+            dr_obs_latency_steps_range=(0, 2),
+            dr_action_latency_steps_range=(0, 2),
+            dr_racket_pos_offset_m=0.0030,
+            dr_racket_rot_offset_rad=float(np.deg2rad(1.1)),
+            dr_racket_radius_offset_m=0.0020,
+            dr_ball_obs_pos_bias_base_m=(0.004, 0.004, 0.004),
+            dr_ball_obs_rot_bias_deg=(0.8, 0.8, 1.0),
+            dr_ball_obs_vel_bias_base_m_s=(0.04, 0.04, 0.05),
+            dr_ball_obs_scale_range=(0.99, 1.01),
+            dr_ball_friction_range=(0.10, 0.40),
+            dr_racket_friction_range=(0.20, 0.70),
+            dr_ball_solref_time_range=(0.0018, 0.0090),
+            dr_ball_solref_damping_range=(0.58, 1.08),
+        ),
+        "4e2": cfg_for(target_x=(-0.055, 0.125), target_y=(0.045, 0.155), anchor_z=(-0.036, 0.032), xy_jitter=0.020, z_jitter=0.014, init_vxy=0.016, init_vz_jitter=0.034, obs_pos_noise=0.006, obs_vel_noise=0.060, dr_level=6, view_xy_weight=0.55, view_z_weight=1.10, view_bounds_weight=2.80, camera_center_weight=0.65),
+        "4f": cfg_for(target_x=(-0.065, 0.135), target_y=(0.040, 0.160), anchor_z=(-0.038, 0.034), xy_jitter=0.022, z_jitter=0.015, init_vxy=0.017, init_vz_jitter=0.036, obs_pos_noise=0.007, obs_vel_noise=0.070, dr_level=6, view_xy_weight=0.60, view_z_weight=1.15, view_bounds_weight=3.00, camera_center_weight=0.70),
+        "5a1": cfg_for(target_x=(-0.075, 0.155), target_y=(0.020, 0.180), anchor_z=(-0.045, 0.050), xy_jitter=0.024, z_jitter=0.016, init_vxy=0.018, init_vz_jitter=0.036, obs_pos_noise=0.008, obs_vel_noise=0.080, dr_level=5, view_xy_weight=0.65, view_z_weight=1.25, view_bounds_weight=3.40, camera_center_weight=0.75),
+        "5a2": cfg_for(target_x=(-0.095, 0.200), target_y=(0.000, 0.205), anchor_z=(-0.055, 0.060), xy_jitter=0.028, z_jitter=0.020, init_vxy=0.020, init_vz_jitter=0.042, obs_pos_noise=0.010, obs_vel_noise=0.100, dr_level=5, view_xy_weight=0.75, view_z_weight=1.45, view_bounds_weight=4.20, camera_center_weight=0.85),
+        "5a3": cfg_for(target_x=(-0.120, 0.250), target_y=(-0.015, 0.230), anchor_z=(-0.062, 0.072), xy_jitter=0.032, z_jitter=0.024, init_vxy=0.023, init_vz_jitter=0.048, obs_pos_noise=0.012, obs_vel_noise=0.120, dr_level=5, view_xy_weight=0.85, view_z_weight=1.65, view_bounds_weight=5.00, camera_center_weight=0.95),
+        "5a4": cfg_for(target_x=(-0.150, 0.300), target_y=(-0.025, 0.255), anchor_z=(-0.070, 0.085), xy_jitter=0.036, z_jitter=0.028, init_vxy=0.026, init_vz_jitter=0.054, obs_pos_noise=0.014, obs_vel_noise=0.140, dr_level=6, view_xy_weight=0.95, view_z_weight=1.90, view_bounds_weight=5.80, camera_center_weight=1.05),
+        "6a": cfg_for(target_x=(-0.095, 0.200), target_y=(0.000, 0.205), anchor_z=(-0.055, 0.060), xy_jitter=0.028, z_jitter=0.020, init_vxy=0.020, init_vz_jitter=0.042, obs_pos_noise=0.010, obs_vel_noise=0.100, dr_level=5, view_xy_weight=0.75, view_z_weight=1.45, view_bounds_weight=4.20, camera_center_weight=0.85, view_missing_prob=0.10, camera_missing_prob=0.01, dropout_prob=0.001, burst_prob=0.00025, dropout_steps=3, burst_steps=10, z_high_missing_range=(1.40, 1.47)),
+        "6b": cfg_for(target_x=(-0.115, 0.235), target_y=(-0.010, 0.225), anchor_z=(-0.060, 0.070), xy_jitter=0.032, z_jitter=0.024, init_vxy=0.023, init_vz_jitter=0.048, obs_pos_noise=0.012, obs_vel_noise=0.120, dr_level=5, view_xy_weight=0.85, view_z_weight=1.70, view_bounds_weight=5.00, camera_center_weight=0.95, view_missing_prob=0.25, camera_missing_prob=0.02, dropout_prob=0.002, burst_prob=0.0005, dropout_steps=5, burst_steps=18, z_high_missing_range=(1.36, 1.47)),
+        "6c": cfg_for(target_x=(-0.130, 0.265), target_y=(-0.018, 0.240), anchor_z=(-0.064, 0.076), xy_jitter=0.034, z_jitter=0.026, init_vxy=0.024, init_vz_jitter=0.050, obs_pos_noise=0.014, obs_vel_noise=0.140, dr_level=6, view_xy_weight=0.95, view_z_weight=1.95, view_bounds_weight=5.60, camera_center_weight=1.05, view_missing_prob=0.50, camera_missing_prob=0.04, dropout_prob=0.004, burst_prob=0.0010, dropout_steps=8, burst_steps=28, z_high_missing_range=(1.30, 1.47)),
+        "6d": cfg_for(target_x=(-0.140, 0.285), target_y=(-0.022, 0.250), anchor_z=(-0.067, 0.082), xy_jitter=0.038, z_jitter=0.029, init_vxy=0.028, init_vz_jitter=0.056, obs_pos_noise=0.016, obs_vel_noise=0.160, dr_level=6, view_xy_weight=1.05, view_z_weight=2.20, view_bounds_weight=6.20, camera_center_weight=1.15, view_missing_prob=0.75, camera_missing_prob=0.06, dropout_prob=0.006, burst_prob=0.0015, dropout_steps=10, burst_steps=40, z_high_missing_range=(1.24, 1.47)),
+        "6e": cfg_for(target_x=(-0.150, 0.300), target_y=(-0.025, 0.255), anchor_z=(-0.070, 0.085), xy_jitter=0.040, z_jitter=0.030, init_vxy=0.030, init_vz_jitter=0.060, obs_pos_noise=0.018, obs_vel_noise=0.180, dr_level=6, view_xy_weight=1.15, view_z_weight=2.45, view_bounds_weight=6.80, camera_center_weight=1.20, view_missing_prob=1.00, camera_missing_prob=0.08, dropout_prob=0.008, burst_prob=0.0020, dropout_steps=12, burst_steps=48, z_high_missing_range=(1.20, 1.47)),
+        "7a": cfg_for(target_x=(-0.150, 0.300), target_y=(-0.025, 0.255), anchor_z=(-0.070, 0.085), xy_jitter=0.040, z_jitter=0.030, init_vxy=0.030, init_vz_jitter=0.060, obs_pos_noise=0.018, obs_vel_noise=0.180, dr_level=6, view_xy_weight=1.20, view_z_weight=2.60, view_bounds_weight=7.20, camera_center_weight=1.25, view_missing_prob=1.00, camera_missing_prob=0.08, dropout_prob=0.008, burst_prob=0.0020, dropout_steps=12, burst_steps=48, z_high_missing_range=(1.20, 1.47)),
+    })
+
+    # Keep the post-hit state recoverable.  The first v7 stage1b run learned a
+    # reliable first hit but hit3 stayed near zero because this profile had
+    # inherited the default zero next-contact/apex-center weights.  Use the
+    # existing reward terms from the successful D455 curricula and ramp them
+    # with stage difficulty instead of changing the reset/view geometry.
+    recoverability_weights = {
+        "1a": (0.03, 0.03, 0.72, 0.10),
+        "1b": (0.08, 0.06, 0.66, 0.25),
+        "1c": (0.14, 0.10, 0.58, 0.85),
+        "1d": (0.24, 0.14, 0.50, 1.45),
+        "2a": (0.28, 0.15, 0.48, 1.70),
+        "2b": (0.32, 0.16, 0.46, 1.90),
+        "3a": (0.18, 0.12, 0.54, 0.80),
+        "3b": (0.20, 0.13, 0.52, 0.95),
+        "4a": (0.22, 0.14, 0.50, 1.15),
+        "4b": (0.24, 0.14, 0.49, 1.25),
+        "4c0": (0.25, 0.14, 0.49, 1.30),
+        "4c1": (0.25, 0.14, 0.49, 1.30),
+        "4c2": (0.26, 0.15, 0.48, 1.35),
+        "4c3": (0.27, 0.15, 0.48, 1.40),
+        "4d": (0.28, 0.15, 0.47, 1.45),
+        "4e0": (0.30, 0.16, 0.30, 1.70),
+        "4e1a": (0.32, 0.17, 0.26, 2.00),
+        "4e1b": (0.34, 0.18, 0.24, 2.20),
+        "4e1b2": (0.35, 0.18, 0.235, 2.30),
+        "4e1b3": (0.355, 0.18, 0.23, 2.35),
+        "4e1b3b": (0.36, 0.18, 0.23, 2.40),
+        "4e1b3b1": (0.36, 0.18, 0.23, 2.40),
+        "4e1b3b1h": (0.36, 0.18, 0.23, 2.45),
+        "4e1b3b2": (0.36, 0.18, 0.23, 2.40),
+        "4e1b3c0": (0.36, 0.18, 0.23, 2.40),
+        "4e1b3c": (0.36, 0.18, 0.23, 2.40),
+        "4e1b4": (0.36, 0.18, 0.23, 2.40),
+        "4e1c": (0.36, 0.18, 0.23, 2.40),
+        "4e1d": (0.38, 0.18, 0.23, 2.50),
+        "4e2": (0.40, 0.18, 0.23, 2.60),
+        "4e": (0.42, 0.18, 0.22, 2.70),
+        "4f": (0.44, 0.18, 0.22, 2.80),
+        "5a": (0.38, 0.17, 0.45, 1.85),
+        "5a1": (0.38, 0.17, 0.45, 1.85),
+        "5a2": (0.40, 0.18, 0.45, 1.95),
+        "5a3": (0.42, 0.18, 0.44, 2.05),
+        "5a4": (0.44, 0.18, 0.44, 2.15),
+        "5b": (0.42, 0.18, 0.44, 2.05),
+        "5c": (0.44, 0.18, 0.44, 2.15),
+        "5d": (0.46, 0.18, 0.44, 2.25),
+        "5e": (0.48, 0.18, 0.44, 2.35),
+        "6a": (0.40, 0.17, 0.45, 1.95),
+        "6b": (0.42, 0.18, 0.45, 2.05),
+        "6c": (0.44, 0.18, 0.44, 2.15),
+        "6d": (0.46, 0.18, 0.44, 2.25),
+        "6e": (0.48, 0.18, 0.44, 2.35),
+        "7a": (0.50, 0.18, 0.44, 2.45),
+    }
+    for key, (next_contact_weight, apex_center_weight, hit_vxy_limit, hit_vxy_weight) in recoverability_weights.items():
+        cfgs[key] = replace(
+            cfgs[key],
+            hit_next_contact_anchor_penalty_weight=float(next_contact_weight),
+            hit_next_contact_anchor_sigma_m=(
+                0.12 if key in {"1d", "2a", "2b"} else (0.13 if key not in {"1a", "1b"} else 0.14)
+            ),
+            hit_apex_view_center_penalty_weight=float(apex_center_weight),
+            hit_apex_view_center_sigma_m=(
+                0.14 if key in {"1d", "2a", "2b"} else (0.15 if key not in {"1a", "1b"} else 0.16)
+            ),
+            hit_vxy_soft_limit_m_s=float(hit_vxy_limit),
+            hit_vxy_penalty_weight=float(hit_vxy_weight),
+        )
+
+    def entry_bootstrap_cfg(
+        key: str,
+        *,
+        hit_base: float,
+        hit_combo: float,
+        pre_hit: float,
+        first_apex: float,
+        miss_base: float,
+        no_hit_miss: float,
+        torque_weight: float,
+        arm_acc_weight: float,
+        action_weight: float,
+        action_delta_weight: float,
+        center_flat_weight: float,
+    ) -> None:
+        # The reference stage4g-style reward is intentionally low once a
+        # stable juggle attractor exists, but from-scratch D455 stage1a was
+        # observed to learn the "stay still and reduce dense penalties" local
+        # optimum: last 16 updates had zero hits while return improved.  Keep
+        # reset/view geometry unchanged and only strengthen the existing
+        # first-hit bootstrap terms for the entry stages.
+        cfgs[key] = replace(
+            cfgs[key],
+            hit_reward_base=float(hit_base),
+            hit_reward_combo=float(hit_combo),
+            hit_reward_cap_mode="fixed",
+            hit_reward_count_cap=15,
+            center_flat_hit_reward_weight=float(center_flat_weight),
+            pre_hit_intercept_reward_weight=float(pre_hit),
+            pre_hit_intercept_sigma=0.10,
+            pre_hit_intercept_time_max=0.72,
+            pre_hit_intercept_penalty_weight=0.45,
+            pre_hit_intercept_penalty_sigma=0.22,
+            pre_hit_intercept_penalty_radius=0.030,
+            pre_hit_intercept_penalty_time_max=0.85,
+            first_hit_apex_reward_weight=float(first_apex),
+            first_hit_apex_sigma=0.070,
+            termination_miss_penalty_base=float(miss_base),
+            termination_miss_penalty_per_hit=0.30,
+            termination_miss_penalty_requires_hit=False,
+            termination_no_hit_miss_early_penalty=float(no_hit_miss),
+            torque_penalty_weight=float(torque_weight),
+            arm_acc_limit_penalty_weight=float(arm_acc_weight),
+            arm_vel_limit_penalty_weight=0.035,
+            arm_limiter_penalty_weight=0.030,
+            action_penalty_weight=float(action_weight),
+            action_delta_penalty_weight=float(action_delta_weight),
+            racket_xy_gauss_reward_weight=0.25,
+            racket_xy_gauss_penalty_weight=0.25,
+        )
+
+    entry_bootstrap_cfg(
+        "1a",
+        hit_base=2.25,
+        hit_combo=0.28,
+        pre_hit=1.80,
+        first_apex=0.60,
+        miss_base=3.50,
+        no_hit_miss=6.0,
+        torque_weight=0.00012,
+        arm_acc_weight=0.030,
+        action_weight=0.0010,
+        action_delta_weight=0.00045,
+        center_flat_weight=1.45,
+    )
+    entry_bootstrap_cfg(
+        "1b",
+        hit_base=2.05,
+        hit_combo=0.25,
+        pre_hit=1.60,
+        first_apex=0.55,
+        miss_base=3.20,
+        no_hit_miss=5.0,
+        torque_weight=0.00015,
+        arm_acc_weight=0.035,
+        action_weight=0.0011,
+        action_delta_weight=0.00055,
+        center_flat_weight=1.35,
+    )
+    entry_bootstrap_cfg(
+        "1c",
+        hit_base=1.80,
+        hit_combo=0.22,
+        pre_hit=1.40,
+        first_apex=0.50,
+        miss_base=2.80,
+        no_hit_miss=4.0,
+        torque_weight=0.00020,
+        arm_acc_weight=0.045,
+        action_weight=0.0012,
+        action_delta_weight=0.00070,
+        center_flat_weight=1.25,
+    )
+    entry_bootstrap_cfg(
+        "1d",
+        hit_base=1.55,
+        hit_combo=0.18,
+        pre_hit=1.20,
+        first_apex=0.40,
+        miss_base=2.50,
+        no_hit_miss=3.0,
+        torque_weight=0.00025,
+        arm_acc_weight=0.055,
+        action_weight=0.0013,
+        action_delta_weight=0.00085,
+        center_flat_weight=1.10,
+    )
+    entry_bootstrap_cfg(
+        "2a",
+        hit_base=1.35,
+        hit_combo=0.14,
+        pre_hit=1.00,
+        first_apex=0.30,
+        miss_base=2.30,
+        no_hit_miss=2.0,
+        torque_weight=0.00030,
+        arm_acc_weight=0.065,
+        action_weight=0.00145,
+        action_delta_weight=0.00100,
+        center_flat_weight=1.00,
+    )
+    entry_bootstrap_cfg(
+        "2b",
+        hit_base=1.15,
+        hit_combo=0.10,
+        pre_hit=0.80,
+        first_apex=0.25,
+        miss_base=2.10,
+        no_hit_miss=1.5,
+        torque_weight=0.00035,
+        arm_acc_weight=0.070,
+        action_weight=0.00160,
+        action_delta_weight=0.00110,
+        center_flat_weight=0.95,
+    )
+    for key in ("3a", "3b"):
+        cfgs[key] = replace(
+            cfgs[key],
+            hit_reward_base=0.95,
+            hit_reward_combo=0.08,
+            hit_reward_cap_mode="fixed",
+            hit_reward_count_cap=15,
+            pre_hit_intercept_reward_weight=0.70,
+            first_hit_apex_reward_weight=0.20,
+            termination_miss_penalty_base=2.0,
+            termination_miss_penalty_per_hit=0.30,
+            termination_miss_penalty_requires_hit=False,
+            termination_no_hit_miss_early_penalty=1.0,
+            torque_penalty_weight=0.00040,
+            arm_acc_limit_penalty_weight=0.075,
+        )
+
+    def stage(
+        key: str,
+        name: str,
+        total_steps: int,
+        notes: str,
+        *,
+        target_hits: float,
+        target_len: float,
+        min_updates: int,
+        camera_visible: float,
+        view_in_bounds: float | None = None,
+        z_ideal: float | None = None,
+        min_return: float | None = None,
+        gate_mode: str = "strict",
+        full_rate: float | None = None,
+        hit1: float | None = None,
+        hit3: float | None = None,
+        hit12: float | None = None,
+        hits_ge3: float | None = None,
+        missing_refresh: float | None = None,
+        lost_rate: float | None = None,
+        advance_gate_mode: str = "collapse",
+        hit_interval_min: float | None = 0.32,
+        hit_interval_max: float | None = 0.58,
+    ) -> CurriculumStage:
+        return CurriculumStage(
+            name,
+            steps(total_steps),
+            cfgs[key],
+            notes,
+            gate_mode=gate_mode,
+            # Early bridges use collapse probes to avoid over-blocking one-step
+            # distribution changes; later sim-to-real stages switch to strict
+            # probes so training metrics cannot advance past weak validation.
+            advance_gate_mode=advance_gate_mode,
+            target_mean_hits=target_hits,
+            target_mean_len_frac=target_len,
+            min_updates=min_updates,
+            min_recent_mean_return=min_return,
+            target_camera_visible=camera_visible,
+            min_recent_camera_reward_dense=-0.10,
+            target_ball_view_in_bounds=view_in_bounds,
+            target_ball_view_z_ideal=z_ideal,
+            target_hit1_rate=hit1,
+            target_hit3_rate=hit3,
+            target_hit12_rate=hit12,
+            target_mean_hits_ge3=hits_ge3,
+            target_min_hit_interval_s=hit_interval_min,
+            target_max_hit_interval_s=hit_interval_max,
+            target_episode_truncation_rate=full_rate,
+            min_ball_obs_missing_refresh_rate=missing_refresh,
+            max_ball_obs_lost_rate=lost_rate,
+        )
+
+    return [
+        stage("1a", "stage1a_d455_ref_first_hit", 4_000_000, "Fixed D455 reset and centered anchor-drop first-hit bootstrap.", target_hits=0.97, target_len=0.10, min_updates=15, camera_visible=0.60, hit_interval_min=None, hit_interval_max=None),
+        stage("1b", "stage1b_d455_ref_small_random", 5_000_000, "Small reset and ball-state randomization.", target_hits=2.2, target_len=0.18, min_updates=25, camera_visible=0.65, hit_interval_min=None, hit_interval_max=None),
+        stage("1c", "stage1c_d455_ref_three_hit_bridge", 5_500_000, "Bridge to repeated contacts without DR.", target_hits=3.5, target_len=0.25, min_updates=30, camera_visible=0.68, view_in_bounds=0.58, z_ideal=0.44),
+        stage("1d", "stage1d_d455_ref_nominal_multi_hit", 6_000_000, "Nominal D455 visible-range multi-hit learning.", target_hits=5.0, target_len=0.36, min_updates=35, camera_visible=0.70, view_in_bounds=0.62, z_ideal=0.48),
+        stage("2a", "stage2a_d455_ref_centered_visible", 7_000_000, "Center the hit bucket in the D455 lower-middle view.", target_hits=6.5, target_len=0.48, min_updates=40, camera_visible=0.72, view_in_bounds=0.66, z_ideal=0.50),
+        stage("2b", "stage2b_d455_ref_stable_anchor", 8_000_000, "Consolidate a long visible anchor-drop attractor before DR.", target_hits=8.0, target_len=0.60, min_updates=45, camera_visible=0.74, view_in_bounds=0.68, z_ideal=0.54),
+        stage("3a", "stage3a_d455_ref_ball_light_dr", 8_000_000, "Legacy-like ball-only light DR with D455 bounds fixed.", target_hits=4.0, target_len=0.20, min_updates=30, camera_visible=0.76, view_in_bounds=0.68, z_ideal=0.54),
+        stage("3b", "stage3b_d455_ref_contact_dr", 8_000_000, "Add contact DR without changing reset geometry.", target_hits=4.0, target_len=0.20, min_updates=30, camera_visible=0.76, view_in_bounds=0.68, z_ideal=0.54),
+        stage("4a", "stage4a_d455_ref_actuator_cmd_bridge", 8_000_000, "Enable mild actuator command-filter/PD randomization.", target_hits=4.0, target_len=0.20, min_updates=30, camera_visible=0.78, view_in_bounds=0.70, z_ideal=0.56),
+        stage("4b", "stage4b_d455_ref_lite_actuator_pd", 8_000_000, "Slightly broaden actuator and PD DR.", target_hits=4.0, target_len=0.20, min_updates=30, camera_visible=0.78, view_in_bounds=0.70, z_ideal=0.56),
+        stage("4c0", "stage4c0_d455_ref_action_latency_fixed_1_same_range", 8_000_000, "Teach the fixed 1-step raw action-latency phase shift before randomizing action latency.", target_hits=4.0, target_len=0.20, min_updates=35, camera_visible=0.78, view_in_bounds=0.70, z_ideal=0.56),
+        stage("4c1", "stage4c1_d455_ref_action_latency_0_1_same_range", 8_000_000, "Randomize raw action latency to 0--1 control steps without broadening the 4b range.", target_hits=4.0, target_len=0.20, min_updates=35, camera_visible=0.78, view_in_bounds=0.70, z_ideal=0.56),
+        stage("4c2", "stage4c2_d455_ref_action_latency_0_1", 8_000_000, "Keep raw action-latency DR at 0--1 steps while moving to the original 4c reset/noise range.", target_hits=4.0, target_len=0.20, min_updates=35, camera_visible=0.78, view_in_bounds=0.70, z_ideal=0.56),
+        stage("4c3", "stage4c3_d455_ref_action_latency_0_2", 8_000_000, "Raise raw action-latency DR to the original 0--2 step range after the 0--1 bridge is stable.", target_hits=4.0, target_len=0.20, min_updates=45, camera_visible=0.78, view_in_bounds=0.70, z_ideal=0.56),
+        stage("4d", "stage4d_d455_ref_racket_mount_dr", 8_000_000, "Add racket mount DR.", target_hits=4.0, target_len=0.20, min_updates=30, camera_visible=0.80, view_in_bounds=0.70, z_ideal=0.56),
+        stage("4e0", "stage4e0_d455_ref_4e_range_dr5_quality", 8_000_000, "Move to the 4e visible range while keeping medium actuator/racket-mount DR.", target_hits=4.1, target_len=0.32, min_updates=45, camera_visible=0.80, view_in_bounds=0.71, z_ideal=0.57),
+        stage("4e1a", "stage4e1a_d455_ref_obs_frame_tiny_bridge", 8_000_000, "Introduce tiny structured ball-observation-frame DR after the 4e0 visible attractor.", target_hits=3.8, target_len=0.28, min_updates=45, camera_visible=0.80, view_in_bounds=0.71, z_ideal=0.57),
+        stage("4e1b", "stage4e1b_d455_ref_obs_frame_small_bridge", 8_000_000, "Raise structured ball-observation-frame DR to a small bias while keeping medium actuator response.", target_hits=3.9, target_len=0.29, min_updates=45, camera_visible=0.80, view_in_bounds=0.71, z_ideal=0.57, hit3=0.30, hits_ge3=8.0),
+        stage("4e1b2", "stage4e1b2_d455_ref_obs_frame_mid_bridge", 8_000_000, "Add an intermediate obs-frame DR bridge after strict validation showed 4e1b could not robustly enter 4e1c low-x buckets.", target_hits=3.55, target_len=0.29, min_updates=45, camera_visible=0.80, view_in_bounds=0.71, z_ideal=0.57, hit3=0.29, hits_ge3=9.0, advance_gate_mode="strict"),
+        stage("4e1b3", "stage4e1b3_d455_ref_low_x_mid_obs_bridge", 8_000_000, "Focus the failed low-x reset/target buckets with an intermediate obs-frame DR before the full 4e1c sensor jump.", target_hits=2.9, target_len=0.24, min_updates=45, camera_visible=0.80, view_in_bounds=0.71, z_ideal=0.57, hit3=0.23, hits_ge3=7.5, advance_gate_mode="strict"),
+        stage("4e1b3b", "stage4e1b3b_d455_ref_low_x_full_range_mid_obs_bridge", 8_000_000, "Cover the full low-x reset/target range using the same mid obs-frame DR before adding the full obs-frame bias.", target_hits=2.6, target_len=0.22, min_updates=45, camera_visible=0.80, view_in_bounds=0.71, z_ideal=0.57, hit3=0.20, hits_ge3=7.0, advance_gate_mode="collapse"),
+        stage("4e1b3b1", "stage4e1b3b1_d455_ref_low_x_first_hit_repair", 8_000_000, "Repair first-hit survival on the low-x tail with a centered-y, lower-jitter bridge before the soft edge.", target_hits=2.0, target_len=0.18, min_updates=40, camera_visible=0.80, view_in_bounds=0.71, z_ideal=0.57, hit1=0.55, hit3=0.13, hits_ge3=5.0, advance_gate_mode="collapse"),
+        stage("4e1b3b1h", "stage4e1b3b1h_d455_ref_low_x_high_y_bucket_repair", 8_000_000, "Train the next-stage target-x-low and target-y-high corner as the whole distribution after v35 showed average first-hit repair still hid this weak bucket.", target_hits=1.4, target_len=0.13, min_updates=35, camera_visible=0.80, view_in_bounds=0.71, z_ideal=0.57, hit1=0.42, hit3=0.06, hits_ge3=3.0, advance_gate_mode="collapse"),
+        stage("4e1b3b2", "stage4e1b3b2_d455_ref_low_x_soft_edge_mid_obs", 8_000_000, "Shift the low-x distribution left in a softer step after the pure low-x edge plateaued below one hit.", target_hits=2.4, target_len=0.20, min_updates=45, camera_visible=0.80, view_in_bounds=0.71, z_ideal=0.57, hit1=0.50, hit3=0.17, hits_ge3=6.0, advance_gate_mode="collapse"),
+        stage("4e1b3c0", "stage4e1b3c0_d455_ref_low_x_edge_mid_obs_focus", 8_000_000, "Make only the low-x edge buckets trainable under the mid obs-frame DR before asking for the full obs-frame bias.", target_hits=2.3, target_len=0.19, min_updates=45, camera_visible=0.80, view_in_bounds=0.71, z_ideal=0.57, hit1=0.48, hit3=0.16, hits_ge3=5.8, advance_gate_mode="collapse"),
+        stage("4e1b3c", "stage4e1b3c_d455_ref_low_x_edge_full_obs_recovery", 8_000_000, "Train only the low-x edge buckets with the full 4e1b4 obs-frame DR, so the weak reset tail cannot be hidden by average-stage metrics.", target_hits=2.1, target_len=0.18, min_updates=55, camera_visible=0.80, view_in_bounds=0.71, z_ideal=0.57, hit1=0.45, hit3=0.13, hits_ge3=5.2, advance_gate_mode="collapse"),
+        stage("4e1b4", "stage4e1b4_d455_ref_low_x_full_obs_bridge", 8_000_000, "Use the full 4e1c obs-frame DR on the low-x reset/target buckets after the intermediate low-x bridge is stable.", target_hits=2.9, target_len=0.24, min_updates=45, camera_visible=0.80, view_in_bounds=0.71, z_ideal=0.57, hit3=0.23, hits_ge3=7.5, advance_gate_mode="strict"),
+        stage("4e1c", "stage4e1c_d455_ref_obs_frame_micro_bridge", 8_000_000, "Reach the previous micro ball-observation-frame DR only after tiny/small bridges.", target_hits=4.0, target_len=0.30, min_updates=45, camera_visible=0.80, view_in_bounds=0.71, z_ideal=0.57, hit3=0.32, hits_ge3=8.5, advance_gate_mode="strict"),
+        stage("4e1d", "stage4e1d_d455_ref_real_dr_light_bridge", 8_000_000, "Introduce clipped real actuator and ball-observation-frame DR after the obs-frame bridge is stable.", target_hits=4.2, target_len=0.30, min_updates=45, camera_visible=0.80, view_in_bounds=0.71, z_ideal=0.57, hit3=0.34, hits_ge3=8.8, advance_gate_mode="strict"),
+        stage("4e2", "stage4e2_d455_ref_full_visible_dr_stabilize", 9_000_000, "Use full visible DR at the 4e range before asking for long 13-hit polish.", target_hits=6.8, target_len=0.50, min_updates=60, camera_visible=0.80, view_in_bounds=0.72, z_ideal=0.58, gate_mode="balanced", full_rate=0.32, hit3=0.56, hit12=0.18, hits_ge3=8.0, advance_gate_mode="strict"),
+        stage("4e", "stage4e_d455_ref_strong_visible_dr", 10_000_000, "Strong visible DR bridge before range and missing.", target_hits=9.5, target_len=0.70, min_updates=60, camera_visible=0.80, view_in_bounds=0.72, z_ideal=0.58, gate_mode="balanced", full_rate=0.55, hit3=0.70, hit12=0.35, hits_ge3=10.5, advance_gate_mode="strict"),
+        stage("4f", "stage4f_d455_ref_visible_13hit_polish", 12_000_000, "Visible strong-DR polish: require the 13-hit attractor before broad range.", target_hits=12.5, target_len=0.88, min_updates=90, camera_visible=0.82, view_in_bounds=0.74, z_ideal=0.60, gate_mode="balanced", full_rate=0.80, hit3=0.82, hit12=0.68, hits_ge3=13.2, advance_gate_mode="strict"),
+        stage("5a1", "stage5a1_d455_ref_wide_xy_small", 9_000_000, "Small visible range expansion, no missing.", target_hits=11.5, target_len=0.82, min_updates=70, camera_visible=0.80, view_in_bounds=0.72, z_ideal=0.58, gate_mode="balanced", full_rate=0.72, hit3=0.78, hit12=0.55, hits_ge3=12.4, lost_rate=0.020, advance_gate_mode="strict"),
+        stage("5a2", "stage5a2_d455_ref_wide_xy_medium", 9_000_000, "Medium visible range expansion, still no missing.", target_hits=10.8, target_len=0.78, min_updates=80, camera_visible=0.78, view_in_bounds=0.70, z_ideal=0.56, gate_mode="balanced", full_rate=0.66, hit3=0.74, hit12=0.46, hits_ge3=11.8, lost_rate=0.020, advance_gate_mode="strict"),
+        stage("5a3", "stage5a3_d455_ref_wide_xy_large", 10_000_000, "Large visible XY range before adding missing.", target_hits=10.2, target_len=0.74, min_updates=90, camera_visible=0.76, view_in_bounds=0.68, z_ideal=0.54, gate_mode="balanced", full_rate=0.62, hit3=0.72, hit12=0.40, hits_ge3=11.2, lost_rate=0.025, advance_gate_mode="strict"),
+        stage("5a4", "stage5a4_d455_ref_wide_xyz_visible", 11_000_000, "Full visible range including racket-anchor z variation.", target_hits=10.5, target_len=0.76, min_updates=100, camera_visible=0.76, view_in_bounds=0.66, z_ideal=0.52, gate_mode="balanced", full_rate=0.64, hit3=0.74, hit12=0.42, hits_ge3=11.6, lost_rate=0.025, advance_gate_mode="strict"),
+        stage("6a", "stage6a_d455_ref_viewmissing10", 8_000_000, "Introduce only mild upper-FOV stale-age missing.", target_hits=10.0, target_len=0.72, min_updates=70, camera_visible=0.76, view_in_bounds=0.66, z_ideal=0.52, gate_mode="balanced", full_rate=0.60, hit3=0.70, hit12=0.36, hits_ge3=10.8, missing_refresh=0.001, lost_rate=0.030, advance_gate_mode="strict"),
+        stage("6b", "stage6b_d455_ref_viewmissing25", 9_000_000, "Raise upper-FOV missing to 25%.", target_hits=9.5, target_len=0.70, min_updates=80, camera_visible=0.74, view_in_bounds=0.64, z_ideal=0.50, gate_mode="balanced", full_rate=0.58, hit3=0.68, hit12=0.34, hits_ge3=10.4, missing_refresh=0.002, lost_rate=0.035, advance_gate_mode="strict"),
+        stage("6c", "stage6c_d455_ref_viewmissing50", 10_000_000, "Raise upper-FOV missing to 50% with large DR active.", target_hits=9.0, target_len=0.68, min_updates=90, camera_visible=0.72, view_in_bounds=0.62, z_ideal=0.50, gate_mode="balanced", full_rate=0.56, hit3=0.66, hit12=0.30, hits_ge3=9.8, missing_refresh=0.004, lost_rate=0.045, advance_gate_mode="strict"),
+        stage("6d", "stage6d_d455_ref_viewmissing75", 11_000_000, "Raise upper-FOV missing to 75%; keep targets moderate to avoid a cliff.", target_hits=9.5, target_len=0.70, min_updates=100, camera_visible=0.70, view_in_bounds=0.60, z_ideal=0.48, gate_mode="balanced", full_rate=0.58, hit3=0.68, hit12=0.34, hits_ge3=10.5, missing_refresh=0.006, lost_rate=0.050, advance_gate_mode="strict"),
+        stage("6e", "stage6e_d455_ref_full_viewmissing", 12_000_000, "Full upper-FOV missing and wide reset range, before final high target polish.", target_hits=10.5, target_len=0.76, min_updates=110, camera_visible=0.68, view_in_bounds=0.58, z_ideal=0.46, gate_mode="balanced", full_rate=0.66, hit3=0.74, hit12=0.46, hits_ge3=11.8, missing_refresh=0.008, lost_rate=0.055, advance_gate_mode="strict"),
+        stage("7a", "stage7a_d455_ref_full_missing_large_dr_polish", 16_000_000, "Final 13--15 hit D455 policy with full upper-FOV missing and large DR.", target_hits=13.0, target_len=0.95, min_updates=140, camera_visible=0.68, view_in_bounds=0.58, z_ideal=0.46, min_return=0.0, gate_mode="strict", full_rate=0.90, hit3=0.86, hit12=0.80, hits_ge3=14.0, missing_refresh=0.010, lost_rate=0.050, advance_gate_mode="strict"),
+    ]
+
+def _d455_full_curriculum_v1_stages(
+    *,
+    stack_kwargs: dict[str, object],
+    stage_steps_override: int | None,
+    critic_command_history_steps: int,
+) -> list[CurriculumStage]:
+    """Single-process D455 curriculum from nominal juggling to full robustness.
+
+    This is the host-side mainline profile: unlike ``d455_stable_4g_v1`` it
+    does not stop at the stable nominal 4g/polish policy, and unlike
+    ``d455_recovery_v1`` it does not switch to falling-contact recovery
+    sampling.  The arm reset stays fixed and the ball reset remains
+    anchor-drop while the curriculum expands the target/reset range, adds
+    D455 stale-age missing, observation noise, actuator/contact/PD/racket DR,
+    and final 13--15-hit acceptance gates.
+    """
+
+    stages = _d455_stable_4g_v1_stages(
+        stack_kwargs=stack_kwargs,
+        stage_steps_override=None,
+        critic_command_history_steps=critic_command_history_steps,
+    )
+    stages = [
+        replace(
+            stage,
+            notes=(
+                "Polish the nominal D455 policy before the same single curriculum continues "
+                "into wide-range missing and sim2real DR."
+            ),
+        )
+        if stage.name == "stage4h_d455_stable_polish"
+        else stage
+        for stage in stages
+    ]
+    stable_final = stages[-1].cfg
+
+    def steps(default_steps: int) -> int:
+        return int(stage_steps_override) if stage_steps_override is not None else int(default_steps)
+
+    def full_cfg(
+        base: MjxJuggleConfig,
+        *,
+        target_x: tuple[float, float],
+        target_y: tuple[float, float],
+        anchor_z: tuple[float, float],
+        xy_jitter: float,
+        z_jitter: float,
+        init_vxy: float,
+        init_vz_jitter: float,
+        obs_pos_noise: float,
+        obs_vel_noise: float,
+        view_missing_prob: float,
+        camera_missing_prob: float,
+        dropout_prob: float,
+        burst_prob: float,
+        dropout_steps: int,
+        burst_steps: int,
+        z_high_missing_range: tuple[float, float],
+        dr_level: int,
+        view_xy_weight: float,
+        view_z_weight: float,
+        view_bounds_weight: float,
+        view_oob_weight: float,
+        view_vxy_weight: float,
+        camera_center_weight: float,
+        hit_camera_weight: float,
+        hit_camera_oob: float,
+        hit_vxy_limit: float,
+        hit_vxy_weight: float,
+        next_contact_weight: float,
+        apex_center_weight: float,
+    ) -> MjxJuggleConfig:
+        has_missing = (
+            view_missing_prob > 0.0
+            or camera_missing_prob > 0.0
+            or dropout_prob > 0.0
+            or burst_prob > 0.0
+        )
+        cfg = replace(
+            base,
+            right_arm_reset_degrees=D455_USER_TARGET_RACKET_RESET_DEGREES,
+            ball_reset_mode="anchor_drop",
+            ball_launch_height=0.225,
+            target_height=0.198,
+            rel_height_center=0.178,
+            hit_height_center=0.228,
+            hit_confirm_rel_height=0.055,
+            hit_height_tolerance=0.050,
+            low_hit_apex_margin=0.024,
+            apex_soft_limit_margin=0.050,
+            episode_target_x_range_m=target_x,
+            episode_target_y_range_m=target_y,
+            episode_racket_anchor_z_range_m=anchor_z,
+            ball_spawn_xy_jitter=float(xy_jitter),
+            ball_spawn_z_jitter=float(z_jitter),
+            ball_init_vxy_max=float(init_vxy),
+            ball_init_vz=-0.28,
+            ball_init_vz_jitter=float(init_vz_jitter),
+            ball_obs_pos_noise_std=float(obs_pos_noise),
+            ball_obs_vel_noise_std=float(obs_vel_noise),
+            ball_obs_require_camera_visible=camera_missing_prob > 0.0,
+            ball_obs_camera_missing_prob=float(camera_missing_prob),
+            ball_obs_reset_respects_camera_visibility=camera_missing_prob > 0.0,
+            ball_obs_require_view_bounds=view_missing_prob > 0.0,
+            ball_obs_view_bounds_missing_prob=float(view_missing_prob),
+            ball_obs_view_z_high_missing_range_m=(
+                z_high_missing_range if view_missing_prob > 0.0 else (0.0, 0.0)
+            ),
+            ball_obs_missing_episode_coherent_prob=1.0 if has_missing else 0.0,
+            ball_obs_age_tracks_stale=has_missing,
+            ball_obs_dropout_on_refresh_only=has_missing,
+            ball_obs_dropout_prob=float(dropout_prob),
+            ball_obs_dropout_burst_prob=float(burst_prob),
+            ball_obs_dropout_max_steps=int(dropout_steps) if has_missing else 1,
+            ball_obs_dropout_burst_max_steps=int(burst_steps) if has_missing else 1,
+            ball_obs_age_clip=0.60 if has_missing else 0.35,
+            lost_ball_timeout_ms=500.0,
+            terminate_on_ball_view_bounds=True,
+            terminate_on_ball_view_x_bounds=True,
+            terminate_on_ball_view_y_bounds=True,
+            terminate_on_ball_view_z_low=True,
+            terminate_on_ball_view_z_high=False,
+            ball_low_termination_z_m=D455_REAL_VIEW_Z_BOUNDS_M[0],
+            ball_high_termination_z_m=max(float(base.ball_high_termination_z_m), D455_REAL_VIEW_Z_BOUNDS_M[1] + 0.20),
+            ball_view_x_bounds_m=D455_REAL_VIEW_X_BOUNDS_M,
+            ball_view_y_bounds_m=D455_REAL_VIEW_Y_BOUNDS_M,
+            ball_view_z_bounds_m=D455_REAL_VIEW_Z_BOUNDS_M,
+            ball_view_z_ideal_m=D455_RECOVERY_VIEW_Z_IDEAL_M,
+            ball_view_x_target_m=0.0,
+            ball_view_y_target_m=D455_REAL_VIEW_Y_TARGET_M,
+            ball_view_x_sigma_m=0.10,
+            ball_view_y_sigma_m=0.12,
+            ball_view_z_sigma_m=0.11,
+            ball_view_xy_center_penalty_weight=float(view_xy_weight),
+            ball_view_z_ideal_penalty_weight=float(view_z_weight),
+            ball_view_bounds_penalty_weight=float(view_bounds_weight),
+            ball_view_out_of_bounds_penalty_weight=float(view_oob_weight),
+            ball_view_z_not_ideal_penalty_weight=max(float(base.ball_view_z_not_ideal_penalty_weight), 0.55),
+            ball_view_vxy_excess_penalty_weight=float(view_vxy_weight),
+            camera_center_weight=float(camera_center_weight),
+            camera_visibility_penalty_weight=max(float(base.camera_visibility_penalty_weight), 7.0),
+            camera_depth_penalty_weight=max(float(base.camera_depth_penalty_weight), 0.5),
+            camera_visible_penalty_weight=max(float(base.camera_visible_penalty_weight), 2.5),
+            camera_top_margin_penalty_weight=max(float(base.camera_top_margin_penalty_weight), 10.0),
+            hit_camera_reward_weight=float(hit_camera_weight),
+            hit_camera_out_of_band_penalty_weight=float(hit_camera_oob),
+            hit_camera_target_v_frac=0.66,
+            hit_camera_v_sigma_frac=0.11,
+            hit_camera_lower_band_frac=(0.50, 0.82),
+            hit_reward_cap_mode="fixed",
+            hit_reward_count_cap=15,
+            hit_combo_count_cap=14,
+            hit_cadence_reward_weight=max(float(base.hit_cadence_reward_weight), 0.30),
+            hit_cadence_target_interval=0.425,
+            hit_cadence_sigma=0.090,
+            hit_min_interval_penalty_weight=max(float(base.hit_min_interval_penalty_weight), 1.35),
+            hit_min_interval=0.36,
+            hit_min_count_interval=0.34,
+            fast_hit_penalty_weight=max(float(base.fast_hit_penalty_weight), 1.00),
+            hit_vxy_soft_limit_m_s=float(hit_vxy_limit),
+            hit_vxy_penalty_weight=float(hit_vxy_weight),
+            hit_apex_view_center_penalty_weight=float(apex_center_weight),
+            hit_next_contact_anchor_penalty_weight=float(next_contact_weight),
+            hit_apex_view_center_sigma_m=0.13,
+            hit_next_contact_anchor_sigma_m=0.11,
+            racket_flatness_penalty_weight=max(
+                float(base.racket_flatness_penalty_weight),
+                0.65 + 0.06 * float(dr_level),
+            ),
+            racket_flatness_target_cos=0.985,
+            racket_flatness_sigma=0.035,
+            hit_flatness_target_cos=0.985,
+            hit_flatness_sigma=0.045,
+            contact_flatness_penalty_weight=max(float(base.contact_flatness_penalty_weight), 0.70),
+            racket_z_hard_limit_up=max(float(base.racket_z_hard_limit_up), max(0.0, -float(anchor_z[0])) + 0.12),
+        )
+
+        cfg = replace(
+            cfg,
+            domain_randomization=True,
+            dr_randomize_ball=True,
+            dr_randomize_contact=dr_level >= 1,
+            dr_randomize_actuator=dr_level >= 1,
+            dr_randomize_pd=dr_level >= 1,
+            dr_pd_per_joint=True,
+            dr_randomize_latency=dr_level >= 3,
+            dr_randomize_racket_mount=dr_level >= 2,
+            dr_randomize_ball_obs_frame=dr_level >= 2,
+            dr_randomize_actuator_cmd_filter=dr_level >= 1,
+        )
+        if dr_level <= 1:
+            return replace(
+                cfg,
+                dr_action_scale_mult_range=(0.94, 1.06),
+                dr_damping_mult_range=(0.88, 1.12),
+                dr_armature_mult_range=(0.92, 1.08),
+                dr_pd_kp_mult_range=(0.96, 1.04),
+                dr_pd_kv_mult_range=(0.92, 1.08),
+                dr_actuator_cmd_tau_range=(0.068, 0.082),
+                dr_actuator_cmd_gain_range=(0.985, 1.015),
+                dr_ball_friction_range=(0.14, 0.32),
+                dr_racket_friction_range=(0.28, 0.56),
+                dr_ball_solref_time_range=(0.0025, 0.0060),
+                dr_ball_solref_damping_range=(0.70, 0.96),
+            )
+        if dr_level == 2:
+            return replace(
+                cfg,
+                dr_action_scale_mult_range=(0.90, 1.10),
+                dr_damping_mult_range=(0.82, 1.18),
+                dr_armature_mult_range=(0.88, 1.12),
+                dr_pd_kp_mult_range=(0.93, 1.07),
+                dr_pd_kv_mult_range=(0.88, 1.12),
+                dr_actuator_cmd_tau_range=(0.064, 0.086),
+                dr_actuator_cmd_gain_range=(0.98, 1.02),
+                dr_racket_pos_offset_m=0.003,
+                dr_racket_rot_offset_rad=float(np.deg2rad(1.0)),
+                dr_racket_radius_offset_m=0.002,
+                dr_ball_obs_pos_bias_base_m=(0.006, 0.006, 0.006),
+                dr_ball_obs_rot_bias_deg=(1.0, 1.0, 1.4),
+                dr_ball_obs_vel_bias_base_m_s=(0.06, 0.06, 0.08),
+                dr_ball_obs_scale_range=(0.985, 1.015),
+                dr_ball_friction_range=(0.10, 0.40),
+                dr_racket_friction_range=(0.22, 0.68),
+                dr_ball_solref_time_range=(0.0020, 0.0080),
+                dr_ball_solref_damping_range=(0.62, 1.05),
+            )
+        return replace(
+            cfg,
+            dr_action_scale_mult_range=(0.88, 1.12),
+            dr_damping_mult_range=(0.75, 1.25),
+            dr_armature_mult_range=(0.82, 1.18),
+            dr_pd_kp_mult_range=(0.88, 1.12),
+            dr_pd_kv_mult_range=(0.82, 1.18),
+            dr_obs_latency_steps_range=(0, 3),
+            dr_action_latency_steps_range=(0, 3),
+            dr_actuator_cmd_tau_range=(0.060, 0.090),
+            dr_actuator_cmd_gain_range=(0.97, 1.03),
+            dr_racket_pos_offset_m=0.004,
+            dr_racket_rot_offset_rad=float(np.deg2rad(1.5)),
+            dr_racket_radius_offset_m=0.0025,
+            dr_ball_obs_pos_bias_base_m=(0.008, 0.008, 0.008),
+            dr_ball_obs_rot_bias_deg=(1.5, 1.5, 2.0),
+            dr_ball_obs_vel_bias_base_m_s=(0.08, 0.08, 0.10),
+            dr_ball_obs_scale_range=(0.98, 1.02),
+            dr_ball_friction_range=(0.08, 0.45),
+            dr_racket_friction_range=(0.18, 0.75),
+            dr_ball_solref_time_range=(0.0015, 0.010),
+            dr_ball_solref_damping_range=(0.55, 1.10),
+        )
+
+    cfg_5a = full_cfg(
+        stable_final,
+        target_x=(-0.10, 0.20),
+        target_y=(0.020, 0.190),
+        anchor_z=(-0.045, 0.050),
+        xy_jitter=0.024,
+        z_jitter=0.016,
+        init_vxy=0.018,
+        init_vz_jitter=0.034,
+        obs_pos_noise=0.010,
+        obs_vel_noise=0.10,
+        view_missing_prob=0.0,
+        camera_missing_prob=0.0,
+        dropout_prob=0.0,
+        burst_prob=0.0,
+        dropout_steps=1,
+        burst_steps=1,
+        z_high_missing_range=(0.0, 0.0),
+        dr_level=1,
+        view_xy_weight=0.85,
+        view_z_weight=1.55,
+        view_bounds_weight=4.60,
+        view_oob_weight=1.30,
+        view_vxy_weight=0.72,
+        camera_center_weight=1.05,
+        hit_camera_weight=1.45,
+        hit_camera_oob=0.75,
+        hit_vxy_limit=0.44,
+        hit_vxy_weight=2.60,
+        next_contact_weight=0.28,
+        apex_center_weight=0.20,
+    )
+    cfg_5b = full_cfg(
+        cfg_5a,
+        target_x=(-0.12, 0.25),
+        target_y=(0.000, 0.215),
+        anchor_z=(-0.055, 0.060),
+        xy_jitter=0.028,
+        z_jitter=0.020,
+        init_vxy=0.020,
+        init_vz_jitter=0.040,
+        obs_pos_noise=0.012,
+        obs_vel_noise=0.12,
+        view_missing_prob=0.25,
+        camera_missing_prob=0.02,
+        dropout_prob=0.002,
+        burst_prob=0.0005,
+        dropout_steps=5,
+        burst_steps=18,
+        z_high_missing_range=(1.36, 1.47),
+        dr_level=1,
+        view_xy_weight=0.95,
+        view_z_weight=1.85,
+        view_bounds_weight=5.20,
+        view_oob_weight=1.60,
+        view_vxy_weight=0.78,
+        camera_center_weight=1.12,
+        hit_camera_weight=1.50,
+        hit_camera_oob=0.85,
+        hit_vxy_limit=0.43,
+        hit_vxy_weight=2.75,
+        next_contact_weight=0.30,
+        apex_center_weight=0.22,
+    )
+    cfg_5c = full_cfg(
+        cfg_5b,
+        target_x=(-0.13, 0.29),
+        target_y=(-0.010, 0.235),
+        anchor_z=(-0.060, 0.070),
+        xy_jitter=0.032,
+        z_jitter=0.024,
+        init_vxy=0.023,
+        init_vz_jitter=0.046,
+        obs_pos_noise=0.014,
+        obs_vel_noise=0.14,
+        view_missing_prob=0.50,
+        camera_missing_prob=0.04,
+        dropout_prob=0.004,
+        burst_prob=0.0010,
+        dropout_steps=8,
+        burst_steps=28,
+        z_high_missing_range=(1.30, 1.47),
+        dr_level=2,
+        view_xy_weight=1.05,
+        view_z_weight=2.20,
+        view_bounds_weight=6.00,
+        view_oob_weight=2.00,
+        view_vxy_weight=0.86,
+        camera_center_weight=1.20,
+        hit_camera_weight=1.55,
+        hit_camera_oob=0.95,
+        hit_vxy_limit=0.42,
+        hit_vxy_weight=2.90,
+        next_contact_weight=0.32,
+        apex_center_weight=0.24,
+    )
+    cfg_5d = full_cfg(
+        cfg_5c,
+        target_x=(-0.14, 0.33),
+        target_y=(-0.020, 0.250),
+        anchor_z=(-0.065, 0.080),
+        xy_jitter=0.036,
+        z_jitter=0.028,
+        init_vxy=0.026,
+        init_vz_jitter=0.052,
+        obs_pos_noise=0.016,
+        obs_vel_noise=0.16,
+        view_missing_prob=0.75,
+        camera_missing_prob=0.06,
+        dropout_prob=0.006,
+        burst_prob=0.0015,
+        dropout_steps=10,
+        burst_steps=40,
+        z_high_missing_range=(1.24, 1.47),
+        dr_level=3,
+        view_xy_weight=1.15,
+        view_z_weight=2.50,
+        view_bounds_weight=6.80,
+        view_oob_weight=2.40,
+        view_vxy_weight=0.94,
+        camera_center_weight=1.28,
+        hit_camera_weight=1.60,
+        hit_camera_oob=1.05,
+        hit_vxy_limit=0.41,
+        hit_vxy_weight=3.05,
+        next_contact_weight=0.34,
+        apex_center_weight=0.26,
+    )
+    cfg_5e = full_cfg(
+        cfg_5d,
+        target_x=(-0.14, 0.36),
+        target_y=(-0.020, 0.250),
+        anchor_z=(-0.065, 0.080),
+        xy_jitter=0.040,
+        z_jitter=0.030,
+        init_vxy=0.030,
+        init_vz_jitter=0.060,
+        obs_pos_noise=0.018,
+        obs_vel_noise=0.18,
+        view_missing_prob=1.0,
+        camera_missing_prob=0.08,
+        dropout_prob=0.008,
+        burst_prob=0.0020,
+        dropout_steps=12,
+        burst_steps=48,
+        z_high_missing_range=(1.20, 1.47),
+        dr_level=3,
+        view_xy_weight=1.20,
+        view_z_weight=2.80,
+        view_bounds_weight=7.50,
+        view_oob_weight=2.80,
+        view_vxy_weight=1.00,
+        camera_center_weight=1.35,
+        hit_camera_weight=1.65,
+        hit_camera_oob=1.15,
+        hit_vxy_limit=0.40,
+        hit_vxy_weight=3.20,
+        next_contact_weight=0.36,
+        apex_center_weight=0.28,
+    )
+
+    late = [
+        CurriculumStage(
+            "stage5a_d455_wide_visible_range",
+            steps(7_000_000),
+            cfg_5a,
+            "Single-stage mainline: expand the D455 reset/target bucket while keeping the ball visible.",
+            gate_mode="balanced",
+            advance_gate_mode="collapse",
+            target_mean_hits=10.0,
+            target_mean_len_frac=0.74,
+            min_updates=90,
+            target_camera_visible=0.78,
+            target_ball_view_in_bounds=0.70,
+            target_ball_view_z_ideal=0.58,
+            target_hit1_rate=0.95,
+            target_hit3_rate=0.72,
+            target_hit12_rate=0.32,
+            target_mean_hits_ge3=11.0,
+            target_min_hit_interval_s=0.38,
+            target_max_hit_interval_s=0.52,
+            target_hit_camera_visible_rate=0.94,
+            target_hit_camera_lower_band_rate=0.78,
+            target_episode_truncation_rate=0.62,
+            max_ball_obs_lost_rate=0.020,
+        ),
+        CurriculumStage(
+            "stage5b_d455_viewmissing25_range",
+            steps(7_000_000),
+            cfg_5b,
+            "Add mild D455 stale-age upper-FOV missing after the wide visible bucket is learnable.",
+            gate_mode="balanced",
+            advance_gate_mode="collapse",
+            target_mean_hits=9.0,
+            target_mean_len_frac=0.68,
+            min_updates=90,
+            target_camera_visible=0.76,
+            target_ball_view_in_bounds=0.66,
+            target_ball_view_z_ideal=0.56,
+            target_hit1_rate=0.94,
+            target_hit3_rate=0.68,
+            target_hit12_rate=0.24,
+            target_mean_hits_ge3=10.0,
+            target_min_hit_interval_s=0.38,
+            target_max_hit_interval_s=0.52,
+            target_hit_camera_visible_rate=0.92,
+            target_hit_camera_lower_band_rate=0.76,
+            target_episode_truncation_rate=0.58,
+            min_ball_obs_missing_refresh_rate=0.002,
+            max_ball_obs_lost_rate=0.030,
+        ),
+        CurriculumStage(
+            "stage5c_d455_viewmissing50_obs_dr",
+            steps(8_000_000),
+            cfg_5c,
+            "Raise view-missing to 50% and add observation-frame/racket DR without changing reset mode.",
+            gate_mode="balanced",
+            advance_gate_mode="collapse",
+            target_mean_hits=8.5,
+            target_mean_len_frac=0.66,
+            min_updates=100,
+            target_camera_visible=0.74,
+            target_ball_view_in_bounds=0.64,
+            target_ball_view_z_ideal=0.54,
+            target_hit1_rate=0.93,
+            target_hit3_rate=0.66,
+            target_hit12_rate=0.22,
+            target_mean_hits_ge3=9.5,
+            target_min_hit_interval_s=0.38,
+            target_max_hit_interval_s=0.52,
+            target_hit_camera_visible_rate=0.90,
+            target_hit_camera_lower_band_rate=0.74,
+            target_episode_truncation_rate=0.56,
+            min_ball_obs_missing_refresh_rate=0.004,
+            max_ball_obs_lost_rate=0.045,
+        ),
+        CurriculumStage(
+            "stage5d_d455_viewmissing75_large_dr",
+            steps(9_000_000),
+            cfg_5d,
+            "Train broad reset range, 75% stale-age missing, actuator/contact/PD/racket/latency DR.",
+            gate_mode="balanced",
+            advance_gate_mode="collapse",
+            target_mean_hits=10.5,
+            target_mean_len_frac=0.80,
+            min_updates=110,
+            target_camera_visible=0.72,
+            target_ball_view_in_bounds=0.62,
+            target_ball_view_z_ideal=0.52,
+            target_hit1_rate=0.94,
+            target_hit3_rate=0.72,
+            target_hit12_rate=0.48,
+            target_mean_hits_ge3=12.0,
+            target_min_hit_interval_s=0.38,
+            target_max_hit_interval_s=0.52,
+            target_hit_camera_visible_rate=0.90,
+            target_hit_camera_lower_band_rate=0.76,
+            target_episode_truncation_rate=0.72,
+            min_ball_obs_missing_refresh_rate=0.006,
+            max_ball_obs_lost_rate=0.050,
+        ),
+        CurriculumStage(
+            "stage5e_d455_full_missing_dr_polish",
+            steps(12_000_000),
+            cfg_5e,
+            "Final single-stage robustness polish: full upper-FOV missing, broad reset range, and large DR.",
+            gate_mode="strict",
+            advance_gate_mode="collapse",
+            target_mean_hits=13.0,
+            target_mean_len_frac=0.95,
+            min_updates=130,
+            min_recent_mean_return=0.5,
+            target_camera_visible=0.70,
+            target_ball_view_in_bounds=0.60,
+            target_ball_view_z_ideal=0.50,
+            target_hit1_rate=0.97,
+            target_hit3_rate=0.86,
+            target_hit12_rate=0.80,
+            target_mean_hits_ge3=14.0,
+            target_min_hit_interval_s=0.38,
+            target_max_hit_interval_s=0.50,
+            target_hit_camera_visible_rate=0.94,
+            target_hit_camera_lower_band_rate=0.84,
+            target_episode_truncation_rate=0.90,
+            min_ball_obs_missing_refresh_rate=0.010,
+            max_ball_obs_lost_rate=0.040,
+        ),
+    ]
+    if stage_steps_override is not None:
+        stages = [replace(stage, total_steps=int(stage_steps_override)) for stage in stages]
+    return stages + late
 
 
 def _d455_recovery_v1_stages(
@@ -6640,6 +9497,12 @@ def _apply_actuator_cli_overrides(
     actuator_mpc_nominal_weight: float | None,
     actuator_mpc_delta_weight: float | None,
     actuator_mpc_max_delta_deg: float | None,
+    actuator_mpc_command_dynamics_constraint: bool | None,
+    actuator_mpc_command_velocity_weight: float | None,
+    actuator_mpc_command_acceleration_weight: float | None,
+    actuator_mpc_command_velocity_scale: float | None,
+    actuator_mpc_command_acceleration_scale: float | None,
+    actuator_mpc_feedback_source: str | None,
     dr_randomize_actuator_cmd_filter: bool | None,
     dr_actuator_cmd_tau_range: tuple[float, float] | None,
     dr_actuator_cmd_gain_range: tuple[float, float] | None,
@@ -6699,6 +9562,18 @@ def _apply_actuator_cli_overrides(
         patched["actuator_mpc_delta_weight"] = float(actuator_mpc_delta_weight)
     if actuator_mpc_max_delta_deg is not None:
         patched["actuator_mpc_max_delta_rad"] = float(np.deg2rad(float(actuator_mpc_max_delta_deg)))
+    if actuator_mpc_command_dynamics_constraint is not None:
+        patched["actuator_mpc_command_dynamics_constraint"] = bool(actuator_mpc_command_dynamics_constraint)
+    if actuator_mpc_command_velocity_weight is not None:
+        patched["actuator_mpc_command_velocity_weight"] = float(actuator_mpc_command_velocity_weight)
+    if actuator_mpc_command_acceleration_weight is not None:
+        patched["actuator_mpc_command_acceleration_weight"] = float(actuator_mpc_command_acceleration_weight)
+    if actuator_mpc_command_velocity_scale is not None:
+        patched["actuator_mpc_command_velocity_scale"] = float(actuator_mpc_command_velocity_scale)
+    if actuator_mpc_command_acceleration_scale is not None:
+        patched["actuator_mpc_command_acceleration_scale"] = float(actuator_mpc_command_acceleration_scale)
+    if actuator_mpc_feedback_source is not None:
+        patched["actuator_mpc_feedback_source"] = str(actuator_mpc_feedback_source)
     if dr_actuator_cmd_tau_range is not None:
         tau_lo, tau_hi = dr_actuator_cmd_tau_range
         patched["dr_actuator_cmd_tau_range"] = (float(tau_lo), float(tau_hi))
@@ -6806,6 +9681,45 @@ def _sim2real_kf_high_latency_stages(
     return stages
 
 
+def _apply_arm_safety_overrides(
+    stages: list[CurriculumStage],
+    *,
+    arm_post_compensation_limiter: bool | None,
+    arm_servo_target_limiter: bool | None,
+    arm_servo_target_tracking_planner: bool | None,
+    arm_servo_target_velocity_scale: float | None,
+    arm_servo_target_acceleration_scale: float | None,
+    arm_actual_state_limiter: bool | None,
+    right_arm_pd_profile: str | None,
+) -> list[CurriculumStage]:
+    """Apply explicit CLI safety overrides uniformly to every curriculum stage."""
+
+    updates: dict[str, object] = {}
+    if arm_post_compensation_limiter is not None:
+        updates["arm_post_compensation_limiter"] = bool(arm_post_compensation_limiter)
+    if arm_servo_target_limiter is not None:
+        updates["arm_servo_target_limiter"] = bool(arm_servo_target_limiter)
+    if arm_servo_target_tracking_planner is not None:
+        updates["arm_servo_target_tracking_planner"] = bool(
+            arm_servo_target_tracking_planner
+        )
+    if arm_servo_target_velocity_scale is not None:
+        updates["arm_servo_target_velocity_scale"] = float(
+            arm_servo_target_velocity_scale
+        )
+    if arm_servo_target_acceleration_scale is not None:
+        updates["arm_servo_target_acceleration_scale"] = float(
+            arm_servo_target_acceleration_scale
+        )
+    if arm_actual_state_limiter is not None:
+        updates["arm_actual_state_limiter"] = bool(arm_actual_state_limiter)
+    if right_arm_pd_profile is not None:
+        updates["right_arm_pd_profile"] = str(right_arm_pd_profile)
+    if not updates:
+        return stages
+    return [replace(stage, cfg=replace(stage.cfg, **updates)) for stage in stages]
+
+
 def build_curriculum(
     stage_steps_override: int | None = None,
     gate_preset: str = "v7_strict",
@@ -6843,14 +9757,160 @@ def build_curriculum(
     actuator_mpc_nominal_weight: float | None = None,
     actuator_mpc_delta_weight: float | None = None,
     actuator_mpc_max_delta_deg: float | None = None,
+    actuator_mpc_command_dynamics_constraint: bool | None = None,
+    actuator_mpc_command_velocity_weight: float | None = None,
+    actuator_mpc_command_acceleration_weight: float | None = None,
+    actuator_mpc_command_velocity_scale: float | None = None,
+    actuator_mpc_command_acceleration_scale: float | None = None,
+    actuator_mpc_feedback_source: str | None = None,
     dr_randomize_actuator_cmd_filter: bool | None = None,
     dr_actuator_cmd_tau_range: tuple[float, float] | None = None,
     dr_actuator_cmd_gain_range: tuple[float, float] | None = None,
     wide_polish_dr: bool = False,
     asymmetric_critic: bool = False,
     critic_command_history_steps: int = 4,
+    arm_post_compensation_limiter: bool | None = None,
+    arm_servo_target_limiter: bool | None = None,
+    arm_servo_target_tracking_planner: bool | None = None,
+    arm_servo_target_velocity_scale: float | None = None,
+    arm_servo_target_acceleration_scale: float | None = None,
+    arm_actual_state_limiter: bool | None = None,
+    right_arm_pd_profile: str | None = None,
 ) -> list[CurriculumStage]:
-    if curriculum_profile in (ROBUST_JUGGLE_PROFILE, *D455_TWO_PHASE_PROFILES):
+    if curriculum_profile in GOAL_D455_IDEALPD_PROFILES:
+        preserve_deployed_67d = curriculum_profile in GOAL_D455_IDEALPD67_PROFILES
+        if bool(high_latency_obs):
+            raise ValueError(f"{curriculum_profile} is a no-actuator ideal-PD ablation; high_latency_obs is incompatible")
+        allowed_delay_presets = (
+            {"baseline_current", "real_actuator_replay_fit"}
+            if preserve_deployed_67d
+            else {"baseline_current"}
+        )
+        if delay_ablation_preset not in allowed_delay_presets:
+            required = (
+                "real_actuator_replay_fit"
+                if preserve_deployed_67d
+                else "baseline_current"
+            )
+            raise ValueError(
+                f"{curriculum_profile} requires --delay-ablation-preset {required}"
+            )
+        if any(value is not None for value in (delay_min_ms, delay_max_ms, delay_jitter_ms, delay_sampling_mode)):
+            raise ValueError(f"{curriculum_profile} does not use actuator-delay sampling")
+        if actuator_cmd_filter not in (None, False):
+            raise ValueError(f"{curriculum_profile} disables the actuator command filter")
+        if actuator_compensation_mode not in (None, "none"):
+            raise ValueError(f"{curriculum_profile} disables actuator compensation")
+        if actuator_lead_compensation:
+            raise ValueError(f"{curriculum_profile} disables lead/inverse compensation")
+
+        stack_kwargs = _delay_conditioned_control_kwargs(
+            "real_actuator_replay_fit"
+            if preserve_deployed_67d
+            else "baseline_current"
+        )
+        stack_kwargs["actuator_delay_observation_only"] = preserve_deployed_67d
+        stack_kwargs = _apply_actuator_cli_overrides(
+            stack_kwargs,
+            actuator_cmd_filter=False,
+            actuator_cmd_tau=actuator_cmd_tau,
+            actuator_cmd_gain=actuator_cmd_gain,
+            actuator_compensation_mode="none",
+            actuator_lead_compensation=False,
+            actuator_lead_beta=actuator_lead_beta,
+            actuator_lead_delay_scale=actuator_lead_delay_scale,
+            actuator_lead_tau_scale=actuator_lead_tau_scale,
+            actuator_lead_max_delta_deg=actuator_lead_max_delta_deg,
+            actuator_inverse_beta=actuator_inverse_beta,
+            actuator_inverse_delay_scale=actuator_inverse_delay_scale,
+            actuator_inverse_tau_scale=actuator_inverse_tau_scale,
+            actuator_inverse_max_delta_deg=actuator_inverse_max_delta_deg,
+            actuator_mpc_beta=actuator_mpc_beta,
+            actuator_mpc_delay_scale=actuator_mpc_delay_scale,
+            actuator_mpc_tau_scale=actuator_mpc_tau_scale,
+            actuator_mpc_horizon_steps=actuator_mpc_horizon_steps,
+            actuator_mpc_tracking_weight=actuator_mpc_tracking_weight,
+            actuator_mpc_nominal_weight=actuator_mpc_nominal_weight,
+            actuator_mpc_delta_weight=actuator_mpc_delta_weight,
+            actuator_mpc_max_delta_deg=actuator_mpc_max_delta_deg,
+            actuator_mpc_command_dynamics_constraint=actuator_mpc_command_dynamics_constraint,
+            actuator_mpc_command_velocity_weight=actuator_mpc_command_velocity_weight,
+            actuator_mpc_command_acceleration_weight=actuator_mpc_command_acceleration_weight,
+            actuator_mpc_command_velocity_scale=actuator_mpc_command_velocity_scale,
+            actuator_mpc_command_acceleration_scale=actuator_mpc_command_acceleration_scale,
+            actuator_mpc_feedback_source=actuator_mpc_feedback_source,
+            dr_randomize_actuator_cmd_filter=False,
+            dr_actuator_cmd_tau_range=dr_actuator_cmd_tau_range,
+            dr_actuator_cmd_gain_range=dr_actuator_cmd_gain_range,
+        )
+        stages = _goal_d455_autolaunch_v1_stages(
+            stack_kwargs=stack_kwargs,
+            stage_steps_override=stage_steps_override,
+            critic_command_history_steps=max(12, int(critic_command_history_steps)),
+            require_inverse_mpc_stack=False,
+        )
+        if curriculum_profile in (
+            GOAL_D455_AUTOLAUNCH_IDEALPD67_VIEWDENSE_PROFILE,
+            GOAL_D455_AUTOLAUNCH_IDEALPD67_FINAL_RECOVERY_PROFILE,
+        ):
+            stages = _with_goal_d455_autolaunch_idealpd67_viewdense_shaping(stages)
+        if curriculum_profile == GOAL_D455_AUTOLAUNCH_IDEALPD67_FINAL_RECOVERY_PROFILE:
+            stages = _with_goal_d455_autolaunch_idealpd67_final_recovery(stages)
+        if preserve_deployed_67d:
+            for stage in stages:
+                cfg = stage.cfg
+                if not (
+                    cfg.enable_delay_conditioning
+                    and cfg.include_tau_act_norm
+                    and cfg.include_command_state
+                    and cfg.include_active_command_error
+                    and cfg.include_phase_features
+                    and cfg.actuator_delay_observation_only
+                    and float(cfg.delay_min_ms) == 72.0
+                    and float(cfg.delay_max_ms) == 72.0
+                    and float(cfg.delay_jitter_ms) == 0.0
+                    and cfg.delay_sampling_mode == "uniform"
+                    and not cfg.actuator_cmd_filter
+                    and cfg.actuator_compensation_mode == "none"
+                    and cfg.asymmetric_critic
+                    and int(cfg.critic_command_history_steps) == 12
+                ):
+                    raise ValueError(
+                        f"{stage.name} escaped the deployed-67D/zero-residual-delay ideal-PD contract"
+                    )
+        stages = [
+            replace(
+                stage,
+                notes=(
+                    f"{stage.notes}  "
+                    + (
+                        "ideal-PD 67D plant: preserve the deployed "
+                        "72 ms command-history/error/phase observation contract, "
+                        "while bypassing that delay on the simulated servo and "
+                        "disabling actuator filtering and compensation."
+                        if preserve_deployed_67d
+                        else
+                        "ideal-PD ablation: reuse the original 20260716 "
+                        "autolaunch curriculum/gates/rewards, while disabling "
+                        "simulated actuator command filtering, delay "
+                        "conditioning, and compensation."
+                    )
+                ),
+            )
+            for stage in stages
+        ]
+        return _apply_arm_safety_overrides(
+            stages,
+            arm_post_compensation_limiter=arm_post_compensation_limiter,
+            arm_servo_target_limiter=arm_servo_target_limiter,
+            arm_servo_target_tracking_planner=arm_servo_target_tracking_planner,
+            arm_servo_target_velocity_scale=arm_servo_target_velocity_scale,
+            arm_servo_target_acceleration_scale=arm_servo_target_acceleration_scale,
+            arm_actual_state_limiter=arm_actual_state_limiter,
+            right_arm_pd_profile=right_arm_pd_profile,
+        )
+
+    if curriculum_profile in (ROBUST_JUGGLE_PROFILE, *D455_67D_INVERSE_MPC_PROFILES):
         if bool(high_latency_obs):
             raise ValueError(f"{curriculum_profile} fixes actor obs_dim at 67; high_latency_obs is incompatible")
         if delay_ablation_preset not in {"baseline_current", "real_actuator_replay_fit"}:
@@ -6897,6 +9957,12 @@ def build_curriculum(
             actuator_mpc_max_delta_deg=(
                 30.0 if actuator_mpc_max_delta_deg is None else actuator_mpc_max_delta_deg
             ),
+            actuator_mpc_command_dynamics_constraint=actuator_mpc_command_dynamics_constraint,
+            actuator_mpc_command_velocity_weight=actuator_mpc_command_velocity_weight,
+            actuator_mpc_command_acceleration_weight=actuator_mpc_command_acceleration_weight,
+            actuator_mpc_command_velocity_scale=actuator_mpc_command_velocity_scale,
+            actuator_mpc_command_acceleration_scale=actuator_mpc_command_acceleration_scale,
+            actuator_mpc_feedback_source=actuator_mpc_feedback_source,
             dr_randomize_actuator_cmd_filter=dr_randomize_actuator_cmd_filter,
             dr_actuator_cmd_tau_range=dr_actuator_cmd_tau_range,
             dr_actuator_cmd_gain_range=dr_actuator_cmd_gain_range,
@@ -6905,11 +9971,28 @@ def build_curriculum(
             ROBUST_JUGGLE_PROFILE: _robust_juggle_v1_stages,
             D455_STABLE_4G_PROFILE: _d455_stable_4g_v1_stages,
             D455_RECOVERY_PROFILE: _d455_recovery_v1_stages,
+            D455_FULL_CURRICULUM_PROFILE: _d455_full_curriculum_v1_stages,
+            D455_SUCCESS_REF_PROFILE: _d455_success_ref_v1_stages,
+            GOAL_D455_AUTOLAUNCH_PROFILE: _goal_d455_autolaunch_v1_stages,
+            GOAL_D455_AUTOLAUNCH_VIEWDENSE_PROFILE: _goal_d455_autolaunch_viewdense_v1_stages,
+            GOAL_D455_AUTOLAUNCH_VIEWDENSE_RELAXTRUNC_PROFILE: _goal_d455_autolaunch_viewdense_relaxtrunc_v1_stages,
+            GOAL_D455_AUTOLAUNCH_VIEWDENSE_FULLSAFE_PROFILE: _goal_d455_autolaunch_viewdense_fullsafe_v1_stages,
+            GOAL_D455_RELEASE_PROFILE: _goal_d455_release_v1_stages,
         }
-        return profile_builders[curriculum_profile](
+        stages = profile_builders[curriculum_profile](
             stack_kwargs=stack_kwargs,
             stage_steps_override=stage_steps_override,
             critic_command_history_steps=max(12, int(critic_command_history_steps)),
+        )
+        return _apply_arm_safety_overrides(
+            stages,
+            arm_post_compensation_limiter=arm_post_compensation_limiter,
+            arm_servo_target_limiter=arm_servo_target_limiter,
+            arm_servo_target_tracking_planner=arm_servo_target_tracking_planner,
+            arm_servo_target_velocity_scale=arm_servo_target_velocity_scale,
+            arm_servo_target_acceleration_scale=arm_servo_target_acceleration_scale,
+            arm_actual_state_limiter=arm_actual_state_limiter,
+            right_arm_pd_profile=right_arm_pd_profile,
         )
 
     base = MjxJuggleConfig(domain_randomization=False, arm_action_limiter=True)
@@ -8035,6 +11118,12 @@ def build_curriculum(
         actuator_mpc_nominal_weight=actuator_mpc_nominal_weight,
         actuator_mpc_delta_weight=actuator_mpc_delta_weight,
         actuator_mpc_max_delta_deg=actuator_mpc_max_delta_deg,
+        actuator_mpc_command_dynamics_constraint=actuator_mpc_command_dynamics_constraint,
+        actuator_mpc_command_velocity_weight=actuator_mpc_command_velocity_weight,
+        actuator_mpc_command_acceleration_weight=actuator_mpc_command_acceleration_weight,
+        actuator_mpc_command_velocity_scale=actuator_mpc_command_velocity_scale,
+        actuator_mpc_command_acceleration_scale=actuator_mpc_command_acceleration_scale,
+        actuator_mpc_feedback_source=actuator_mpc_feedback_source,
         dr_randomize_actuator_cmd_filter=dr_randomize_actuator_cmd_filter,
         dr_actuator_cmd_tau_range=dr_actuator_cmd_tau_range,
         dr_actuator_cmd_gain_range=dr_actuator_cmd_gain_range,
@@ -8100,7 +11189,16 @@ def build_curriculum(
 
     if stage_steps_override is not None:
         stages = [replace(stage, total_steps=int(stage_steps_override)) for stage in stages]
-    return stages
+    return _apply_arm_safety_overrides(
+        stages,
+        arm_post_compensation_limiter=arm_post_compensation_limiter,
+        arm_servo_target_limiter=arm_servo_target_limiter,
+        arm_servo_target_tracking_planner=arm_servo_target_tracking_planner,
+        arm_servo_target_velocity_scale=arm_servo_target_velocity_scale,
+        arm_servo_target_acceleration_scale=arm_servo_target_acceleration_scale,
+        arm_actual_state_limiter=arm_actual_state_limiter,
+        right_arm_pd_profile=right_arm_pd_profile,
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -8130,6 +11228,9 @@ def parse_args() -> argparse.Namespace:
             ROBUST_JUGGLE_PROFILE,
             D455_STABLE_4G_PROFILE,
             D455_RECOVERY_PROFILE,
+            D455_FULL_CURRICULUM_PROFILE,
+            D455_SUCCESS_REF_PROFILE,
+            *GOAL_D455_PROFILES,
             "standard",
             "standard_low_reset",
             "standard_low_reset_robust15",
@@ -8146,6 +11247,16 @@ def parse_args() -> argparse.Namespace:
             "robust_juggle_v1 is the compact 10-stage 67D + real actuator + inverse MPC + asymmetric-critic profile; "
             "d455_stable_4g_v1 first learns the fixed-arm, anchor-drop nominal D455 13-15 hit policy; "
             "d455_recovery_v1 resumes from that stable policy and trains falling-contact recovery states, missing, and noise; "
+            "d455_full_curriculum_v1 is the single-process D455 mainline that continues stable anchor-drop training into wide range, missing, and large DR; "
+            "d455_success_ref_v1 rebuilds the old successful low-gate stage4a->stage4g recipe with the current D455 reset, view bounds, and done conditions; "
+            "goal_d455_autolaunch_v1 and goal_d455_release_v1 are independent random-initialized GOAL.md branches with fixed D455 geometry, fixed rewards, strict validation, and branch-invariant resets; "
+            "goal_d455_autolaunch_viewdense_v1 is the W012 autonomous-launch variant that keeps the W011 control stack but adds mild dense D455 view centering/bounds shaping; "
+            "goal_d455_autolaunch_viewdense_relaxtrunc_v1 is W013: W012 plus relaxed early full-horizon truncation gates; "
+            "goal_d455_autolaunch_viewdense_fullsafe_v1 is W014: W012 view shaping plus the original early full-horizon gates and safety costs for raw action overflow, action jerk, and actual-state limiter intervention; "
+            "goal_d455_autolaunch_idealpd_v1 reuses the original 20260716 goal_d455_autolaunch_v1 curriculum/gates/rewards while disabling actuator command filtering, delay conditioning, and compensation for the ideal-PD policy->real compensator ablation; "
+            "goal_d455_autolaunch_idealpd67_v1 keeps that original course and the deployed 67D 72 ms command-history/error/phase observation contract, but applies the current position command immediately with XML PD and no actuator filter or compensation; "
+            "goal_d455_autolaunch_idealpd67_viewdense_v1 preserves that ideal-PD67 plant and the original full-horizon gates, while adding mild view/next-contact shaping and measured launch14/15 minimum-update floors; "
+            "goal_d455_autolaunch_idealpd67_final_recovery_v1 resumes that branch at launch19, preserves every strict final gate and adds only moderate post-hit survival shaping with a shorter recovery floor; "
             "standard keeps the original 18 stages; actuator_safe retunes early stages for the real delay/filter actuator; "
             "standard_low_reset starts from the IK-computed low right-arm reset pose and visible-window ball heights; "
             "standard_low_reset_robust15 adds cadence/view bridge gates and a late 15-hit cap; "
@@ -8277,6 +11388,68 @@ def parse_args() -> argparse.Namespace:
         help="Per-joint absolute cap for regularized inverse-MPC compensation in degrees.",
     )
     p.add_argument(
+        "--actuator-mpc-command-dynamics-constraint",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Constrain the original inverse-MPC output command itself to the "
+            "one-step position/velocity/acceleration interval. This is not "
+            "the servo target tracking planner."
+        ),
+    )
+    p.add_argument("--actuator-mpc-command-velocity-weight", type=float, default=None)
+    p.add_argument("--actuator-mpc-command-acceleration-weight", type=float, default=None)
+    p.add_argument("--actuator-mpc-command-velocity-scale", type=float, default=None)
+    p.add_argument("--actuator-mpc-command-acceleration-scale", type=float, default=None)
+    p.add_argument(
+        "--actuator-mpc-feedback-source",
+        choices=["applied", "actual"],
+        default=None,
+        help=(
+            "State used as the inverse-MPC prediction start. 'applied' "
+            "preserves old simulator behavior; 'actual' matches current "
+            "joint feedback and is the deployable source used by the real controller."
+        ),
+    )
+    p.add_argument(
+        "--arm-post-compensation-limiter",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Override the viable q/dq/ddq limiter immediately after compensation.",
+    )
+    p.add_argument(
+        "--arm-servo-target-limiter",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Override the viable q/dq/ddq limiter after actuator delay/FOPDT "
+            "and before the MuJoCo position servo."
+        ),
+    )
+    p.add_argument(
+        "--arm-servo-target-tracking-planner",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Override the target-aware acceleration planner after actuator "
+            "delay/FOPDT and before the unchanged position PD."
+        ),
+    )
+    p.add_argument("--arm-servo-target-velocity-scale", type=float, default=None)
+    p.add_argument("--arm-servo-target-acceleration-scale", type=float, default=None)
+    p.add_argument(
+        "--arm-actual-state-limiter",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Override the 1 kHz MJX-substep actual q/dq/ddq projection.",
+    )
+    p.add_argument(
+        "--right-arm-pd-profile",
+        choices=["xml", "legacy_stage4g", "comparison_safe_v1"],
+        default=None,
+        help="Override the nominal right-arm PD profile uniformly for every stage.",
+    )
+    p.add_argument(
         "--dr-randomize-actuator-cmd-filter",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -8375,13 +11548,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--allow-unconverged-advance",
         action="store_true",
-        help="With --advance-mode converged, continue to the next stage when --max-stage-updates is exhausted.",
+        help="With --advance-mode converged, continue to the next stage when its update cap is exhausted.",
     )
     p.add_argument(
         "--max-stage-updates",
         type=int,
         default=0,
-        help="Safety cap per stage in converged mode. 0 means train the stage until convergence.",
+        help="CLI safety cap per stage in converged mode. 0 uses a profile-specific cap when declared, otherwise trains until convergence.",
     )
     p.add_argument("--minibatch-size", type=int, default=8192)
     p.add_argument("--update-epochs", type=int, default=4)
@@ -8607,7 +11780,21 @@ def parse_args() -> argparse.Namespace:
         args.minibatch_size = 256
         args.update_epochs = 10
         args.hidden_dim = 64
-    if args.curriculum_profile in (ROBUST_JUGGLE_PROFILE, *D455_TWO_PHASE_PROFILES):
+    if args.curriculum_profile in GOAL_D455_IDEALPD67_PROFILES:
+        if args.high_latency_obs:
+            p.error(f"{args.curriculum_profile} fixes actor obs_dim at 67; do not use --high-latency-obs")
+        if args.delay_ablation_preset not in {"baseline_current", "real_actuator_replay_fit"}:
+            p.error(f"{args.curriculum_profile} requires the deployed real_actuator_replay_fit 67D observation contract")
+        if args.actuator_compensation_mode not in (None, "none"):
+            p.error(f"{args.curriculum_profile} disables actuator compensation")
+        if args.actuator_cmd_filter is True:
+            p.error(f"{args.curriculum_profile} disables the actuator command filter")
+        args.delay_ablation_preset = "real_actuator_replay_fit"
+        args.actuator_compensation_mode = "none"
+        args.actuator_cmd_filter = False
+        args.asymmetric_critic = True
+        args.critic_command_history_steps = 12
+    if args.curriculum_profile in (ROBUST_JUGGLE_PROFILE, *D455_67D_INVERSE_MPC_PROFILES):
         if args.high_latency_obs:
             p.error(f"{args.curriculum_profile} fixes actor obs_dim at 67; do not use --high-latency-obs")
         if args.delay_ablation_preset not in {"baseline_current", "real_actuator_replay_fit"}:
@@ -8639,7 +11826,11 @@ def parse_args() -> argparse.Namespace:
             30.0 if args.actuator_mpc_max_delta_deg is None else args.actuator_mpc_max_delta_deg
         )
         args.asymmetric_critic = True
-        args.critic_command_history_steps = max(12, int(args.critic_command_history_steps))
+        args.critic_command_history_steps = (
+            12
+            if args.curriculum_profile in GOAL_D455_PROFILES
+            else max(12, int(args.critic_command_history_steps))
+        )
     return args
 
 
@@ -8705,16 +11896,29 @@ def episode_hit_distribution_metrics(
     }
 
 
-RESET_BUCKET_FIELDS = (
-    "reset_ball_x",
-    "reset_ball_y",
-    "reset_ball_z",
-    "reset_ball_vxy",
-    "reset_ball_vz",
+RESET_BUCKET_COMMON_FIELDS = (
     "reset_target_x",
     "reset_target_y",
     "reset_target_z",
     "reset_disturbance_strength",
+)
+RESET_BUCKET_AUTOLAUNCH_FIELDS = (
+    *RESET_BUCKET_COMMON_FIELDS,
+    "reset_ball_surface_gap",
+    "reset_ball_racket_center_offset",
+    "reset_ball_vxy",
+    "reset_ball_vz",
+)
+RESET_BUCKET_RELEASE_FIELDS = (
+    *RESET_BUCKET_COMMON_FIELDS,
+    "reset_ball_anchor_dx",
+    "reset_ball_anchor_dy",
+    "reset_ball_anchor_dz",
+    "reset_ball_vxy",
+    "reset_ball_vz",
+)
+RESET_BUCKET_FIELDS = tuple(
+    dict.fromkeys((*RESET_BUCKET_AUTOLAUNCH_FIELDS, *RESET_BUCKET_RELEASE_FIELDS))
 )
 RESET_BUCKET_BIN_LABELS = ("low", "mid", "high")
 RESET_BUCKET_DETAIL_METRICS = (
@@ -8740,6 +11944,8 @@ def reset_bucket_default_metrics() -> dict[str, float]:
         "advance_eval/reset_bucket_required": 0.0,
         "advance_eval/reset_bucket_gate_ok": 1.0,
         "advance_eval/reset_bucket_bin_count": 0.0,
+        "advance_eval/reset_bucket_field_count": 0.0,
+        "advance_eval/reset_bucket_eligible_field_count": 0.0,
         "advance_eval/reset_bucket_min_episodes": float("nan"),
         "advance_eval/reset_bucket_cvar_frac": float("nan"),
     }
@@ -8789,6 +11995,7 @@ def summarize_reset_bucket_outputs(
     mode: str,
     min_episodes: int,
     cvar_frac: float,
+    fields: tuple[str, ...] | None = None,
 ) -> dict[str, float]:
     result = reset_bucket_default_metrics()
     result["advance_eval/reset_bucket_enabled"] = float(mode != "off")
@@ -8803,8 +12010,11 @@ def summarize_reset_bucket_outputs(
     z_ideal = _numeric_2d_metric(metrics, "ball_view_z_ideal", shape)
     robust_values: dict[str, list[float]] = {metric: [] for metric in RESET_BUCKET_ROBUST_METRICS}
     eligible_bins = 0
+    varying_fields = 0
+    eligible_fields = 0
+    selected_fields = RESET_BUCKET_FIELDS if fields is None else fields
 
-    for field in RESET_BUCKET_FIELDS:
+    for field in selected_fields:
         values = _numeric_2d_metric(metrics, field, shape)
         if values is None:
             continue
@@ -8814,22 +12024,21 @@ def summarize_reset_bucket_outputs(
             basis = values[finite]
         if basis.size == 0:
             continue
+        if float(np.nanmax(basis) - np.nanmin(basis)) <= 1e-8:
+            continue
+        varying_fields += 1
         q_low, q_high = np.nanquantile(basis, [1.0 / 3.0, 2.0 / 3.0])
         if not (np.isfinite(q_low) and np.isfinite(q_high)):
             continue
         if q_low == q_high:
-            bin_masks = {
-                "low": finite,
-                "mid": np.zeros_like(done, dtype=bool),
-                "high": np.zeros_like(done, dtype=bool),
-            }
-        else:
-            bin_masks = {
-                "low": finite & (values <= q_low),
-                "mid": finite & (values > q_low) & (values <= q_high),
-                "high": finite & (values > q_high),
-            }
+            continue
+        bin_masks = {
+            "low": finite & (values <= q_low),
+            "mid": finite & (values > q_low) & (values <= q_high),
+            "high": finite & (values > q_high),
+        }
 
+        field_eligible = True
         for label, mask in bin_masks.items():
             done_mask = done & mask
             done_hits = hit_count[done_mask]
@@ -8844,14 +12053,19 @@ def summarize_reset_bucket_outputs(
             result[f"{prefix}/ball_view_z_ideal"] = _masked_mean(z_ideal, mask)
 
             if episodes < max(1, int(min_episodes)):
+                field_eligible = False
                 continue
             eligible_bins += 1
             for metric in RESET_BUCKET_ROBUST_METRICS:
                 value = result.get(f"{prefix}/{metric}", float("nan"))
                 if np.isfinite(value):
                     robust_values[metric].append(float(value))
+        if field_eligible:
+            eligible_fields += 1
 
     result["advance_eval/reset_bucket_bin_count"] = float(eligible_bins)
+    result["advance_eval/reset_bucket_field_count"] = float(varying_fields)
+    result["advance_eval/reset_bucket_eligible_field_count"] = float(eligible_fields)
     for metric, values in robust_values.items():
         finite_values = [float(v) for v in values if np.isfinite(v)]
         if finite_values:
@@ -8877,7 +12091,15 @@ def reset_bucket_gate_status(
     prefix = "cvar" if mode == "cvar" else "worst"
     rate_margin = max(0.0, float(args.advance_eval_reset_bucket_rate_margin))
     hit_margin = max(0.0, float(args.advance_eval_reset_bucket_hit_margin))
-    ok = bool(result.get("advance_eval/reset_bucket_bin_count", 0.0) > 0.0)
+    field_count = float(result.get("advance_eval/reset_bucket_field_count", 0.0))
+    eligible_field_count = float(
+        result.get("advance_eval/reset_bucket_eligible_field_count", 0.0)
+    )
+    ok = bool(
+        field_count > 0.0
+        and eligible_field_count == field_count
+        and result.get("advance_eval/reset_bucket_bin_count", 0.0) > 0.0
+    )
 
     def check(metric: str, target: float | None) -> None:
         nonlocal ok
@@ -8893,30 +12115,28 @@ def reset_bucket_gate_status(
         status[ok_key] = float(metric_ok)
         ok = ok and metric_ok
 
+    def lower_bucket_target(name: str, margin: float) -> float | None:
+        value = float(thresholds.get(name, float("nan")))
+        if not np.isfinite(value):
+            return None
+        return max(0.0, value - margin)
+
     check("mean_hits", max(0.0, float(thresholds["target_mean_hits"]) - hit_margin))
     check(
         "hit1_rate",
-        None
-        if probe_stage.target_hit1_rate is None
-        else max(0.0, float(thresholds["target_hit1_rate"]) - rate_margin),
+        lower_bucket_target("target_hit1_rate", rate_margin),
     )
     check(
         "hit3_rate",
-        None
-        if probe_stage.target_hit3_rate is None
-        else max(0.0, float(thresholds["target_hit3_rate"]) - rate_margin),
+        lower_bucket_target("target_hit3_rate", rate_margin),
     )
     check(
         "ball_view_in_bounds",
-        None
-        if probe_stage.target_ball_view_in_bounds is None
-        else max(0.0, float(thresholds["target_ball_view_in_bounds"]) - rate_margin),
+        lower_bucket_target("target_ball_view_in_bounds", rate_margin),
     )
     check(
         "ball_view_z_ideal",
-        None
-        if probe_stage.target_ball_view_z_ideal is None
-        else max(0.0, float(thresholds["target_ball_view_z_ideal"]) - rate_margin),
+        lower_bucket_target("target_ball_view_z_ideal", rate_margin),
     )
     status["advance_eval/reset_bucket_gate_ok"] = float(ok)
     return status
@@ -9106,6 +12326,7 @@ def convergence_status(
         recent,
         "mean_hit_next_contact_anchor_err",
     )
+    recent_racket_up_cos = _recent_mean(recent, "racket_up_cos")
 
     required_updates = max(int(stage.min_updates), int(args.min_stage_updates))
     enough_updates = stage_update >= required_updates
@@ -9236,12 +12457,29 @@ def convergence_status(
     hit_recoverability_ok = bool(
         hit_vxy_ok and hit_next_contact_anchor_ok and hit_camera_v_frac_ok
     )
+    # The intermediate GPU0 tail uses the exact next-contact metric as a
+    # finite diagnostic, while the unchanged stochastic next-stage probe is
+    # the actual transfer test.  Historical validation showed that a smaller
+    # proxy error did not rank checkpoints by launch17 performance.
+    hit_probe_readiness_ok = bool(
+        hit_vxy_ok
+        and hit_camera_v_frac_ok
+        and np.isfinite(recent_mean_hit_next_contact_anchor_err)
+    )
     episode_truncation_ok = (
         True
         if stage.target_episode_truncation_rate is None
         else bool(
             np.isfinite(recent_episode_truncation_rate)
             and recent_episode_truncation_rate >= float(stage.target_episode_truncation_rate)
+        )
+    )
+    racket_up_cos_ok = (
+        True
+        if stage.target_racket_up_cos is None
+        else bool(
+            np.isfinite(recent_racket_up_cos)
+            and recent_racket_up_cos >= float(stage.target_racket_up_cos)
         )
     )
     missing_exposure_ok = (
@@ -9355,6 +12593,11 @@ def convergence_status(
             stage.target_hit_camera_lower_band_rate,
             margin=0.18,
         )
+        and _rate_gate_floor(
+            recent_racket_up_cos,
+            stage.target_racket_up_cos,
+            margin=0.005,
+        )
     )
     task_group_ok = task_family_score >= 0.84
     vision_group_ok = vision_family_score >= 0.86
@@ -9373,6 +12616,7 @@ def convergence_status(
         and hit_camera_lower_band_ok
         and hit_recoverability_ok
         and episode_truncation_ok
+        and racket_up_cos_ok
     )
     if stage.gate_mode == "balanced":
         performance_gate_ok = bool(
@@ -9380,6 +12624,13 @@ def convergence_status(
             and task_group_ok
             and vision_group_ok
             and hit_recoverability_ok
+        )
+    elif stage.gate_mode == "balanced_probe":
+        performance_gate_ok = bool(
+            balanced_floor_ok
+            and task_group_ok
+            and vision_group_ok
+            and hit_probe_readiness_ok
         )
     elif stage.gate_mode == "strict":
         performance_gate_ok = strict_performance_ok
@@ -9401,10 +12652,14 @@ def convergence_status(
     return {
         "convergence/stage_converged": float(converged),
         "convergence/gate_mode_balanced": float(stage.gate_mode == "balanced"),
+        "convergence/gate_mode_balanced_probe": float(
+            stage.gate_mode == "balanced_probe"
+        ),
         "convergence/performance_gate_ok": float(performance_gate_ok),
         "convergence/balanced_floor_ok": float(balanced_floor_ok),
         "convergence/task_group_ok": float(task_group_ok),
         "convergence/vision_group_ok": float(vision_group_ok),
+        "convergence/hit_probe_readiness_ok": float(hit_probe_readiness_ok),
         "convergence/hit_family_score": float(hit_family_score),
         "convergence/survival_family_score": float(survival_family_score),
         "convergence/task_family_score": float(task_family_score),
@@ -9434,6 +12689,7 @@ def convergence_status(
         "convergence/recent_mean_hit_camera_v_frac": recent_mean_hit_camera_v_frac,
         "convergence/recent_mean_hit_vxy": recent_mean_hit_vxy,
         "convergence/recent_mean_hit_next_contact_anchor_err": recent_mean_hit_next_contact_anchor_err,
+        "convergence/recent_racket_up_cos": recent_racket_up_cos,
         "convergence/target_mean_hits": float(stage.target_mean_hits),
         "convergence/target_mean_len_frac": float(stage.target_mean_len_frac),
         "convergence/min_recent_mean_return": (
@@ -9509,6 +12765,11 @@ def convergence_status(
             if stage.target_episode_truncation_rate is not None
             else 0.0
         ),
+        "convergence/target_racket_up_cos": (
+            float(stage.target_racket_up_cos)
+            if stage.target_racket_up_cos is not None
+            else 0.0
+        ),
         "convergence/min_ball_obs_missing_refresh_rate": (
             float(stage.min_ball_obs_missing_refresh_rate)
             if stage.min_ball_obs_missing_refresh_rate is not None
@@ -9539,6 +12800,7 @@ def convergence_status(
         "convergence/hit_camera_v_frac_ok": float(hit_camera_v_frac_ok),
         "convergence/hit_recoverability_ok": float(hit_recoverability_ok),
         "convergence/episode_truncation_ok": float(episode_truncation_ok),
+        "convergence/racket_up_cos_ok": float(racket_up_cos_ok),
         "convergence/missing_exposure_ok": float(missing_exposure_ok),
         "convergence/lost_rate_ok": float(lost_rate_ok),
         "convergence/min_updates": float(required_updates),
@@ -9666,12 +12928,40 @@ def stage_best_score(row: dict[str, object], stage: CurriculumStage) -> float | 
         )
     return score
 
+def _advance_validation_probe_spec(
+    args: argparse.Namespace,
+    stage_idx: int,
+    stages: list[CurriculumStage],
+) -> tuple[CurriculumStage | None, int | None, bool]:
+    """Resolve the next-stage probe, plus the GOAL-profile final self-probe.
+
+    ``stage_idx`` is the one-based index used by the training loop.  Before
+    the last stage it points at the next zero-based list entry.  The two new
+    GOAL profiles additionally validate their last stage against itself so a
+    run cannot finish on rollout convergence alone.
+    """
+
+    if stage_idx < len(stages):
+        return stages[stage_idx], stage_idx, False
+    if (
+        stage_idx == len(stages)
+        and stages
+        and getattr(args, "curriculum_profile", "") in GOAL_D455_PROFILES
+    ):
+        return stages[-1], len(stages) - 1, True
+    return None, None, False
+
+
 def advance_validation_defaults(
     args: argparse.Namespace,
     stage_idx: int,
     stages: list[CurriculumStage],
 ) -> dict[str, float]:
-    probe_stage = stages[stage_idx] if stage_idx < len(stages) else None
+    probe_stage, probe_list_index, final_self_probe = _advance_validation_probe_spec(
+        args,
+        stage_idx,
+        stages,
+    )
     required = bool(args.advance_validation_mode != "off" and probe_stage is not None)
     threshold_names = (
         "target_mean_hits",
@@ -9690,6 +12980,10 @@ def advance_validation_defaults(
         "target_hit_camera_visible_rate",
         "target_hit_camera_lower_band_rate",
         "target_episode_truncation_rate",
+        "target_racket_up_cos",
+        "max_mean_hit_vxy",
+        "max_mean_hit_camera_v_frac",
+        "max_mean_hit_next_contact_anchor_err",
         "min_ball_obs_missing_refresh_rate",
         "max_ball_obs_lost_rate",
     )
@@ -9698,9 +12992,13 @@ def advance_validation_defaults(
         probe_stage_index = 0.0
         collapse = False
     else:
-        thresholds = advance_validation_thresholds(args, probe_stage)
-        probe_stage_index = float(stage_idx + 1)
-        collapse = probe_stage.advance_gate_mode == "collapse"
+        thresholds = advance_validation_thresholds(
+            args,
+            probe_stage,
+            force_strict=final_self_probe,
+        )
+        probe_stage_index = float(int(probe_list_index) + 1)
+        collapse = bool(probe_stage.advance_gate_mode == "collapse" and not final_self_probe)
     result = {
         "advance_eval/required": float(required),
         "advance_eval/ran": 0.0,
@@ -9708,6 +13006,7 @@ def advance_validation_defaults(
         "advance_eval/passed": float(not required),
         "advance_eval/blocking": float(required and args.advance_validation_mode == "block"),
         "advance_eval/gate_mode_collapse": float(collapse),
+        "advance_eval/final_self_probe": float(final_self_probe),
         "advance_eval/probe_stage_index": probe_stage_index,
     }
     result.update({f"advance_eval/{name}": float(thresholds[name]) for name in threshold_names})
@@ -9738,6 +13037,12 @@ def advance_validation_defaults(
         "hit_camera_in_margin_rate",
         "hit_camera_lower_band_rate",
         "mean_hit_camera_v_frac",
+        "mean_hit_vxy",
+        "mean_hit_contact_center_dist",
+        "mean_hit_racket_up_cos",
+        "mean_hit_apex_rel_height",
+        "racket_up_cos",
+        "mean_hit_next_contact_anchor_err",
         "episode_truncation_rate",
         "ball_obs_missing_refresh_rate",
         "ball_obs_lost_rate",
@@ -9771,6 +13076,10 @@ def advance_validation_defaults(
         "hit_interval_max_ok",
         "hit_camera_visible_ok",
         "hit_camera_lower_band_ok",
+        "hit_next_contact_anchor_ok",
+        "hit_vxy_ok",
+        "hit_camera_v_frac_ok",
+        "racket_up_cos_ok",
         "episode_truncation_ok",
         "missing_exposure_ok",
         "lost_rate_ok",
@@ -9780,8 +13089,13 @@ def advance_validation_defaults(
     result.update(reset_bucket_default_metrics())
     return result
 
-def advance_validation_thresholds(args: argparse.Namespace, probe_stage: CurriculumStage) -> dict[str, float]:
-    collapse = probe_stage.advance_gate_mode == "collapse"
+def advance_validation_thresholds(
+    args: argparse.Namespace,
+    probe_stage: CurriculumStage,
+    *,
+    force_strict: bool = False,
+) -> dict[str, float]:
+    collapse = bool(probe_stage.advance_gate_mode == "collapse" and not force_strict)
     if collapse:
         hit_ratio = 0.35
         len_ratio = 0.30
@@ -9821,6 +13135,10 @@ def advance_validation_thresholds(args: argparse.Namespace, probe_stage: Curricu
         target_hit_camera_lower_band_rate = float("nan")
         target_mean_hits_ge3 = float("nan")
         target_episode_truncation_rate = float("nan")
+        target_racket_up_cos = float("nan")
+        max_mean_hit_vxy = float("nan")
+        max_mean_hit_camera_v_frac = float("nan")
+        max_mean_hit_next_contact_anchor_err = float("nan")
         max_ball_obs_lost_rate = (
             float("nan")
             if probe_stage.max_ball_obs_lost_rate is None
@@ -9868,6 +13186,25 @@ def advance_validation_thresholds(args: argparse.Namespace, probe_stage: Curricu
             float("nan")
             if probe_stage.target_episode_truncation_rate is None
             else float(probe_stage.target_episode_truncation_rate) * len_ratio
+        )
+        target_racket_up_cos = lower_target(
+            probe_stage.target_racket_up_cos,
+            margin=0.015,
+        )
+        max_mean_hit_vxy = (
+            float("nan")
+            if probe_stage.max_recent_mean_hit_vxy is None
+            else float(probe_stage.max_recent_mean_hit_vxy) + 0.05
+        )
+        max_mean_hit_camera_v_frac = (
+            float("nan")
+            if probe_stage.max_recent_mean_hit_camera_v_frac is None
+            else float(probe_stage.max_recent_mean_hit_camera_v_frac) + 0.03
+        )
+        max_mean_hit_next_contact_anchor_err = (
+            float("nan")
+            if probe_stage.max_recent_hit_next_contact_anchor_err is None
+            else float(probe_stage.max_recent_hit_next_contact_anchor_err) + 0.015
         )
         max_ball_obs_lost_rate = (
             float("nan")
@@ -9918,6 +13255,10 @@ def advance_validation_thresholds(args: argparse.Namespace, probe_stage: Curricu
         "target_hit_camera_visible_rate": target_hit_camera_visible_rate,
         "target_hit_camera_lower_band_rate": target_hit_camera_lower_band_rate,
         "target_episode_truncation_rate": target_episode_truncation_rate,
+        "target_racket_up_cos": target_racket_up_cos,
+        "max_mean_hit_vxy": max_mean_hit_vxy,
+        "max_mean_hit_camera_v_frac": max_mean_hit_camera_v_frac,
+        "max_mean_hit_next_contact_anchor_err": max_mean_hit_next_contact_anchor_err,
         "min_ball_obs_missing_refresh_rate": min_ball_obs_missing_refresh_rate,
         "max_ball_obs_lost_rate": max_ball_obs_lost_rate,
     }
@@ -9965,6 +13306,17 @@ def make_eval_rollout(env: MjxJuggleEnv, n_steps: int, deterministic: bool = Tru
         return outputs
 
     return jax.jit(eval_rollout)
+
+
+def advance_validation_env_cfg(probe_stage: CurriculumStage) -> MjxJuggleConfig:
+    """Evaluate the declared observation noise at full scale from step one."""
+
+    return replace(
+        probe_stage.cfg,
+        ball_obs_noise_warmup_ratio=0.0,
+        ball_obs_noise_ramp_ratio=0.0,
+        total_training_steps=1,
+    )
 
 
 def summarize_eval_outputs(
@@ -10040,6 +13392,27 @@ def summarize_eval_outputs(
             "hit_camera_v_frac_sum",
             "hit_camera_visible_event",
         ),
+        "advance_eval/mean_hit_vxy": metric_ratio(
+            "hit_vxy_sum",
+            "hit_event_count",
+        ),
+        "advance_eval/mean_hit_contact_center_dist": metric_ratio(
+            "hit_contact_center_dist_sum",
+            "hit_event_count",
+        ),
+        "advance_eval/mean_hit_racket_up_cos": metric_ratio(
+            "hit_racket_up_cos_sum",
+            "hit_event_count",
+        ),
+        "advance_eval/mean_hit_apex_rel_height": metric_ratio(
+            "hit_apex_rel_height_sum",
+            "hit_event_count",
+        ),
+        "advance_eval/racket_up_cos": metric_mean("racket_up_cos"),
+        "advance_eval/mean_hit_next_contact_anchor_err": metric_ratio(
+            "hit_next_contact_anchor_err_sum",
+            "hit_event_count",
+        ),
         "advance_eval/episode_truncation_rate": (
             float(np.asarray(metrics.get("truncated", np.zeros_like(done))).sum()) / float(done_count)
             if done_count > 0
@@ -10070,9 +13443,34 @@ def summarize_eval_outputs(
             mode=str(reset_bucket_mode),
             min_episodes=int(reset_bucket_min_episodes),
             cvar_frac=float(reset_bucket_cvar_frac),
+            fields=(
+                RESET_BUCKET_AUTOLAUNCH_FIELDS
+                if env.cfg.ball_reset_mode == "racket_launch"
+                else (
+                    RESET_BUCKET_RELEASE_FIELDS
+                    if env.cfg.ball_reset_mode == "anchor_drop"
+                    else None
+                )
+            ),
         )
     )
     return summary
+
+def _advance_validation_gate_passed(
+    advance_gate_mode: str,
+    *,
+    final_self_probe: bool,
+    collapse_core_ok: bool,
+    strict_ok: bool,
+) -> bool:
+    """Select the probe result, including strict GOAL final self-validation."""
+
+    if advance_gate_mode == "collapse":
+        return bool(strict_ok if final_self_probe else collapse_core_ok)
+    if advance_gate_mode == "strict":
+        return bool(strict_ok)
+    raise ValueError(f"unknown curriculum advance_gate_mode: {advance_gate_mode}")
+
 
 def run_advance_validation(
     args: argparse.Namespace,
@@ -10081,11 +13479,18 @@ def run_advance_validation(
     params,
     rng: jax.Array,
 ) -> dict[str, float]:
-    if args.advance_validation_mode == "off" or stage_idx >= len(stages):
+    if args.advance_validation_mode == "off":
         return {}
-    probe_stage = stages[stage_idx]
+    probe_stage, probe_list_index, final_self_probe = _advance_validation_probe_spec(
+        args,
+        stage_idx,
+        stages,
+    )
+    if probe_stage is None or probe_list_index is None:
+        return {}
     n_eval_envs = min(int(args.n_envs), max(1, int(args.advance_eval_n_envs)))
-    probe_env = MjxJuggleEnv(args.xml, n_envs=n_eval_envs, cfg=probe_stage.cfg)
+    probe_cfg = advance_validation_env_cfg(probe_stage)
+    probe_env = MjxJuggleEnv(args.xml, n_envs=n_eval_envs, cfg=probe_cfg)
     n_eval_steps = (
         int(args.advance_eval_steps)
         if int(args.advance_eval_steps) > 0
@@ -10105,11 +13510,16 @@ def run_advance_validation(
         reset_bucket_min_episodes=int(args.advance_eval_reset_bucket_min_episodes),
         reset_bucket_cvar_frac=float(args.advance_eval_reset_bucket_cvar_frac),
     )
-    thresholds = advance_validation_thresholds(args, probe_stage)
-    result["advance_eval/probe_stage_index"] = float(stage_idx + 1)
-    result["advance_eval/gate_mode_collapse"] = float(
-        probe_stage.advance_gate_mode == "collapse"
+    thresholds = advance_validation_thresholds(
+        args,
+        probe_stage,
+        force_strict=final_self_probe,
     )
+    result["advance_eval/probe_stage_index"] = float(probe_list_index + 1)
+    result["advance_eval/gate_mode_collapse"] = float(
+        probe_stage.advance_gate_mode == "collapse" and not final_self_probe
+    )
+    result["advance_eval/final_self_probe"] = float(final_self_probe)
     result.update({f"advance_eval/{name}": float(value) for name, value in thresholds.items()})
     result.update(reset_bucket_gate_status(args, probe_stage, thresholds, result))
 
@@ -10139,7 +13549,11 @@ def run_advance_validation(
     )
     hit_camera_visible_rate = float(result["advance_eval/hit_camera_visible_rate"])
     hit_camera_lower_band_rate = float(result["advance_eval/hit_camera_lower_band_rate"])
+    mean_hit_vxy = float(result["advance_eval/mean_hit_vxy"])
+    mean_hit_camera_v_frac = float(result["advance_eval/mean_hit_camera_v_frac"])
+    racket_up_cos = float(result["advance_eval/racket_up_cos"])
     episode_truncation_rate = float(result["advance_eval/episode_truncation_rate"])
+    mean_hit_next_contact_anchor_err = float(result["advance_eval/mean_hit_next_contact_anchor_err"])
     missing_refresh_rate = float(result["advance_eval/ball_obs_missing_refresh_rate"])
     lost_rate = float(result["advance_eval/ball_obs_lost_rate"])
     reset_bucket_gate_ok = bool(result["advance_eval/reset_bucket_gate_ok"])
@@ -10186,9 +13600,19 @@ def run_advance_validation(
         hit_camera_lower_band_rate,
         thresholds["target_hit_camera_lower_band_rate"],
     )
+    hit_vxy_ok = upper_ok(mean_hit_vxy, thresholds["max_mean_hit_vxy"])
+    hit_camera_v_frac_ok = upper_ok(
+        mean_hit_camera_v_frac,
+        thresholds["max_mean_hit_camera_v_frac"],
+    )
+    racket_up_cos_ok = lower_ok(racket_up_cos, thresholds["target_racket_up_cos"])
     episode_truncation_ok = lower_ok(
         episode_truncation_rate,
         thresholds["target_episode_truncation_rate"],
+    )
+    hit_next_contact_anchor_ok = upper_ok(
+        mean_hit_next_contact_anchor_err,
+        thresholds["max_mean_hit_next_contact_anchor_err"],
     )
     missing_exposure_ok = lower_ok(
         missing_refresh_rate,
@@ -10209,6 +13633,11 @@ def run_advance_validation(
         and hit_camera_lower_band_ok
         and missing_exposure_ok
         and lost_rate_ok
+        and (
+            reset_bucket_gate_ok
+            if str(args.advance_eval_reset_bucket_mode) in {"cvar", "worst"}
+            else True
+        )
     )
     strict_ok = bool(
         collapse_core_ok
@@ -10219,16 +13648,18 @@ def run_advance_validation(
         and hit_interval_ok
         and hit_interval_max_ok
         and episode_truncation_ok
+        and hit_vxy_ok
+        and hit_camera_v_frac_ok
+        and racket_up_cos_ok
+        and hit_next_contact_anchor_ok
         and reset_bucket_gate_ok
     )
-    if probe_stage.advance_gate_mode == "collapse":
-        passed = collapse_core_ok
-    elif probe_stage.advance_gate_mode == "strict":
-        passed = strict_ok
-    else:
-        raise ValueError(
-            f"unknown curriculum advance_gate_mode: {probe_stage.advance_gate_mode}"
-        )
+    passed = _advance_validation_gate_passed(
+        probe_stage.advance_gate_mode,
+        final_self_probe=final_self_probe,
+        collapse_core_ok=collapse_core_ok,
+        strict_ok=strict_ok,
+    )
     result.update(
         {
             "advance_eval/enough_episodes": float(enough_episodes),
@@ -10249,7 +13680,11 @@ def run_advance_validation(
             "advance_eval/hit_camera_lower_band_ok": float(
                 hit_camera_lower_band_ok
             ),
+            "advance_eval/hit_vxy_ok": float(hit_vxy_ok),
+            "advance_eval/hit_camera_v_frac_ok": float(hit_camera_v_frac_ok),
+            "advance_eval/racket_up_cos_ok": float(racket_up_cos_ok),
             "advance_eval/episode_truncation_ok": float(episode_truncation_ok),
+            "advance_eval/hit_next_contact_anchor_ok": float(hit_next_contact_anchor_ok),
             "advance_eval/missing_exposure_ok": float(missing_exposure_ok),
             "advance_eval/lost_rate_ok": float(lost_rate_ok),
             "advance_eval/collapse_core_ok": float(collapse_core_ok),
@@ -10265,6 +13700,8 @@ def stage_update_cap(stage: CurriculumStage, args: argparse.Namespace, batch_ste
         return max(1, int(stage.total_steps) // max(1, int(batch_steps)))
     if int(args.max_stage_updates) > 0:
         return int(args.max_stage_updates)
+    if stage.max_updates is not None:
+        return max(1, int(stage.max_updates))
     return None
 
 
@@ -10673,12 +14110,25 @@ def main() -> None:
         args.actuator_mpc_nominal_weight,
         args.actuator_mpc_delta_weight,
         args.actuator_mpc_max_delta_deg,
+        args.actuator_mpc_command_dynamics_constraint,
+        args.actuator_mpc_command_velocity_weight,
+        args.actuator_mpc_command_acceleration_weight,
+        args.actuator_mpc_command_velocity_scale,
+        args.actuator_mpc_command_acceleration_scale,
+        args.actuator_mpc_feedback_source,
         args.dr_randomize_actuator_cmd_filter,
         tuple(args.dr_actuator_cmd_tau_range) if args.dr_actuator_cmd_tau_range is not None else None,
         tuple(args.dr_actuator_cmd_gain_range) if args.dr_actuator_cmd_gain_range is not None else None,
         bool(args.wide_polish_dr),
         bool(args.asymmetric_critic),
         int(args.critic_command_history_steps),
+        args.arm_post_compensation_limiter,
+        args.arm_servo_target_limiter,
+        args.arm_servo_target_tracking_planner,
+        args.arm_servo_target_velocity_scale,
+        args.arm_servo_target_acceleration_scale,
+        args.arm_actual_state_limiter,
+        args.right_arm_pd_profile,
     )
     if args.max_stages > 0:
         stages = stages[: int(args.max_stages)]
@@ -10710,6 +14160,7 @@ def main() -> None:
                         "target_mean_hits": stage.target_mean_hits,
                         "target_mean_len_frac": stage.target_mean_len_frac,
                         "min_updates": stage.min_updates,
+                        "max_updates": stage.max_updates,
                         "min_recent_mean_return": stage.min_recent_mean_return,
                         "target_camera_visible": stage.target_camera_visible,
                         "min_recent_camera_reward_dense": stage.min_recent_camera_reward_dense,
@@ -10721,6 +14172,7 @@ def main() -> None:
                         "target_hit12_rate": stage.target_hit12_rate,
                         "target_min_hit_interval_s": stage.target_min_hit_interval_s,
                         "target_episode_truncation_rate": stage.target_episode_truncation_rate,
+                        "target_racket_up_cos": stage.target_racket_up_cos,
                         "target_max_hit_interval_s": stage.target_max_hit_interval_s,
                         "target_hit_camera_visible_rate": stage.target_hit_camera_visible_rate,
                         "target_hit_camera_lower_band_rate": stage.target_hit_camera_lower_band_rate,
@@ -10783,6 +14235,12 @@ def main() -> None:
             f"mpc_beta={stage.cfg.actuator_mpc_beta:.3f}, "
             f"mpc_horizon={stage.cfg.actuator_mpc_horizon_steps}, "
             f"mpc_max_deg={np.rad2deg(stage.cfg.actuator_mpc_max_delta_rad):.2f}, "
+            f"mpc_feedback_source={stage.cfg.actuator_mpc_feedback_source}, "
+            f"right_arm_pd_profile={stage.cfg.right_arm_pd_profile}, "
+            f"post_comp_limiter={stage.cfg.arm_post_compensation_limiter}, "
+            f"servo_target_limiter={stage.cfg.arm_servo_target_limiter}, "
+            f"servo_target_tracking_planner={stage.cfg.arm_servo_target_tracking_planner}, "
+            f"actual_state_limiter={stage.cfg.arm_actual_state_limiter}, "
             f"delay_extra_dim={getattr(env, 'delay_extra_dim', 0)}, "
             f"asymmetric_critic={getattr(env, 'asymmetric_critic', False)}, "
             f"critic_obs_dim={getattr(env, 'critic_obs_dim', env.obs_dim)}"
@@ -11265,7 +14723,7 @@ def main() -> None:
             if not stage_history:
                 raise SystemExit(f"[mjx_curriculum] no updates were run for stage: {stage.name}")
             message = (
-                f"[mjx_curriculum] stage did not converge before --max-stage-updates: {stage.name}. "
+                f"[mjx_curriculum] stage did not converge before its update cap: {stage.name}. "
                 f"last_recent_hits={stage_history[-1]['convergence/recent_mean_hits']:.2f}, "
                 f"target_hits={stage.target_mean_hits:.2f}, "
                 f"last_recent_len_frac={stage_history[-1]['convergence/recent_mean_len_frac']:.2f}, "
