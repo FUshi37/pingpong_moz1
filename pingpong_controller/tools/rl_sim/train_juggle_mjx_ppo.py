@@ -21,6 +21,7 @@ from mjx_juggle_env import MjxJuggleConfig, MjxJuggleEnv
 
 
 LOG_2PI = float(np.log(2.0 * np.pi))
+PPO_KL_BACKTRACK_SCALES = (1.0, 0.5, 0.25, 0.125, 0.0625, 0.03125)
 
 
 class OptimState(NamedTuple):
@@ -51,6 +52,9 @@ class Transition(NamedTuple):
     value: jax.Array
     reward: jax.Array
     done: jax.Array
+    terminated: jax.Array
+    truncated: jax.Array
+    timeout_value: jax.Array
     episode_return: jax.Array
     episode_length: jax.Array
     new_hit: jax.Array
@@ -116,8 +120,32 @@ def apply_mlp(params: dict[str, dict[str, jax.Array]], obs: jax.Array) -> jax.Ar
     return x @ params["out"]["w"] + params["out"]["b"]
 
 
+def policy_components(
+    params: dict[str, object],
+    obs: jax.Array,
+) -> tuple[jax.Array, jax.Array, jax.Array]:
+    """Return composite mean, frozen-teacher mean, and bounded correction.
+
+    Legacy checkpoints contain only ``pi`` and therefore return the original
+    policy unchanged.  Residual checkpoints additionally contain
+    ``teacher_pi`` and ``residual_action_scale``; ``pi`` then denotes the
+    trainable residual MLP.  Keeping this dispatch in the shared policy helper
+    makes training, validation, and deployment consume identical actions.
+    """
+
+    residual_or_mean = apply_mlp(params["pi"], obs)
+    if "teacher_pi" not in params:
+        zeros = jnp.zeros_like(residual_or_mean)
+        return residual_or_mean, zeros, zeros
+    teacher_mean = jax.lax.stop_gradient(apply_mlp(params["teacher_pi"], obs))
+    residual_scale = jax.lax.stop_gradient(jnp.asarray(params["residual_action_scale"]))
+    correction = residual_scale * jnp.tanh(residual_or_mean)
+    return teacher_mean + correction, teacher_mean, correction
+
+
 def policy_mean(params: dict[str, object], obs: jax.Array) -> jax.Array:
-    return apply_mlp(params["pi"], obs)
+    mean, _, _ = policy_components(params, obs)
+    return mean
 
 
 def value_fn(params: dict[str, object], critic_obs: jax.Array) -> jax.Array:
@@ -131,7 +159,7 @@ def policy_value(
 ) -> tuple[jax.Array, jax.Array]:
     if critic_obs is None:
         critic_obs = obs
-    mean = apply_mlp(params["pi"], obs)
+    mean = policy_mean(params, obs)
     value = value_fn(params, critic_obs)
     return mean, value
 
@@ -143,6 +171,55 @@ def normal_logprob(action: jax.Array, mean: jax.Array, log_std: jax.Array) -> ja
 
 def normal_entropy(log_std: jax.Array) -> jax.Array:
     return jnp.sum(log_std + 0.5 * (1.0 + LOG_2PI))
+
+
+def diagonal_gaussian_kl(
+    old_mean: jax.Array,
+    old_log_std: jax.Array,
+    new_mean: jax.Array,
+    new_log_std: jax.Array,
+) -> jax.Array:
+    """Mean analytic KL(old || new) for diagonal Gaussian policies."""
+
+    old_var = jnp.exp(2.0 * old_log_std)
+    new_var = jnp.exp(2.0 * new_log_std)
+    per_sample = jnp.sum(
+        new_log_std
+        - old_log_std
+        + (old_var + jnp.square(old_mean - new_mean)) / (2.0 * new_var)
+        - 0.5,
+        axis=-1,
+    )
+    return jnp.mean(per_sample)
+
+
+def effective_log_std(
+    log_std: jax.Array,
+    min_log_std: float | None,
+) -> jax.Array:
+    """Return the exploration scale used by rollout and PPO likelihoods.
+
+    A trainable Gaussian scale can otherwise drift toward zero during very
+    long curriculum stages.  Applying the same floor to action sampling and
+    likelihood evaluation keeps the PPO old/new distributions consistent.
+    """
+
+    if min_log_std is None:
+        return log_std
+    return jnp.maximum(log_std, jnp.asarray(min_log_std, dtype=log_std.dtype))
+
+
+def project_policy_log_std(
+    params,
+    min_log_std: float | None,
+):
+    """Project the stored policy scale so checkpoints cannot remain below the floor."""
+
+    if min_log_std is None:
+        return params
+    projected = dict(params)
+    projected["log_std"] = effective_log_std(params["log_std"], min_log_std)
+    return projected
 
 
 def adam_init(params) -> OptimState:
@@ -192,10 +269,16 @@ def ppo_loss(
     actor_anchor_kl_coef: float = 0.0,
     actor_anchor_obs: jax.Array | None = None,
     actor_anchor_replay_kl_coef: float = 0.0,
+    residual_l2_coef: float = 0.0,
+    teacher_params=None,
+    teacher_distill_obs: jax.Array | None = None,
+    teacher_distill_coef: float = 0.0,
+    teacher_distill_action_clip: float = 1.0,
+    min_log_std: float | None = None,
 ) -> tuple[jax.Array, dict[str, jax.Array]]:
-    mean = policy_mean(params, batch.obs)
+    mean, _, residual_correction = policy_components(params, batch.obs)
     value = value_fn(params, batch.critic_obs)
-    log_std = params["log_std"]
+    log_std = effective_log_std(params["log_std"], min_log_std)
     logp = normal_logprob(batch.action, mean, log_std)
     ratio = jnp.exp(logp - batch.old_logp)
     pg1 = ratio * batch.advantages
@@ -207,6 +290,35 @@ def ppo_loss(
     actor_anchor_current_kl = jnp.asarray(0.0, dtype=mean.dtype)
     actor_anchor_replay_kl = jnp.asarray(0.0, dtype=mean.dtype)
     actor_anchor_regularization = jnp.asarray(0.0, dtype=mean.dtype)
+    residual_rms = jnp.sqrt(jnp.mean(jnp.square(residual_correction)))
+    residual_abs_max = jnp.max(jnp.abs(residual_correction))
+    residual_regularization = float(residual_l2_coef) * jnp.mean(
+        jnp.square(residual_correction)
+    )
+    teacher_distill_mse = jnp.asarray(0.0, dtype=mean.dtype)
+    teacher_distill_regularization = jnp.asarray(0.0, dtype=mean.dtype)
+    teacher_target_clip_fraction = jnp.asarray(0.0, dtype=mean.dtype)
+    if (
+        teacher_params is not None
+        and teacher_distill_obs is not None
+        and float(teacher_distill_coef) > 0.0
+    ):
+        teacher_mean = jax.lax.stop_gradient(
+            policy_mean(teacher_params, teacher_distill_obs)
+        )
+        action_clip = float(teacher_distill_action_clip)
+        if action_clip > 0.0:
+            teacher_target_clip_fraction = jnp.mean(
+                (jnp.abs(teacher_mean) > action_clip).astype(jnp.float32)
+            )
+            teacher_mean = jnp.clip(teacher_mean, -action_clip, action_clip)
+        student_teacher_domain_mean = policy_mean(params, teacher_distill_obs)
+        teacher_distill_mse = jnp.mean(
+            jnp.square(student_teacher_domain_mean - teacher_mean)
+        )
+        teacher_distill_regularization = (
+            float(teacher_distill_coef) * teacher_distill_mse
+        )
     if reference_params is not None and (
         float(actor_anchor_kl_coef) > 0.0
         or float(actor_anchor_replay_kl_coef) > 0.0
@@ -253,6 +365,8 @@ def ppo_loss(
         + float(vf_coef) * value_loss
         - float(ent_coef) * entropy
         + actor_anchor_regularization
+        + residual_regularization
+        + teacher_distill_regularization
     )
     approx_kl = jnp.mean(batch.old_logp - logp)
     clip_frac = jnp.mean((jnp.abs(ratio - 1.0) > float(clip_range)).astype(jnp.float32))
@@ -267,6 +381,12 @@ def ppo_loss(
         "actor_anchor_current_kl": actor_anchor_current_kl,
         "actor_anchor_replay_kl": actor_anchor_replay_kl,
         "actor_anchor_regularization": actor_anchor_regularization,
+        "residual_rms": residual_rms,
+        "residual_abs_max": residual_abs_max,
+        "residual_regularization": residual_regularization,
+        "teacher_distill_mse": teacher_distill_mse,
+        "teacher_distill_regularization": teacher_distill_regularization,
+        "teacher_target_clip_fraction": teacher_target_clip_fraction,
     }
     return loss, aux
 
@@ -278,17 +398,51 @@ def compute_gae(
     last_value: jax.Array,
     gamma: float,
     gae_lambda: float,
+    *,
+    terminated: jax.Array | None = None,
+    truncated: jax.Array | None = None,
+    timeout_values: jax.Array | None = None,
+    time_limit_bootstrap: bool = False,
 ) -> tuple[jax.Array, jax.Array]:
+    if time_limit_bootstrap:
+        if terminated is None or truncated is None or timeout_values is None:
+            raise ValueError(
+                "time-limit bootstrap requires terminated, truncated, and timeout_values"
+            )
+        terminated = terminated.astype(bool)
+        truncated = truncated.astype(bool)
+    else:
+        terminated = dones.astype(bool)
+        truncated = jnp.zeros_like(dones, dtype=bool)
+        timeout_values = jnp.zeros_like(values)
+
     def scan_fn(carry, xs):
         next_adv, next_value = carry
-        reward, done, value = xs
-        nonterminal = 1.0 - done.astype(jnp.float32)
-        delta = reward + float(gamma) * nonterminal * next_value - value
-        adv = delta + float(gamma) * float(gae_lambda) * nonterminal * next_adv
+        reward, done, is_terminated, is_truncated, timeout_value, value = xs
+        # A time-limit boundary ends the GAE trace so advantages never leak
+        # into the reset episode, but it is not an MDP terminal: bootstrap the
+        # value of the physical pre-reset state.  True task failures retain a
+        # zero bootstrap target.
+        bootstrap_value = jnp.where(is_truncated, timeout_value, next_value)
+        bootstrap_mask = 1.0 - is_terminated.astype(jnp.float32)
+        trace_mask = 1.0 - done.astype(jnp.float32)
+        delta = reward + float(gamma) * bootstrap_mask * bootstrap_value - value
+        adv = delta + float(gamma) * float(gae_lambda) * trace_mask * next_adv
         return (adv, value), adv
 
     init = (jnp.zeros_like(last_value), last_value)
-    _, adv_rev = jax.lax.scan(scan_fn, init, (rewards[::-1], dones[::-1], values[::-1]))
+    _, adv_rev = jax.lax.scan(
+        scan_fn,
+        init,
+        (
+            rewards[::-1],
+            dones[::-1],
+            terminated[::-1],
+            truncated[::-1],
+            timeout_values[::-1],
+            values[::-1],
+        ),
+    )
     advantages = adv_rev[::-1]
     returns = advantages + values
     return advantages, returns
@@ -296,6 +450,69 @@ def compute_gae(
 
 def flatten_time_env(x: jax.Array) -> jax.Array:
     return x.reshape((x.shape[0] * x.shape[1],) + x.shape[2:])
+
+
+def completed_failure_focus_mask(
+    dones: jax.Array,
+    terminated: jax.Array,
+    hit_counts: jax.Array,
+    *,
+    hit_threshold: int,
+    tail_steps: int = 0,
+) -> jax.Array:
+    """Select transitions preceding a completed low-hit true termination.
+
+    A rollout can contain true task terminations, time-limit truncations, and
+    an unfinished suffix.  Only true terminations are failures.  Walking the
+    rollout backwards labels each transition with the outcome at the next
+    episode boundary; every ``done`` boundary replaces (rather than inherits)
+    that outcome so a truncation cannot borrow a later episode's failure.
+
+    ``tail_steps <= 0`` keeps the legacy whole-episode scope.  A positive
+    value restricts focus to the final N transitions, where actions can still
+    be causally related to the miss and are not dominated by already-stable
+    early contacts.
+    """
+
+    def propagate_outcome(carry, xs):
+        final_hits, final_terminated, steps_to_end, final_valid = carry
+        done_t, terminated_t, hits_t = xs
+        steps_to_end = jnp.where(final_valid, steps_to_end + 1, steps_to_end)
+        final_hits = jnp.where(done_t, hits_t, final_hits)
+        final_terminated = jnp.where(done_t, terminated_t, final_terminated)
+        steps_to_end = jnp.where(done_t, 0, steps_to_end)
+        final_valid = jnp.where(done_t, True, final_valid)
+        return (
+            final_hits,
+            final_terminated,
+            steps_to_end,
+            final_valid,
+        ), (
+            final_hits,
+            final_terminated,
+            steps_to_end,
+            final_valid,
+        )
+
+    init = (
+        jnp.zeros_like(hit_counts[-1]),
+        jnp.zeros_like(terminated[-1], dtype=bool),
+        jnp.zeros_like(hit_counts[-1], dtype=jnp.int32),
+        jnp.zeros_like(dones[-1], dtype=bool),
+    )
+    _, (episode_hits, episode_terminated, steps_to_end, episode_valid) = jax.lax.scan(
+        propagate_outcome,
+        init,
+        (dones, terminated, hit_counts),
+        reverse=True,
+    )
+    in_tail = (int(tail_steps) <= 0) | (steps_to_end < int(tail_steps))
+    return (
+        episode_valid
+        & episode_terminated
+        & (episode_hits < int(hit_threshold))
+        & in_tail
+    )
 
 
 def make_train_fns(
@@ -314,6 +531,17 @@ def make_train_fns(
     actor_anchor_kl_coef: float = 0.0,
     actor_anchor_replay_obs: jax.Array | None = None,
     actor_anchor_replay_kl_coef: float = 0.0,
+    residual_l2_coef: float = 0.0,
+    teacher_params=None,
+    teacher_distill_replay_obs: jax.Array | None = None,
+    teacher_distill_coef: float = 0.0,
+    teacher_distill_action_clip: float = 1.0,
+    time_limit_bootstrap: bool = True,
+    min_log_std: float | None = None,
+    target_kl: float | None = None,
+    failure_focus_hit_threshold: int = 0,
+    failure_focus_weight: float = 1.0,
+    failure_focus_tail_steps: int = 0,
 ):
     if (
         float(actor_anchor_kl_coef) > 0.0
@@ -322,6 +550,13 @@ def make_train_fns(
         raise ValueError("actor anchor KL requires reference_params")
     if float(actor_anchor_replay_kl_coef) > 0.0 and actor_anchor_replay_obs is None:
         raise ValueError("actor_anchor_replay_kl_coef > 0 requires replay observations")
+    if float(teacher_distill_coef) > 0.0:
+        if teacher_params is None:
+            raise ValueError("teacher_distill_coef > 0 requires teacher_params")
+        if teacher_distill_replay_obs is None:
+            raise ValueError(
+                "teacher_distill_coef > 0 requires teacher replay observations"
+            )
     batch_size = env.n_envs * int(n_steps)
     num_minibatches = max(1, batch_size // int(minibatch_size))
     used_batch_size = num_minibatches * int(minibatch_size)
@@ -331,11 +566,17 @@ def make_train_fns(
             env_state, obs, critic_obs, rng, running_return, running_length = carry
             rng, action_key, reset_key = jax.random.split(rng, 3)
             mean, value = policy_value(params, obs, critic_obs)
-            log_std = params["log_std"]
+            log_std = effective_log_std(params["log_std"], min_log_std)
             raw_action = mean + jnp.exp(log_std) * jax.random.normal(action_key, mean.shape)
             env_action = jnp.clip(raw_action, -1.0, 1.0)
             logp = normal_logprob(raw_action, mean, log_std)
             next_env_state, next_obs, reward, done, metrics = env.step(env_state, env_action)
+
+            # Capture V(s_{t+1}) before reset.  This is used only for time-limit
+            # truncations; evaluating it here avoids storing a full privileged
+            # next observation for every rollout step.
+            terminal_critic_obs = env.get_critic_obs(next_env_state, next_obs)
+            timeout_value = value_fn(params, terminal_critic_obs)
 
             completed_return = running_return + reward
             completed_length = running_length + 1
@@ -353,6 +594,9 @@ def make_train_fns(
                 value=value,
                 reward=reward,
                 done=done,
+                terminated=metrics["terminated"].astype(bool),
+                truncated=metrics["truncated"].astype(bool),
+                timeout_value=timeout_value,
                 episode_return=completed_return,
                 episode_length=completed_length,
                 new_hit=metrics["new_hit"],
@@ -367,6 +611,9 @@ def make_train_fns(
         return jax.lax.scan(rollout_step, runner, None, length=int(n_steps))
 
     def update(train_state: TrainState, runner: RunnerState, transitions: Transition) -> tuple[TrainState, dict[str, jax.Array]]:
+        # This is the immutable behavior policy that generated the rollout.
+        # Every KL safety decision below is measured against this snapshot.
+        behavior_train_state = train_state
         last_value = value_fn(train_state.params, runner.critic_obs)
         advantages, returns = compute_gae(
             transitions.reward,
@@ -375,8 +622,34 @@ def make_train_fns(
             last_value,
             gamma,
             gae_lambda,
+            terminated=transitions.terminated,
+            truncated=transitions.truncated,
+            timeout_values=transitions.timeout_value,
+            time_limit_bootstrap=time_limit_bootstrap,
         )
         advantages = (advantages - jnp.mean(advantages)) / (jnp.std(advantages) + 1e-8)
+        failure_focus_fraction = jnp.asarray(0.0, dtype=jnp.float32)
+        if int(failure_focus_hit_threshold) > 0 and float(failure_focus_weight) > 1.0:
+            failure_focus = completed_failure_focus_mask(
+                transitions.done,
+                transitions.terminated,
+                transitions.hit_count,
+                hit_threshold=failure_focus_hit_threshold,
+                tail_steps=failure_focus_tail_steps,
+            )
+            # Only amplify actions the critic already judges worse than its
+            # baseline.  Weighting positive advantages from a failed episode
+            # would reinforce the locally good first contacts even though the
+            # same trajectory still terminates before the third hit.
+            focused_negative = failure_focus & (advantages < 0.0)
+            advantage_weight = jnp.where(
+                focused_negative,
+                float(failure_focus_weight),
+                1.0,
+            )
+            advantages = advantages * advantage_weight
+            advantages = advantages / jnp.sqrt(jnp.mean(advantages * advantages) + 1e-8)
+            failure_focus_fraction = jnp.mean(focused_negative.astype(jnp.float32))
 
         batch = PpoBatch(
             obs=flatten_time_env(transitions.obs),
@@ -397,6 +670,12 @@ def make_train_fns(
             if actor_anchor_replay_obs is not None:
                 replay_idx = jnp.mod(idx, actor_anchor_replay_obs.shape[0])
                 mini_anchor_obs = actor_anchor_replay_obs[replay_idx]
+            mini_teacher_obs = None
+            if teacher_distill_replay_obs is not None:
+                teacher_replay_idx = jnp.mod(
+                    idx, teacher_distill_replay_obs.shape[0]
+                )
+                mini_teacher_obs = teacher_distill_replay_obs[teacher_replay_idx]
             (loss, aux), grads = jax.value_and_grad(ppo_loss, has_aux=True)(
                 state.params,
                 mini,
@@ -407,6 +686,12 @@ def make_train_fns(
                 actor_anchor_kl_coef,
                 mini_anchor_obs,
                 actor_anchor_replay_kl_coef,
+                residual_l2_coef,
+                teacher_params,
+                mini_teacher_obs,
+                teacher_distill_coef,
+                teacher_distill_action_clip,
+                min_log_std,
             )
             params, opt, grad_norm = adam_step(
                 state.params,
@@ -415,20 +700,213 @@ def make_train_fns(
                 learning_rate,
                 max_grad_norm,
             )
+            params = project_policy_log_std(params, min_log_std)
             aux = dict(aux)
             aux["grad_norm"] = grad_norm
             aux["loss"] = loss
             return TrainState(params=params, opt=opt), aux
 
+        old_log_std = effective_log_std(
+            behavior_train_state.params["log_std"], min_log_std
+        )
+
+        def candidate_exact_kl(candidate_params, mini: PpoBatch) -> jax.Array:
+            old_mean = policy_mean(behavior_train_state.params, mini.obs)
+            new_mean = policy_mean(candidate_params, mini.obs)
+            new_log_std = effective_log_std(candidate_params["log_std"], min_log_std)
+            return diagonal_gaussian_kl(
+                old_mean, old_log_std, new_mean, new_log_std
+            )
+
         def update_epoch(carry, epoch_key):
+            state, update_active = carry
             perm = jax.random.permutation(epoch_key, batch_size)[:used_batch_size]
             mb_idx = perm.reshape((num_minibatches, int(minibatch_size)))
-            return jax.lax.scan(update_minibatch, carry, mb_idx)
+
+            def guarded_minibatch(minibatch_carry, idx):
+                minibatch_state, minibatch_active = minibatch_carry
+                full_candidate_state, aux = update_minibatch(minibatch_state, idx)
+                if target_kl is None or float(target_kl) <= 0.0:
+                    apply_candidate = minibatch_active
+                    next_active = minibatch_active
+                    candidate_state = full_candidate_state
+                    accepted_scale = jnp.where(
+                        apply_candidate,
+                        jnp.asarray(1.0, dtype=jnp.float32),
+                        jnp.asarray(0.0, dtype=jnp.float32),
+                    )
+                    post_update_kl = jnp.asarray(0.0, dtype=jnp.float32)
+                else:
+                    # Evaluate the policy *after* the Adam candidate step.  A
+                    # pre-update KL check always accepts the first minibatch
+                    # because its KL is zero, even when that one step moves the
+                    # policy far beyond the trust-region budget.  Backtrack the
+                    # parameter displacement while keeping the same candidate
+                    # Adam moments, and select the largest safe step.
+                    mini = take_minibatch(batch, idx)
+                    scales = jnp.asarray(
+                        PPO_KL_BACKTRACK_SCALES, dtype=jnp.float32
+                    )
+
+                    def try_scale(scale_carry, step_scale):
+                        selected_state, selected_kl, selected_scale, found = scale_carry
+                        scaled_params = jax.tree_util.tree_map(
+                            lambda previous, candidate: previous
+                            + step_scale * (candidate - previous),
+                            minibatch_state.params,
+                            full_candidate_state.params,
+                        )
+                        scaled_params = project_policy_log_std(
+                            scaled_params, min_log_std
+                        )
+                        scaled_state = TrainState(
+                            params=scaled_params,
+                            opt=full_candidate_state.opt,
+                        )
+                        scaled_kl = candidate_exact_kl(scaled_params, mini)
+                        choose = (~found) & (scaled_kl <= float(target_kl))
+                        selected_state = jax.tree_util.tree_map(
+                            lambda selected, candidate: jnp.where(
+                                choose, candidate, selected
+                            ),
+                            selected_state,
+                            scaled_state,
+                        )
+                        selected_kl = jnp.where(choose, scaled_kl, selected_kl)
+                        selected_scale = jnp.where(
+                            choose, step_scale, selected_scale
+                        )
+                        return (
+                            selected_state,
+                            selected_kl,
+                            selected_scale,
+                            found | choose,
+                        ), scaled_kl
+
+                    initial_scale_carry = (
+                        minibatch_state,
+                        candidate_exact_kl(minibatch_state.params, mini),
+                        jnp.asarray(0.0, dtype=jnp.float32),
+                        jnp.asarray(False),
+                    )
+                    (
+                        candidate_state,
+                        post_update_kl,
+                        accepted_scale,
+                        found_safe_step,
+                    ), _trial_kls = jax.lax.scan(
+                        try_scale, initial_scale_carry, scales
+                    )
+                    apply_candidate = minibatch_active & found_safe_step
+                    next_active = minibatch_active & found_safe_step
+                next_state = jax.tree_util.tree_map(
+                    lambda candidate, previous: jnp.where(
+                        apply_candidate, candidate, previous
+                    ),
+                    candidate_state,
+                    minibatch_state,
+                )
+                aux = dict(aux)
+                aux["ppo_minibatch_applied"] = apply_candidate.astype(jnp.float32)
+                aux["ppo_safe_step_scale"] = jnp.where(
+                    apply_candidate, accepted_scale, 0.0
+                )
+                aux["ppo_candidate_exact_kl"] = jnp.where(
+                    apply_candidate, post_update_kl, 0.0
+                )
+                aux["ppo_candidate_rejected"] = (
+                    minibatch_active & (~apply_candidate)
+                ).astype(jnp.float32)
+                return (next_state, next_active), aux
+
+            (next_state, next_active), minibatch_aux = jax.lax.scan(
+                guarded_minibatch, (state, update_active), mb_idx
+            )
+            minibatch_applied = minibatch_aux.pop("ppo_minibatch_applied")
+            candidate_rejected = minibatch_aux.pop("ppo_candidate_rejected")
+            applied_count = jnp.sum(minibatch_applied)
+            safe_count = jnp.maximum(applied_count, 1.0)
+            epoch_aux = jax.tree_util.tree_map(
+                lambda x: jnp.sum(x * minibatch_applied) / safe_count,
+                minibatch_aux,
+            )
+            epoch_aux = dict(epoch_aux)
+            epoch_aux["ppo_minibatches_applied"] = applied_count
+            epoch_aux["ppo_candidates_rejected"] = jnp.sum(candidate_rejected)
+            return (next_state, next_active), epoch_aux
 
         rng, epoch_rng = jax.random.split(runner.rng)
         epoch_keys = jax.random.split(epoch_rng, int(update_epochs))
-        train_state, aux = jax.lax.scan(update_epoch, train_state, epoch_keys)
-        aux_mean = jax.tree_util.tree_map(lambda x: jnp.mean(x), aux)
+        (train_state, _epoch_active), epoch_aux = jax.lax.scan(
+            update_epoch,
+            (train_state, jnp.asarray(True)),
+            epoch_keys,
+        )
+        minibatches_applied = epoch_aux.pop("ppo_minibatches_applied")
+        candidates_rejected = epoch_aux.pop("ppo_candidates_rejected")
+        applied_count = jnp.maximum(jnp.sum(minibatches_applied), 1.0)
+        aux_mean = jax.tree_util.tree_map(
+            lambda x: jnp.sum(x * minibatches_applied) / applied_count,
+            epoch_aux,
+        )
+        aux_mean["ppo_minibatches_applied"] = jnp.sum(minibatches_applied)
+        aux_mean["ppo_candidates_rejected"] = jnp.sum(candidates_rejected)
+        aux_mean["ppo_epochs_applied"] = (
+            jnp.sum(minibatches_applied) / float(num_minibatches)
+        )
+        aux_mean["ppo_kl_guard_triggered"] = (
+            jnp.sum(minibatches_applied)
+            < float(int(update_epochs) * num_minibatches)
+        ).astype(jnp.float32)
+        # Audit the final policy displacement on the complete rollout.  The
+        # minibatch check above is necessarily sampled; if it underestimates
+        # the rollout-wide displacement, roll back both parameters and Adam
+        # state transactionally so no over-budget update can reach a
+        # checkpoint or the next rollout.
+        final_mean = policy_mean(train_state.params, batch.obs)
+        final_log_std = effective_log_std(train_state.params["log_std"], min_log_std)
+        final_logp = normal_logprob(batch.action, final_mean, final_log_std)
+        final_ratio = jnp.exp(final_logp - batch.old_logp)
+        final_approx_kl = jnp.mean(batch.old_logp - final_logp)
+        final_exact_kl = diagonal_gaussian_kl(
+            policy_mean(behavior_train_state.params, batch.obs),
+            old_log_std,
+            final_mean,
+            final_log_std,
+        )
+        rollback_update = jnp.asarray(False)
+        if target_kl is not None and float(target_kl) > 0.0:
+            rollback_update = final_exact_kl > float(target_kl)
+            train_state = jax.tree_util.tree_map(
+                lambda candidate, previous: jnp.where(
+                    rollback_update, previous, candidate
+                ),
+                train_state,
+                behavior_train_state,
+            )
+        effective_approx_kl = jnp.where(rollback_update, 0.0, final_approx_kl)
+        effective_exact_kl = jnp.where(rollback_update, 0.0, final_exact_kl)
+        aux_mean["approx_kl"] = effective_approx_kl
+        aux_mean["ppo_exact_kl"] = effective_exact_kl
+        aux_mean["ppo_pre_rollback_exact_kl"] = final_exact_kl
+        aux_mean["ppo_update_rolled_back"] = rollback_update.astype(jnp.float32)
+        aux_mean["ppo_minibatches_applied"] = jnp.where(
+            rollback_update, 0.0, aux_mean["ppo_minibatches_applied"]
+        )
+        aux_mean["ppo_epochs_applied"] = jnp.where(
+            rollback_update, 0.0, aux_mean["ppo_epochs_applied"]
+        )
+        aux_mean["ppo_safe_step_scale"] = jnp.where(
+            rollback_update, 0.0, aux_mean["ppo_safe_step_scale"]
+        )
+        aux_mean["ppo_candidate_exact_kl"] = jnp.where(
+            rollback_update, 0.0, aux_mean["ppo_candidate_exact_kl"]
+        )
+        aux_mean["clip_frac"] = jnp.where(rollback_update, 0.0, jnp.mean(
+            (jnp.abs(final_ratio - 1.0) > float(clip_range)).astype(jnp.float32)
+        ))
+        aux_mean["entropy"] = normal_entropy(final_log_std)
+        aux_mean["failure_focus_fraction"] = failure_focus_fraction
         aux_mean["explained_var"] = 1.0 - jnp.var(flatten_time_env(returns) - batch.old_values) / (
             jnp.var(flatten_time_env(returns)) + 1e-8
         )
@@ -530,8 +1008,38 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--learning-rate", type=float, default=3e-4)
     p.add_argument("--gamma", type=float, default=0.995)
     p.add_argument("--gae-lambda", type=float, default=0.95)
+    p.add_argument(
+        "--time-limit-bootstrap",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Bootstrap V(s) at horizon_sec truncations while still cutting the GAE trace "
+            "at the episode boundary. Disable only to reproduce legacy runs that treated "
+            "the hidden time limit as a true terminal state."
+        ),
+    )
     p.add_argument("--clip-range", type=float, default=0.2)
+    p.add_argument(
+        "--target-kl",
+        type=float,
+        default=0.0,
+        help=(
+            "Maximum analytic KL(old||new) from the rollout behavior policy. "
+            "Candidate Adam steps are checked after the update and backtracked; "
+            "the complete update is rolled back if its full-rollout KL exceeds "
+            "this budget. 0 disables the guard."
+        ),
+    )
     p.add_argument("--ent-coef", type=float, default=0.0)
+    p.add_argument(
+        "--min-log-std",
+        type=float,
+        default=None,
+        help=(
+            "Optional lower bound for the trainable Gaussian policy log standard "
+            "deviation. Prevents exploration collapse during long training stages."
+        ),
+    )
     p.add_argument("--vf-coef", type=float, default=0.5)
     p.add_argument("--max-grad-norm", type=float, default=0.5)
     p.add_argument("--hidden-dim", type=int, default=256)
@@ -644,6 +1152,9 @@ def main() -> None:
         vf_coef=args.vf_coef,
         ent_coef=args.ent_coef,
         max_grad_norm=args.max_grad_norm,
+        min_log_std=args.min_log_std,
+        target_kl=args.target_kl,
+        time_limit_bootstrap=args.time_limit_bootstrap,
     )
 
     total_updates = max(1, int(args.total_steps) // (int(args.n_envs) * int(args.n_steps)))

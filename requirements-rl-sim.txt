@@ -1,0 +1,16 @@
+# Additional dependencies for pingpong_controller/tools/rl_sim MJX training.
+#
+# Keep MuJoCo MJX and Warp pinned together. mujoco-mjx 3.8.1 declares
+# warp-lang==1.12.1 for its Warp backend; older warp-lang versions fail while
+# importing `from mujoco import mjx`.
+
+-r requirements.txt
+
+numpy>=2.4,<2.5
+jax[cuda12]==0.10.1
+jaxlib==0.10.1
+nvidia-cudnn-cu12>=9.8,<10
+mujoco==3.8.1
+mujoco-mjx[warp]==3.8.1
+warp-lang==1.12.1
+wandb>=0.27,<1

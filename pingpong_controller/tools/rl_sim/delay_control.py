@@ -8,12 +8,22 @@ and unit tests can exercise the control law without constructing MJX state.
 from __future__ import annotations
 
 import math
-from typing import Iterable
+from typing import Iterable, NamedTuple
 
 import numpy as np
 
+from sim2real_bridger import BridgerStep, constrained_compensation_step_numpy
+
 
 DEFAULT_DELAY_BIN_EDGES_MS = (0.0, 25.0, 50.0, 75.0, 100.0, 125.0, 150.0)
+
+
+class ConstrainedInverseMpcResult(NamedTuple):
+    """One causal Sim2Real-Bridger command and its soft inverse-model target."""
+
+    command: BridgerStep
+    inverse_target_q: np.ndarray
+    inverse_target_qvel: np.ndarray
 
 
 def delay_steps_from_tau(tau_s: float, dt: float) -> int:
@@ -459,6 +469,101 @@ def inverse_mpc_compensate_q_ref(
         hi = np.inf if q_high is None else np.asarray(q_high, dtype=np.float32)
         out = np.clip(out, lo, hi)
     return out.astype(np.float32)
+
+
+def constrained_inverse_mpc_compensate_step(
+    q_cmd: np.ndarray,
+    qdot_cmd: np.ndarray,
+    qdd_cmd: np.ndarray,
+    applied_q: np.ndarray,
+    command_buffer: np.ndarray,
+    previous_command_q: np.ndarray,
+    previous_command_qvel: np.ndarray,
+    previous_command_qacc: np.ndarray,
+    *,
+    dt: float,
+    delay_steps: int,
+    actuator_tau_s: float,
+    actuator_gain: float,
+    pos_low: np.ndarray,
+    pos_high: np.ndarray,
+    velocity_limit_rad_s: np.ndarray,
+    acceleration_limit_rad_s2: np.ndarray,
+    jerk_limit_rad_s3: np.ndarray,
+    natural_frequency_hz: float = 12.0,
+    damping_ratio: float = 1.0,
+    beta: float = 1.0,
+    delay_scale: float = 1.0,
+    tau_scale: float = 1.0,
+    horizon_steps: int = 4,
+    tracking_weight: float = 1.0,
+    nominal_weight: float = 0.25,
+    delta_weight: float = 0.08,
+    max_delta_rad: float = 0.0,
+    warm_q: np.ndarray | None = None,
+) -> ConstrainedInverseMpcResult:
+    """Track an inverse-actuator target with a hard-feasible command trajectory.
+
+    The inverse MPC is deliberately only a soft target generator.  The command
+    sent to the actuator is the stateful ``(q, dq, ddq)`` trajectory returned
+    by :func:`constrained_compensation_step_numpy`; therefore its velocity,
+    acceleration and jerk limits do not depend on a downstream governor.
+    """
+
+    inverse_target_q = inverse_mpc_compensate_q_ref(
+        q_cmd,
+        qdot_cmd,
+        qdd_cmd,
+        applied_q,
+        command_buffer,
+        dt=dt,
+        delay_steps=delay_steps,
+        actuator_tau_s=actuator_tau_s,
+        actuator_gain=actuator_gain,
+        beta=beta,
+        delay_scale=delay_scale,
+        tau_scale=tau_scale,
+        horizon_steps=horizon_steps,
+        tracking_weight=tracking_weight,
+        nominal_weight=nominal_weight,
+        delta_weight=delta_weight,
+        max_delta_rad=max_delta_rad,
+        previous_command_q=previous_command_q,
+        previous_command_qvel=previous_command_qvel,
+        warm_q=warm_q,
+        q_low=pos_low,
+        q_high=pos_high,
+    ).astype(np.float64)
+    dt_safe = max(float(dt), 1e-9)
+    total_horizon = (
+        max(0.0, float(delay_steps) * max(0.0, float(delay_scale)))
+        + max(1, int(horizon_steps))
+    ) * dt_safe
+    # qdd is already present in the inverse-MPC position look-ahead.  Feeding
+    # horizon*qdd into the trajectory-layer velocity target a second time
+    # amplifies 200 Hz acceleration noise and causes avoidable saturation.
+    inverse_target_qvel = np.asarray(qdot_cmd, dtype=np.float64)
+    command = constrained_compensation_step_numpy(
+        inverse_target_q,
+        inverse_target_qvel,
+        previous_command_q,
+        previous_command_qvel,
+        previous_command_qacc,
+        pos_low,
+        pos_high,
+        velocity_limit_rad_s,
+        acceleration_limit_rad_s2,
+        jerk_limit_rad_s3,
+        dt=dt_safe,
+        natural_frequency_hz=natural_frequency_hz,
+        damping_ratio=damping_ratio,
+        target_qacc=qdd_cmd,
+    )
+    return ConstrainedInverseMpcResult(
+        command=command,
+        inverse_target_q=inverse_target_q,
+        inverse_target_qvel=inverse_target_qvel,
+    )
 
 
 def compensate_q_ref(

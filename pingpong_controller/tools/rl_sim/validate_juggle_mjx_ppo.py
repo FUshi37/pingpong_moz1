@@ -119,6 +119,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "after every MJX 1 ms substep."
         ),
     )
+    p.add_argument(
+        "--arm-actual-target-tracking-governor",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Evaluation-only override for the target-aware actual drive governor.",
+    )
+    p.add_argument(
+        "--arm-actual-governor-natural-frequency-hz",
+        type=float,
+        default=None,
+        help="Evaluation-only natural frequency for the damped drive governor.",
+    )
+    p.add_argument(
+        "--arm-actual-governor-damping-ratio",
+        type=float,
+        default=None,
+        help="Evaluation-only damping ratio for the damped drive governor.",
+    )
+    p.add_argument(
+        "--arm-actual-jerk-limit-deg-s3",
+        type=float,
+        default=None,
+        help="Evaluation-only uniform jerk limit for the actual drive governor.",
+    )
     p.add_argument("--max-env-steps", type=int, default=0, help="0 means auto from episodes, envs, and horizon.")
     p.add_argument("--print-every", type=int, default=100)
     p.add_argument("--log-hit-events", action="store_true")
@@ -386,6 +410,61 @@ def env_config_from_checkpoint(payload: dict, args: argparse.Namespace) -> MjxJu
             cfg,
             arm_actual_state_limiter=bool(arm_actual_state_limiter),
         )
+    arm_actual_target_tracking_governor = getattr(
+        args,
+        "arm_actual_target_tracking_governor",
+        None,
+    )
+    if arm_actual_target_tracking_governor is not None:
+        cfg = replace(
+            cfg,
+            arm_actual_target_tracking_governor=bool(
+                arm_actual_target_tracking_governor
+            ),
+        )
+    governor_frequency_hz = getattr(
+        args,
+        "arm_actual_governor_natural_frequency_hz",
+        None,
+    )
+    if governor_frequency_hz is not None:
+        governor_frequency_hz = float(governor_frequency_hz)
+        if not np.isfinite(governor_frequency_hz) or governor_frequency_hz <= 0.0:
+            raise ValueError(
+                "arm_actual_governor_natural_frequency_hz must be positive and finite"
+            )
+        cfg = replace(
+            cfg,
+            arm_actual_governor_natural_frequency_hz=governor_frequency_hz,
+        )
+    governor_damping_ratio = getattr(
+        args,
+        "arm_actual_governor_damping_ratio",
+        None,
+    )
+    if governor_damping_ratio is not None:
+        governor_damping_ratio = float(governor_damping_ratio)
+        if not np.isfinite(governor_damping_ratio) or governor_damping_ratio <= 0.0:
+            raise ValueError(
+                "arm_actual_governor_damping_ratio must be positive and finite"
+            )
+        cfg = replace(
+            cfg,
+            arm_actual_governor_damping_ratio=governor_damping_ratio,
+        )
+    arm_actual_jerk_limit_deg_s3 = getattr(
+        args,
+        "arm_actual_jerk_limit_deg_s3",
+        None,
+    )
+    if arm_actual_jerk_limit_deg_s3 is not None:
+        jerk_limit = float(arm_actual_jerk_limit_deg_s3)
+        if not np.isfinite(jerk_limit) or jerk_limit <= 0.0:
+            raise ValueError("arm_actual_jerk_limit_deg_s3 must be positive and finite")
+        cfg = replace(
+            cfg,
+            arm_actual_jerk_limit_deg_s3=(jerk_limit,) * 7,
+        )
     if args.virtual_camera_base_body_name is not None:
         cfg = replace(cfg, virtual_camera_base_body_name=str(args.virtual_camera_base_body_name))
     ball_obs_frame_pivot_mode = getattr(args, "ball_obs_frame_pivot_mode", None)
@@ -627,6 +706,20 @@ def camera_trace_metrics(env: MjxJuggleEnv, env_state) -> dict[str, jax.Array]:
 
 
 def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float, ignore_early_done: bool = False):
+    base_joint_names = ("base_x", "base_y", "base_z", "base_roll", "base_pitch", "base_yaw")
+    base_joint_ids = [
+        mj.mj_name2id(env.mj_model, mj.mjtObj.mjOBJ_JOINT, name)
+        for name in base_joint_names
+    ]
+    base_qadrs = np.asarray(
+        [env.mj_model.jnt_qposadr[joint_id] for joint_id in base_joint_ids],
+        dtype=np.int32,
+    )
+    base_vadrs = np.asarray(
+        [env.mj_model.jnt_dofadr[joint_id] for joint_id in base_joint_ids],
+        dtype=np.int32,
+    )
+
     def eval_step(params, env_state, obs, rng, running_return, running_length):
         rng, action_key, reset_key = jax.random.split(rng, 3)
         mean = policy_mean(params, obs)
@@ -648,6 +741,8 @@ def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float, i
         arm_qvel = next_env_state.data.qvel[:, env.arm_vadr]
         arm_qacc = (arm_qvel - prev_arm_qvel) / max(env.dt, 1e-6)
         arm_qacc_mj = next_env_state.data.qacc[:, env.arm_vadr]
+        base_q6 = next_env_state.data.qpos[:, base_qadrs]
+        base_qvel6 = next_env_state.data.qvel[:, base_vadrs]
         arm_cmd_q = next_env_state.arm_cmd_q
         arm_cmd_qvel = next_env_state.arm_cmd_qvel
         arm_raw_comp_q = next_env_state.arm_actuator_q_ref_latest
@@ -712,6 +807,8 @@ def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float, i
             "arm_qvel": arm_qvel,
             "arm_qacc": arm_qacc,
             "arm_qacc_mj": arm_qacc_mj,
+            "base_q6": base_q6,
+            "base_qvel6": base_qvel6,
         }
         step_metrics.update(camera_metrics)
         for key, value in metrics.items():
@@ -728,6 +825,16 @@ def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float, i
                 or key.startswith("ball_obs_")
                 or key.startswith("hit_camera_")
                 or key.startswith("reset_")
+                or key.startswith("dr_")
+                or key
+                in {
+                    "action_scale_mult",
+                    "delay_bin_id",
+                    "delay_steps",
+                    "tau_act_ms",
+                    "servo_execution_delay_steps",
+                    "servo_execution_delay_ms",
+                }
                 or key in {"ball_view_z_high_exceeded", "ball_view_in_bounds", "ball_view_z_ideal"}
             ):
                 step_metrics[key] = value
@@ -796,9 +903,16 @@ def add_terminal_step_metrics(
             or key.startswith("reward/")
             or key.startswith("ball_obs_")
             or key.startswith("reset_")
+            or key.startswith("dr_")
             or key.startswith("hit_camera_")
             or key
             in {
+                "action_scale_mult",
+                "delay_bin_id",
+                "delay_steps",
+                "tau_act_ms",
+                "servo_execution_delay_steps",
+                "servo_execution_delay_ms",
                 "ball_view_z_high_exceeded",
                 "ball_view_in_bounds",
                 "ball_view_z_ideal",
@@ -931,6 +1045,15 @@ def trace_row_from_host(
                 "arm_qacc_mj",
             }:
                 row[f"{key}_deg_s2/{safe_joint}"] = float(np.rad2deg(value))
+    base_names = ("x", "y", "z", "roll", "pitch", "yaw")
+    for i, name in enumerate(base_names):
+        q_value = float(host["base_q6"][env_i, i])
+        dq_value = float(host["base_qvel6"][env_i, i])
+        row[f"base_q6/{name}"] = q_value
+        row[f"base_qvel6/{name}"] = dq_value
+        if name in {"roll", "pitch", "yaw"}:
+            row[f"base_q6_deg/{name}"] = float(np.rad2deg(q_value))
+            row[f"base_qvel6_deg_s/{name}"] = float(np.rad2deg(dq_value))
     for key, value in host.items():
         if (
             key.startswith("done/")
