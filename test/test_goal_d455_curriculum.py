@@ -138,6 +138,104 @@ def test_w019_drbridge_v2_separates_learning_and_transfer_gates() -> None:
         assert getattr(v2[-1], field_name) == getattr(v1[-1], field_name)
 
 
+def test_launch17_orthogonal_bridge_v4_separates_learning_and_transfer_gates() -> None:
+    stages = _stages(
+        "goal_d455_autolaunch_viewdense_constrained_mpc_launch17_orthogonal_bridge_v4"
+    )
+    bridge = stages[17:22]
+
+    assert [stage.name for stage in bridge] == [
+        "launch17a_refresh_noise_only_long_juggle_1200",
+        "launch17b_frame_dr_only_long_juggle_1200",
+        "launch17c_combined_launch15_long_juggle_1200",
+        "launch17d_combined_launch16_long_juggle_1200",
+        "launch17_full_observation_long_juggle_1200",
+    ]
+    assert all(stage.gate_mode == "strict" for stage in bridge)
+    assert all(stage.advance_gate_mode == "collapse" for stage in bridge)
+    assert all(stage.target_mean_hits == pytest.approx(12.0) for stage in bridge)
+    assert all(stage.target_mean_len_frac == pytest.approx(0.90) for stage in bridge)
+    assert all(
+        stage.target_episode_truncation_rate == pytest.approx(0.75)
+        for stage in bridge
+    )
+
+    for stage in bridge:
+        cfg = stage.cfg
+        assert cfg.actuator_compensation_mode == "inverse_mpc"
+        assert cfg.actuator_mpc_feedback_source == "actual"
+        assert cfg.arm_servo_target_tracking_planner
+        assert cfg.arm_servo_target_velocity_scale == pytest.approx(1.0)
+        assert cfg.arm_servo_target_acceleration_scale == pytest.approx(0.8)
+
+    refresh_only, frame_only = bridge[:2]
+    assert refresh_only.cfg.ball_obs_pos_noise_std == pytest.approx(0.0055)
+    assert refresh_only.cfg.dr_ball_obs_pos_bias_base_m == pytest.approx((0.0, 0.0, 0.0))
+    assert frame_only.cfg.ball_obs_pos_noise_std == pytest.approx(0.0)
+    assert frame_only.cfg.dr_ball_obs_pos_bias_base_m == pytest.approx(
+        (0.004, 0.004, 0.004)
+    )
+
+
+def test_launch17_obsres2mm_servo_v5_changes_only_measured_observation_fields() -> None:
+    v4 = _stages(
+        "goal_d455_autolaunch_viewdense_constrained_mpc_launch17_orthogonal_bridge_v4"
+    )
+    v5 = _stages(
+        "goal_d455_autolaunch_viewdense_constrained_mpc_launch17_obsres2mm_servo_v5"
+    )
+
+    assert len(v5) == 21
+    assert v5[:19] == v4[:19]
+    assert v5[19].name == "launch17c_measured_obsres2mm_servo_long_juggle_1200"
+    assert v5[20].name == "launch19_final_measured_obsres2mm_servo_consolidation"
+
+    allowed_changes = {
+        "ball_obs_pos_noise_std",
+        "ball_obs_vel_noise_std",
+        "dr_ball_obs_pos_bias_base_m",
+        "dr_ball_obs_rot_bias_deg",
+        "dr_ball_obs_vel_bias_base_m_s",
+        "dr_ball_obs_scale_range",
+    }
+    for source, repaired in ((v4[19], v5[19]), (v4[-1], v5[-1])):
+        changed = {
+            field.name
+            for field in fields(type(source.cfg))
+            if getattr(source.cfg, field.name) != getattr(repaired.cfg, field.name)
+        }
+        assert changed <= allowed_changes
+        assert changed >= allowed_changes - {"ball_obs_vel_noise_std"}
+        cfg = repaired.cfg
+        assert cfg.ball_obs_pos_noise_std == pytest.approx(0.002)
+        assert cfg.ball_obs_vel_noise_std == pytest.approx(0.07)
+        assert cfg.dr_ball_obs_pos_bias_base_m == pytest.approx((0.002, 0.002, 0.002))
+        assert cfg.dr_ball_obs_rot_bias_deg == pytest.approx((0.0, 0.0, 0.0))
+        assert cfg.dr_ball_obs_vel_bias_base_m_s == pytest.approx((0.0, 0.0, 0.0))
+        assert cfg.dr_ball_obs_scale_range == pytest.approx((1.0, 1.0))
+        assert cfg.ball_obs_camera_missing_prob == pytest.approx(0.0)
+        assert cfg.ball_obs_view_bounds_missing_prob == pytest.approx(0.0)
+        assert cfg.ball_obs_dropout_prob == pytest.approx(0.0)
+        assert cfg.ball_obs_burst_dropout_prob == pytest.approx(0.0)
+        assert cfg.actuator_compensation_mode == "inverse_mpc"
+        assert cfg.actuator_mpc_feedback_source == "actual"
+        assert cfg.arm_servo_target_tracking_planner
+        assert cfg.arm_servo_target_velocity_scale == pytest.approx(1.0)
+        assert cfg.arm_servo_target_acceleration_scale == pytest.approx(0.8)
+
+    launch17, final = v5[-2:]
+    assert launch17.gate_mode == "strict"
+    assert launch17.advance_gate_mode == "collapse"
+    assert launch17.target_mean_hits == pytest.approx(12.0)
+    assert launch17.target_mean_len_frac == pytest.approx(0.90)
+    assert launch17.target_episode_truncation_rate == pytest.approx(0.75)
+    assert final.gate_mode == "strict"
+    assert final.advance_gate_mode == "strict"
+    assert final.target_mean_hits == pytest.approx(13.0)
+    assert final.target_mean_len_frac == pytest.approx(0.95)
+    assert final.target_episode_truncation_rate == pytest.approx(0.86)
+
+
 def test_w020_countcredit_changes_only_terminal_credit_on_w019_v2() -> None:
     baseline = _stages(
         "goal_d455_autolaunch_viewdense_constrained_mpc_drbridge_v2"
@@ -422,6 +520,44 @@ def test_actuator_final_survival_changes_only_launch19_recoverability() -> None:
     assert after.cfg.post_hit_ball_vxy_penalty_weight == pytest.approx(0.18)
     assert after.cfg.hit_vxy_penalty_weight == pytest.approx(0.90)
     assert after.cfg.hit_next_contact_anchor_penalty_weight == pytest.approx(0.06)
+    assert replace(after, cfg=before.cfg, notes=before.notes) == before
+
+
+def test_actuator_final_obsres2mm_changes_only_launch19_observation_residual() -> None:
+    survival = _stages(
+        "goal_d455_autolaunch_actuator_inversempc_final_survival_nogov_v1"
+    )
+    obsres = _stages(
+        "goal_d455_autolaunch_actuator_inversempc_final_obsres2mm_nogov_v1"
+    )
+
+    assert len(survival) == len(obsres) == 20
+    for before, after in zip(survival[:-1], obsres[:-1], strict=True):
+        assert asdict(before) == asdict(after)
+
+    before = survival[-1]
+    after = obsres[-1]
+    changed = {
+        field.name
+        for field in fields(type(before.cfg))
+        if getattr(before.cfg, field.name) != getattr(after.cfg, field.name)
+    }
+    assert changed == {
+        "ball_obs_pos_noise_std",
+        "dr_ball_obs_pos_bias_base_m",
+        "dr_ball_obs_rot_bias_deg",
+        "dr_ball_obs_vel_bias_base_m_s",
+        "dr_ball_obs_scale_range",
+    }
+    assert after.cfg.ball_obs_pos_noise_std == pytest.approx(0.002)
+    assert after.cfg.dr_randomize_ball_obs_frame is True
+    assert after.cfg.dr_ball_obs_pos_bias_base_m == pytest.approx((0.002, 0.002, 0.002))
+    assert after.cfg.dr_ball_obs_rot_bias_deg == pytest.approx((0.0, 0.0, 0.0))
+    assert after.cfg.dr_ball_obs_vel_bias_base_m_s == pytest.approx((0.0, 0.0, 0.0))
+    assert after.cfg.dr_ball_obs_scale_range == pytest.approx((1.0, 1.0))
+    assert after.target_mean_hits == before.target_mean_hits
+    assert after.target_mean_len_frac == before.target_mean_len_frac
+    assert after.target_episode_truncation_rate == before.target_episode_truncation_rate
     assert replace(after, cfg=before.cfg, notes=before.notes) == before
 
 
@@ -1975,3 +2111,79 @@ def test_countcredit_nogov_changes_only_hit_credit_objective() -> None:
                 after.cfg.racket_z_limit_termination_penalty_base,
             )
         )
+
+
+def test_nomissing_hardtail_changes_only_training_density_from_launch17() -> None:
+    baseline = _stages(
+        "goal_d455_autolaunch_viewdense_constrained_mpc_drbridge_v2_countcredit_nomissing_v1"
+    )
+    hardtail = _stages(
+        "goal_d455_autolaunch_viewdense_constrained_mpc_drbridge_v2_countcredit_nomissing_hardtail_v1"
+    )
+
+    assert len(baseline) == len(hardtail) == 22
+    for index, (before, after) in enumerate(zip(baseline, hardtail, strict=True)):
+        assert before.min_ball_obs_missing_refresh_rate is None
+        assert before.max_ball_obs_lost_rate is None
+        assert after.min_ball_obs_missing_refresh_rate is None
+        assert after.max_ball_obs_lost_rate is None
+        changed = {
+            field.name
+            for field in fields(type(before.cfg))
+            if getattr(before.cfg, field.name) != getattr(after.cfg, field.name)
+        }
+        if index < 17:
+            assert asdict(before) == asdict(after)
+        else:
+            assert changed == {"dr_hard_tail_fraction"}
+            assert after.cfg.dr_hard_tail_fraction == pytest.approx(0.50)
+            assert after.cfg.dr_hard_tail_lower_quantile == pytest.approx(2.0 / 3.0)
+            assert before.cfg.dr_ball_solref_time_range == after.cfg.dr_ball_solref_time_range
+            assert before.cfg.dr_actuator_cmd_tau_range == after.cfg.dr_actuator_cmd_tau_range
+            assert before.cfg.arm_servo_target_tracking_planner
+            assert after.cfg.arm_servo_target_tracking_planner
+            assert before.cfg.actuator_compensation_mode == after.cfg.actuator_compensation_mode == "inverse_mpc"
+
+
+def test_intercept_nomissing_survival_contract() -> None:
+    intercept = _stages(
+        "goal_d455_autolaunch_viewdense_constrained_mpc_intercept_v1"
+    )
+    survival = _stages(
+        "goal_d455_autolaunch_viewdense_constrained_mpc_intercept_nomissing_survival_v1"
+    )
+
+    assert len(intercept) == len(survival) == 22
+    launch17 = survival[17]
+    source = intercept[17]
+    cfg = launch17.cfg
+
+    assert launch17.name == "launch17_observation_calibration_bridge"
+    assert launch17.min_ball_obs_missing_refresh_rate is None
+    assert launch17.max_ball_obs_lost_rate is None
+    assert not cfg.ball_obs_require_camera_visible
+    assert not cfg.ball_obs_require_view_bounds
+    assert not cfg.ball_obs_require_view_z_high
+    assert cfg.ball_obs_camera_missing_prob == pytest.approx(0.0)
+    assert cfg.ball_obs_view_bounds_missing_prob == pytest.approx(0.0)
+    assert cfg.ball_obs_missing_episode_coherent_prob == pytest.approx(0.0)
+    assert cfg.dr_hard_tail_fraction == pytest.approx(0.0)
+    assert cfg.post_hit_ball_vxy_penalty_weight == pytest.approx(0.18)
+    assert cfg.hit_vxy_penalty_weight == pytest.approx(0.90)
+    assert cfg.hit_next_contact_anchor_penalty_weight == pytest.approx(0.06)
+    assert cfg.descending_intercept_reward_weight == pytest.approx(1.20)
+    assert cfg.actuator_compensation_mode == "inverse_mpc"
+    assert cfg.actuator_mpc_feedback_source == "actual"
+    assert cfg.arm_servo_target_tracking_planner
+
+    for field_name in (
+        "target_mean_hits",
+        "target_mean_len_frac",
+        "target_ball_view_in_bounds",
+        "target_hit1_rate",
+        "target_hit3_rate",
+        "target_hit12_rate",
+        "target_mean_hits_ge3",
+        "target_episode_truncation_rate",
+    ):
+        assert getattr(launch17, field_name) == getattr(source, field_name)

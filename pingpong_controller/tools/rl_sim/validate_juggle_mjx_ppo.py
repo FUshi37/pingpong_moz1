@@ -824,6 +824,17 @@ def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float, i
                 or key.startswith("raw_action_clip_")
                 or key.startswith("ball_obs_")
                 or key.startswith("hit_camera_")
+                or key
+                in {
+                    "hit_event_count",
+                    "hit_vxy_sum",
+                    "hit_contact_center_dist_sum",
+                    "hit_racket_up_cos_sum",
+                    "hit_apex_rel_height_sum",
+                    "hit_apex_view_x_sum",
+                    "hit_apex_view_y_sum",
+                    "hit_next_contact_anchor_err_sum",
+                }
                 or key.startswith("reset_")
                 or key.startswith("dr_")
                 or key
@@ -921,6 +932,26 @@ def add_terminal_step_metrics(
             continue
         output_key = key if key not in row else f"last/{key}"
         row[output_key] = float(value[env_i])
+
+
+def accumulate_named_episode_metrics(
+    accumulators: dict[str, np.ndarray],
+    host: dict[str, np.ndarray],
+    metric_names: tuple[str, ...] | None = None,
+    prefix: str | None = None,
+) -> None:
+    """Accumulate selected per-step metrics without losing terminal values."""
+
+    names = metric_names or tuple(
+        name for name in host if prefix is not None and name.startswith(prefix)
+    )
+    for name in names:
+        value = np.asarray(host.get(name, 0.0), dtype=np.float64)
+        if name not in accumulators:
+            if value.ndim != 1:
+                raise ValueError(f"episode metric {name!r} must be one-dimensional")
+            accumulators[name] = np.zeros_like(value, dtype=np.float64)
+        accumulators[name] += value
 
 
 
@@ -1489,7 +1520,36 @@ def main() -> None:
     episode_hit_camera_in_margin = np.zeros((args.n_envs,), dtype=np.float64)
     episode_hit_camera_in_band = np.zeros((args.n_envs,), dtype=np.float64)
     episode_hit_camera_v_frac_sum = np.zeros((args.n_envs,), dtype=np.float64)
-    episode_hit_vxy_sum = np.zeros((args.n_envs,), dtype=np.float64)
+    episode_hit_metric_sources = (
+        "hit_vxy_sum",
+        "hit_contact_center_dist_sum",
+        "hit_racket_up_cos_sum",
+        "hit_apex_rel_height_sum",
+        "hit_apex_view_x_sum",
+        "hit_apex_view_y_sum",
+        "hit_next_contact_anchor_err_sum",
+    )
+    episode_hit_metric_sums = {
+        name: np.zeros((args.n_envs,), dtype=np.float64)
+        for name in episode_hit_metric_sources
+    }
+    # Deployment diagnostic: measure the first successful lift separately from
+    # the later steady-state juggling hits.  The predicted relative apex is the
+    # same quantity used by the environment at the hit event; the observed apex
+    # is the maximum true world-z reached before the second counted hit.
+    episode_first_hit_predicted_apex_rel = np.full(
+        (args.n_envs,), np.nan, dtype=np.float64
+    )
+    episode_first_hit_contact_ball_z = np.full(
+        (args.n_envs,), np.nan, dtype=np.float64
+    )
+    episode_first_hit_observed_apex_z = np.full(
+        (args.n_envs,), np.nan, dtype=np.float64
+    )
+    # Populated lazily from the first JIT result because reward term names are
+    # configuration-dependent.  These are true episode sums; terminal values
+    # remain available under last/reward/*.
+    episode_reward_sums: dict[str, np.ndarray] = {}
     episode_step_metric_sources = {
         "camera_visible_steps": "camera_visible",
         "ball_view_in_bounds_steps": "ball_view_in_bounds",
@@ -1533,7 +1593,31 @@ def main() -> None:
             episode_hit_camera_in_margin += np.asarray(host.get("hit_camera_in_margin_event", 0.0), dtype=np.float64)
             episode_hit_camera_in_band += np.asarray(host.get("hit_camera_lower_band_event", 0.0), dtype=np.float64)
             episode_hit_camera_v_frac_sum += np.asarray(host.get("hit_camera_v_frac_sum", 0.0), dtype=np.float64)
-            episode_hit_vxy_sum += np.asarray(host.get("hit_vxy_sum", 0.0), dtype=np.float64)
+            accumulate_named_episode_metrics(
+                episode_hit_metric_sums,
+                host,
+                metric_names=episode_hit_metric_sources,
+            )
+            accumulate_named_episode_metrics(
+                episode_reward_sums,
+                host,
+                prefix="reward/",
+            )
+            hit_count = np.asarray(host["hit_count"], dtype=np.float64)
+            new_hit = np.asarray(host["new_hit"], dtype=np.float64) > 0.5
+            ball_z = np.asarray(host["ball_z"], dtype=np.float64)
+            first_hit = new_hit & (hit_count >= 0.5) & (hit_count < 1.5)
+            episode_first_hit_predicted_apex_rel[first_hit] = np.asarray(
+                host.get("hit_apex_rel_height_sum", np.nan), dtype=np.float64
+            )[first_hit]
+            episode_first_hit_contact_ball_z[first_hit] = ball_z[first_hit]
+            tracking_first_apex = (hit_count >= 0.5) & (hit_count < 1.5)
+            current_apex = episode_first_hit_observed_apex_z[tracking_first_apex]
+            episode_first_hit_observed_apex_z[tracking_first_apex] = np.where(
+                np.isnan(current_apex),
+                ball_z[tracking_first_apex],
+                np.maximum(current_apex, ball_z[tracking_first_apex]),
+            )
             for accumulator_name, metric_name in episode_step_metric_sources.items():
                 episode_step_sums[accumulator_name] += np.asarray(
                     host.get(metric_name, 0.0),
@@ -1597,13 +1681,28 @@ def main() -> None:
                 hit_camera_v_frac_sum = float(
                     episode_hit_camera_v_frac_sum[env_i]
                 )
-                hit_vxy_sum = float(episode_hit_vxy_sum[env_i])
                 row["hit_camera_events"] = hit_camera_events
                 row["hit_camera_visible_events"] = hit_camera_visible
                 row["hit_camera_in_margin_events"] = hit_camera_in_margin
                 row["hit_camera_lower_band_events"] = hit_camera_in_band
                 row["hit_camera_v_frac_sum"] = hit_camera_v_frac_sum
-                row["hit_vxy_sum"] = hit_vxy_sum
+                row["first_hit_predicted_apex_rel_height"] = float(
+                    episode_first_hit_predicted_apex_rel[env_i]
+                )
+                row["first_hit_contact_ball_z"] = float(
+                    episode_first_hit_contact_ball_z[env_i]
+                )
+                row["first_hit_observed_apex_z"] = float(
+                    episode_first_hit_observed_apex_z[env_i]
+                )
+                row["first_hit_observed_lift_m"] = float(
+                    episode_first_hit_observed_apex_z[env_i]
+                    - episode_first_hit_contact_ball_z[env_i]
+                )
+                for metric_name, values in episode_hit_metric_sums.items():
+                    row[metric_name] = float(values[env_i])
+                for metric_name, values in episode_reward_sums.items():
+                    row[metric_name] = float(values[env_i])
                 row["hit_camera_visible_rate"] = (
                     hit_camera_visible / hit_camera_events
                     if hit_camera_events > 0.0
@@ -1625,10 +1724,26 @@ def main() -> None:
                     else float("nan")
                 )
                 row["mean_hit_vxy"] = (
-                    hit_vxy_sum / hit_camera_events
+                    row["hit_vxy_sum"] / hit_camera_events
                     if hit_camera_events > 0.0
                     else float("nan")
                 )
+                hit_event_count = max(
+                    1.0,
+                    float(row.get("hits", hit_camera_events)),
+                )
+                for sum_name, mean_name in (
+                    ("hit_contact_center_dist_sum", "mean_hit_contact_center_dist"),
+                    ("hit_racket_up_cos_sum", "mean_hit_racket_up_cos"),
+                    ("hit_apex_rel_height_sum", "mean_hit_apex_rel_height"),
+                    ("hit_apex_view_x_sum", "mean_hit_apex_view_x"),
+                    ("hit_apex_view_y_sum", "mean_hit_apex_view_y"),
+                    (
+                        "hit_next_contact_anchor_err_sum",
+                        "mean_hit_next_contact_anchor_err",
+                    ),
+                ):
+                    row[mean_name] = row[sum_name] / hit_event_count
                 for accumulator_name, values in episode_step_sums.items():
                     row[accumulator_name] = float(values[env_i])
                 episode_length = max(1.0, float(row["length"]))
@@ -1708,7 +1823,13 @@ def main() -> None:
                 episode_hit_camera_in_margin[env_i] = 0.0
                 episode_hit_camera_in_band[env_i] = 0.0
                 episode_hit_camera_v_frac_sum[env_i] = 0.0
-                episode_hit_vxy_sum[env_i] = 0.0
+                episode_first_hit_predicted_apex_rel[env_i] = np.nan
+                episode_first_hit_contact_ball_z[env_i] = np.nan
+                episode_first_hit_observed_apex_z[env_i] = np.nan
+                for values in episode_hit_metric_sums.values():
+                    values[env_i] = 0.0
+                for values in episode_reward_sums.values():
+                    values[env_i] = 0.0
                 for values in episode_step_sums.values():
                     values[env_i] = 0.0
                 print(

@@ -345,6 +345,13 @@ class MjxJuggleConfig:
     post_hit_ball_vxy_penalty_weight: float = 0.18
     descending_intercept_reward_weight: float = 1.6
     descending_intercept_sigma: float = 0.10
+    # Unlike the positive Gaussian reward, this keeps a usable gradient when
+    # the descending return is already outside the nominal interception tube.
+    # It is disabled by default so existing checkpoints remain unchanged.
+    descending_intercept_excess_penalty_weight: float = 0.0
+    descending_intercept_excess_radius: float = 0.10
+    descending_intercept_excess_sigma: float = 0.10
+    descending_intercept_excess_time_max: float = 0.55
     pre_hit_intercept_reward_weight: float = 0.0
     pre_hit_intercept_sigma: float = 0.08
     pre_hit_intercept_time_max: float = 0.55
@@ -441,6 +448,13 @@ class MjxJuggleConfig:
     hit_flatness_target_cos: float = 0.96
     hit_flatness_sigma: float = 0.08
     center_flat_hit_reward_weight: float = 1.8
+    # Event-local non-vanishing penalty for off-centre contacts.  The Gaussian
+    # centre reward above becomes almost flat for the rare large errors that
+    # create unrecoverable lateral returns, so keep this disabled by default
+    # and enable it only in evidence-backed repair profiles.
+    hit_contact_center_excess_penalty_weight: float = 0.0
+    hit_contact_center_excess_radius_m: float = 0.020
+    hit_contact_center_excess_sigma_m: float = 0.030
     contact_flatness_penalty_weight: float = 0.45
     hit_height_center: float = 0.52
     hit_height_tolerance: float = 0.06
@@ -465,6 +479,12 @@ class MjxJuggleConfig:
     dr_racket_friction_range: tuple[float, float] = (0.25, 0.55)
     dr_ball_solref_time_range: tuple[float, float] = (0.002, 0.006)
     dr_ball_solref_damping_range: tuple[float, float] = (0.70, 0.95)
+    # Optional training-density change that preserves the complete original
+    # DR support.  A fraction of environments samples the upper tail of the
+    # two empirically difficult lag/compliance variables; the remainder keeps
+    # the original uniform distribution.  Zero exactly reproduces legacy DR.
+    dr_hard_tail_fraction: float = 0.0
+    dr_hard_tail_lower_quantile: float = 2.0 / 3.0
     dr_gravity_z_range: tuple[float, float] = (-9.90, -9.70)
     dr_action_scale_mult_range: tuple[float, float] = (0.85, 1.15)
     dr_armature_mult_range: tuple[float, float] = (0.80, 1.20)
@@ -636,6 +656,12 @@ class MjxJuggleConfig:
     dr_ball_obs_rot_bias_deg: tuple[float, float, float] = (0.0, 0.0, 0.0)
     dr_ball_obs_vel_bias_base_m_s: tuple[float, float, float] = (0.0, 0.0, 0.0)
     dr_ball_obs_scale_range: tuple[float, float] = (1.0, 1.0)
+    # Optional density curriculum for observation-frame calibration.  The
+    # configured ranges always remain the full target support; only this
+    # fraction of resets contracts deviations toward zero/identity by
+    # ``easy_scale``.  Defaults exactly preserve legacy sampling.
+    dr_ball_obs_frame_easy_fraction: float = 0.0
+    dr_ball_obs_frame_easy_scale: float = 0.5
     high_latency_obs: bool = False
     high_latency_history_frames: int = 3
     high_latency_obs_history_frames: int | None = None
@@ -755,6 +781,7 @@ class EnvState(NamedTuple):
     dr_racket_friction: jax.Array
     dr_ball_solref_time: jax.Array
     dr_ball_solref_damping: jax.Array
+    dr_hard_tail_active: jax.Array
     dr_damping_mult: jax.Array
     dr_armature_mult: jax.Array
     dr_pd_kp_mult: jax.Array
@@ -1452,6 +1479,22 @@ class MjxJuggleEnv:
         key_ball_obs_view_z_high = split_keys[:, 31]
         key_falling_tau = split_keys[:, 32]
         key_falling_apex = split_keys[:, 33]
+        hard_tail_fraction = float(self.cfg.dr_hard_tail_fraction)
+        hard_tail_lower_quantile = float(self.cfg.dr_hard_tail_lower_quantile)
+        if not 0.0 <= hard_tail_fraction <= 1.0:
+            raise ValueError("dr_hard_tail_fraction must be in [0, 1]")
+        if not 0.0 <= hard_tail_lower_quantile < 1.0:
+            raise ValueError("dr_hard_tail_lower_quantile must be in [0, 1)")
+        hard_tail_active = (
+            jax.vmap(
+                lambda k: jax.random.bernoulli(
+                    jax.random.fold_in(k, 97),
+                    p=hard_tail_fraction,
+                )
+            )(key_solref)
+            if bool(self.cfg.domain_randomization and hard_tail_fraction > 0.0)
+            else jnp.zeros((n_envs,), dtype=bool)
+        )
         falling_reset = self.ball_reset_mode == "falling_contact"
         racket_launch_reset = self.ball_reset_mode == "racket_launch"
         xy_jitter_limit = (
@@ -1698,6 +1741,25 @@ class MjxJuggleEnv:
             )(key_solref)
             dr_ball_solref_time = solref_samples[:, 0]
             dr_ball_solref_damping = solref_samples[:, 1]
+            solref_time_lo, solref_time_hi = sorted(
+                float(v) for v in self.cfg.dr_ball_solref_time_range
+            )
+            hard_solref_time_lo = solref_time_lo + hard_tail_lower_quantile * (
+                solref_time_hi - solref_time_lo
+            )
+            hard_solref_time = jax.vmap(
+                lambda k: jax.random.uniform(
+                    jax.random.fold_in(k, 98),
+                    (),
+                    minval=hard_solref_time_lo,
+                    maxval=max(hard_solref_time_lo + 1e-9, solref_time_hi),
+                )
+            )(key_solref)
+            dr_ball_solref_time = jnp.where(
+                hard_tail_active,
+                hard_solref_time,
+                dr_ball_solref_time,
+            )
         else:
             dr_ball_friction = jnp.full((n_envs,), self.original_ball_friction, dtype=jnp.float32)
             dr_racket_friction = jnp.full((n_envs,), self.original_racket_friction, dtype=jnp.float32)
@@ -1772,6 +1834,22 @@ class MjxJuggleEnv:
                         maxval=max(tau_low, tau_high),
                     )
                 )(key_actuator_tau)
+                hard_tau_lo = min(tau_low, tau_high) + hard_tail_lower_quantile * abs(
+                    tau_high - tau_low
+                )
+                hard_actuator_cmd_tau = jax.vmap(
+                    lambda k: jax.random.uniform(
+                        jax.random.fold_in(k, 99),
+                        (),
+                        minval=hard_tau_lo,
+                        maxval=max(hard_tau_lo + 1e-9, max(tau_low, tau_high)),
+                    )
+                )(key_actuator_tau)
+                actuator_cmd_tau = jnp.where(
+                    hard_tail_active,
+                    hard_actuator_cmd_tau,
+                    actuator_cmd_tau,
+                )
                 actuator_cmd_gain = jax.vmap(
                     lambda k: jax.random.uniform(
                         k,
@@ -1824,16 +1902,16 @@ class MjxJuggleEnv:
             rot_bias_lim = jnp.deg2rad(jnp.asarray(self.cfg.dr_ball_obs_rot_bias_deg, dtype=jnp.float32))
             vel_bias_lim = jnp.asarray(self.cfg.dr_ball_obs_vel_bias_base_m_s, dtype=jnp.float32)
             scale_low, scale_high = [float(v) for v in self.cfg.dr_ball_obs_scale_range]
-            ball_obs_pos_bias_base = nominal_pos_bias[None, :] + jax.vmap(
+            full_pos_bias = jax.vmap(
                 lambda k: jax.random.uniform(k, (3,), minval=-pos_bias_lim, maxval=pos_bias_lim)
             )(key_ball_obs_pos_bias)
-            ball_obs_rot_bias_rpy = jax.vmap(
+            full_rot_bias = jax.vmap(
                 lambda k: jax.random.uniform(k, (3,), minval=-rot_bias_lim, maxval=rot_bias_lim)
             )(key_ball_obs_rot_bias)
-            ball_obs_vel_bias_base = nominal_vel_bias[None, :] + jax.vmap(
+            full_vel_bias = jax.vmap(
                 lambda k: jax.random.uniform(k, (3,), minval=-vel_bias_lim, maxval=vel_bias_lim)
             )(key_ball_obs_vel_bias)
-            ball_obs_scale = jax.vmap(
+            full_scale = jax.vmap(
                 lambda k: jax.random.uniform(
                     k,
                     (),
@@ -1841,6 +1919,29 @@ class MjxJuggleEnv:
                     maxval=max(scale_low, scale_high),
                 )
             )(key_ball_obs_scale)
+            easy_fraction = float(self.cfg.dr_ball_obs_frame_easy_fraction)
+            easy_scale = float(self.cfg.dr_ball_obs_frame_easy_scale)
+            if not 0.0 <= easy_fraction <= 1.0:
+                raise ValueError("dr_ball_obs_frame_easy_fraction must be in [0, 1]")
+            if not 0.0 <= easy_scale <= 1.0:
+                raise ValueError("dr_ball_obs_frame_easy_scale must be in [0, 1]")
+            if easy_fraction > 0.0:
+                easy_active = jax.vmap(
+                    lambda k: jax.random.bernoulli(
+                        jax.random.fold_in(k, 101),
+                        p=easy_fraction,
+                    )
+                )(key_ball_obs_pos_bias)
+                scale3 = jnp.where(easy_active, easy_scale, 1.0)[:, None]
+                scale1 = jnp.where(easy_active, easy_scale, 1.0)
+                full_pos_bias = full_pos_bias * scale3
+                full_rot_bias = full_rot_bias * scale3
+                full_vel_bias = full_vel_bias * scale3
+                full_scale = 1.0 + (full_scale - 1.0) * scale1
+            ball_obs_pos_bias_base = nominal_pos_bias[None, :] + full_pos_bias
+            ball_obs_rot_bias_rpy = full_rot_bias
+            ball_obs_vel_bias_base = nominal_vel_bias[None, :] + full_vel_bias
+            ball_obs_scale = full_scale
         else:
             ball_obs_pos_bias_base = jnp.broadcast_to(nominal_pos_bias, (n_envs, 3))
             ball_obs_rot_bias_rpy = jnp.zeros((n_envs, 3), dtype=jnp.float32)
@@ -2223,6 +2324,7 @@ class MjxJuggleEnv:
             dr_racket_friction=dr_racket_friction,
             dr_ball_solref_time=dr_ball_solref_time,
             dr_ball_solref_damping=dr_ball_solref_damping,
+            dr_hard_tail_active=hard_tail_active,
             dr_damping_mult=dr_damping_mult,
             dr_armature_mult=dr_armature_mult,
             dr_pd_kp_mult=dr_pd_kp_mult,
@@ -3663,6 +3765,7 @@ class MjxJuggleEnv:
             dr_racket_friction=state.dr_racket_friction,
             dr_ball_solref_time=state.dr_ball_solref_time,
             dr_ball_solref_damping=state.dr_ball_solref_damping,
+            dr_hard_tail_active=state.dr_hard_tail_active,
             dr_damping_mult=state.dr_damping_mult,
             dr_armature_mult=state.dr_armature_mult,
             dr_pd_kp_mult=state.dr_pd_kp_mult,
@@ -3698,6 +3801,54 @@ class MjxJuggleEnv:
         action_rate_norm = jnp.linalg.norm(da, axis=-1)
         action_jerk_norm = action_rate_norm / max(self.dt, 1e-6)
         command_tracking_error = jnp.linalg.norm(e_active, axis=-1)
+        # Miss-cause diagnostics.  A terminal reason such as ``ball_too_low``
+        # does not say whether the preceding return was physically awkward,
+        # the racket arrived late, or the observed trajectory was wrong.  Log
+        # the true and observation-derived descending intersections so the
+        # evaluator can separate those cases over the complete pre-miss arc.
+        descending_to_racket = (bvel[:, 2] < -1e-4) & (bpos[:, 2] > rpos[:, 2])
+        raw_intercept_time_true = (
+            (bpos[:, 2] - rpos[:, 2]) / jnp.maximum(-bvel[:, 2], 1e-4)
+        )
+        intercept_time_true = jnp.where(
+            descending_to_racket,
+            raw_intercept_time_true,
+            0.0,
+        )
+        intercept_actionable = descending_to_racket & (
+            raw_intercept_time_true <= float(self.cfg.pre_hit_intercept_time_max)
+        )
+        projected_intercept_xy = bpos[:, :2] + bvel[:, :2] * intercept_time_true[:, None]
+        intercept_racket_xy_err = jnp.linalg.norm(projected_intercept_xy - rpos[:, :2], axis=-1)
+        intercept_anchor_xy_dist = jnp.linalg.norm(
+            projected_intercept_xy - state.racket_anchor[:, :2], axis=-1
+        )
+        intercept_required_racket_speed = intercept_racket_xy_err / jnp.maximum(
+            intercept_time_true, self.dt
+        )
+        intercept_direction = (
+            projected_intercept_xy - rpos[:, :2]
+        ) / jnp.maximum(intercept_racket_xy_err[:, None], 1e-6)
+        intercept_racket_closing_speed = jnp.sum(rvel[:, :2] * intercept_direction, axis=-1)
+
+        observed_bpos = next_state.ball_obs_valid_pos
+        observed_bvel = next_state.ball_obs_valid_vel
+        observed_descending = (observed_bvel[:, 2] < -1e-4) & (
+            observed_bpos[:, 2] > rpos[:, 2]
+        )
+        intercept_time_observed = jnp.where(
+            observed_descending,
+            (observed_bpos[:, 2] - rpos[:, 2])
+            / jnp.maximum(-observed_bvel[:, 2], 1e-4),
+            0.0,
+        )
+        observed_projected_intercept_xy = (
+            observed_bpos[:, :2]
+            + observed_bvel[:, :2] * intercept_time_observed[:, None]
+        )
+        observed_intercept_prediction_error = jnp.linalg.norm(
+            observed_projected_intercept_xy - projected_intercept_xy, axis=-1
+        )
         command_tracking_penalty = (
             -float(self.cfg.command_tracking_error_penalty_weight)
             * command_tracking_error
@@ -3744,6 +3895,7 @@ class MjxJuggleEnv:
             "dr_racket_friction": state.dr_racket_friction,
             "dr_ball_solref_time": state.dr_ball_solref_time,
             "dr_ball_solref_damping": state.dr_ball_solref_damping,
+            "dr_hard_tail_active": state.dr_hard_tail_active.astype(jnp.float32),
             "dr_damping_mult": state.dr_damping_mult,
             "dr_armature_mult": state.dr_armature_mult,
             "dr_pd_kp_mult_mean": jnp.mean(state.dr_pd_kp_mult, axis=-1),
@@ -3832,6 +3984,26 @@ class MjxJuggleEnv:
             ),
             "command_tracking_error": command_tracking_error,
             "actuator_command_tracking_error": jnp.linalg.norm(e_actuator_active, axis=-1),
+            "racket_x": rpos[:, 0],
+            "racket_y": rpos[:, 1],
+            "racket_vx": rvel[:, 0],
+            "racket_vy": rvel[:, 1],
+            "ball_vx": bvel[:, 0],
+            "ball_vy": bvel[:, 1],
+            "ball_vz": bvel[:, 2],
+            "descending_intercept_active": descending_to_racket.astype(jnp.float32),
+            "intercept_actionable_active": intercept_actionable.astype(jnp.float32),
+            "intercept_time_true": intercept_time_true,
+            "projected_intercept_x": projected_intercept_xy[:, 0],
+            "projected_intercept_y": projected_intercept_xy[:, 1],
+            "intercept_racket_xy_err": intercept_racket_xy_err,
+            "intercept_anchor_xy_dist": intercept_anchor_xy_dist,
+            "intercept_required_racket_speed": intercept_required_racket_speed,
+            "intercept_racket_closing_speed": intercept_racket_closing_speed,
+            "ball_obs_pos_error_norm": jnp.linalg.norm(observed_bpos - bpos, axis=-1),
+            "ball_obs_vel_error_norm": jnp.linalg.norm(observed_bvel - bvel, axis=-1),
+            "intercept_time_observed": intercept_time_observed,
+            "observed_intercept_prediction_error": observed_intercept_prediction_error,
             "tau_act_ms": tau_act * 1000.0,
             "delay_bin_id": state.delay_bin_id.astype(jnp.float32),
             "delay_steps": delay_steps.astype(jnp.float32),
@@ -4328,6 +4500,30 @@ class MjxJuggleEnv:
             ),
             0.0,
         )
+        descending_intercept_excess = jnp.maximum(
+            0.0,
+            descending_intercept_xy_err
+            - float(self.cfg.descending_intercept_excess_radius),
+        )
+        descending_intercept_excess_penalty = jnp.where(
+            (hit_count > 0)
+            & (bvel[:, 2] < -1e-4)
+            & (bpos[:, 2] > rpos[:, 2])
+            & (time_to_racket >= 0.0)
+            & (
+                time_to_racket
+                <= float(self.cfg.descending_intercept_excess_time_max)
+            ),
+            (
+                descending_intercept_excess
+                / max(
+                    1e-6,
+                    float(self.cfg.descending_intercept_excess_sigma),
+                )
+            )
+            ** 2,
+            0.0,
+        )
         pre_hit_intercept_reward = jnp.where(
             (hit_count <= 0)
             & (bvel[:, 2] < -1e-4)
@@ -4422,6 +4618,10 @@ class MjxJuggleEnv:
         term_ball_xy_soft_penalty = -ball_xy_soft_pen
         term_post_hit_survival = float(self.cfg.post_hit_survival_reward_weight) * post_hit_survival_reward
         term_descending_intercept = float(self.cfg.descending_intercept_reward_weight) * descending_intercept_reward
+        term_descending_intercept_excess_penalty = (
+            -float(self.cfg.descending_intercept_excess_penalty_weight)
+            * descending_intercept_excess_penalty
+        )
         term_pre_hit_intercept = float(self.cfg.pre_hit_intercept_reward_weight) * pre_hit_intercept_reward
         term_pre_hit_intercept_penalty = (
             -float(self.cfg.pre_hit_intercept_penalty_weight) * pre_hit_intercept_penalty
@@ -4481,6 +4681,7 @@ class MjxJuggleEnv:
             + term_ball_xy_soft_penalty
             + term_post_hit_survival
             + term_descending_intercept
+            + term_descending_intercept_excess_penalty
             + term_pre_hit_intercept
             + term_pre_hit_intercept_penalty
             + term_racket_xy_reward
@@ -4521,6 +4722,22 @@ class MjxJuggleEnv:
         )
         first_hit_apex_score = jnp.exp(-0.5 * first_hit_apex_err * first_hit_apex_err)
         center_flat = float(self.cfg.center_flat_hit_reward_weight) * local_center_gain * flatness_score
+        hit_contact_center_excess = jnp.maximum(
+            0.0,
+            contact_center_dist
+            - float(self.cfg.hit_contact_center_excess_radius_m),
+        )
+        hit_contact_center_excess_pen = (
+            float(self.cfg.hit_contact_center_excess_penalty_weight)
+            * (
+                hit_contact_center_excess
+                / max(
+                    1e-6,
+                    float(self.cfg.hit_contact_center_excess_sigma_m),
+                )
+            )
+            ** 2
+        )
         height_bonus = jnp.where(
             predicted_apex_z >= target_ball_z,
             0.35 * jnp.exp(-10.0 * (predicted_apex_z - target_ball_z) * (predicted_apex_z - target_ball_z)),
@@ -4550,6 +4767,11 @@ class MjxJuggleEnv:
         )
         term_hit_bonus = jnp.where(hit_reward_mask, hit_bonus, 0.0)
         term_center_flat_hit = jnp.where(hit_reward_mask, center_flat, 0.0)
+        term_hit_contact_center_excess_penalty = jnp.where(
+            hit_reward_mask,
+            -hit_contact_center_excess_pen,
+            0.0,
+        )
         term_hit_height_bonus = jnp.where(hit_reward_mask, height_bonus, 0.0)
         term_first_hit_apex = jnp.where(
             first_hit_reward_mask,
@@ -4579,6 +4801,7 @@ class MjxJuggleEnv:
             reward
             + term_hit_bonus
             + term_center_flat_hit
+            + term_hit_contact_center_excess_penalty
             + term_hit_height_bonus
             + term_hit_camera
             + term_first_hit_apex
@@ -4632,6 +4855,9 @@ class MjxJuggleEnv:
             "ball_xy_soft_penalty": term_ball_xy_soft_penalty * self.dt,
             "post_hit_survival": term_post_hit_survival * self.dt,
             "descending_intercept": term_descending_intercept * self.dt,
+            "descending_intercept_excess_penalty": (
+                term_descending_intercept_excess_penalty * self.dt
+            ),
             "pre_hit_intercept": term_pre_hit_intercept * self.dt,
             "pre_hit_intercept_penalty": term_pre_hit_intercept_penalty * self.dt,
             "racket_xy_reward": term_racket_xy_reward * self.dt,
@@ -4670,6 +4896,9 @@ class MjxJuggleEnv:
             ),
             "hit_bonus": term_hit_bonus,
             "center_flat_hit": term_center_flat_hit,
+            "hit_contact_center_excess_penalty": (
+                term_hit_contact_center_excess_penalty
+            ),
             "hit_height_bonus": term_hit_height_bonus,
             "hit_camera": term_hit_camera,
             "metric/hit_camera_event": new_hit.astype(jnp.float32),

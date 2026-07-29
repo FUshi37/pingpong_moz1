@@ -149,11 +149,32 @@ GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_DRBRIDGE_V2_COUNTCREDIT_PROFILE =
 GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_DRBRIDGE_V2_COUNTCREDIT_NOMISSING_PROFILE = (
     "goal_d455_autolaunch_viewdense_constrained_mpc_drbridge_v2_countcredit_nomissing_v1"
 )
+GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_DRBRIDGE_V2_COUNTCREDIT_NOMISSING_HARDTAIL_PROFILE = (
+    "goal_d455_autolaunch_viewdense_constrained_mpc_drbridge_v2_countcredit_nomissing_hardtail_v1"
+)
 GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_RECOVERABILITY_PROFILE = (
     "goal_d455_autolaunch_viewdense_constrained_mpc_recoverability_v1"
 )
 GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_INTERCEPT_PROFILE = (
     "goal_d455_autolaunch_viewdense_constrained_mpc_intercept_v1"
+)
+GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_INTERCEPT_NOMISSING_SURVIVAL_PROFILE = (
+    "goal_d455_autolaunch_viewdense_constrained_mpc_intercept_nomissing_survival_v1"
+)
+GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_LAUNCH17_LONG_JUGGLE_PROFILE = (
+    "goal_d455_autolaunch_viewdense_constrained_mpc_launch17_long_juggle_v1"
+)
+GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_LAUNCH17_HARDCONTACT_PROFILE = (
+    "goal_d455_autolaunch_viewdense_constrained_mpc_launch17_hardcontact_v2"
+)
+GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_LAUNCH17_AXIS_BRIDGE_PROFILE = (
+    "goal_d455_autolaunch_viewdense_constrained_mpc_launch17_axis_bridge_v3"
+)
+GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_LAUNCH17_ORTHOGONAL_BRIDGE_PROFILE = (
+    "goal_d455_autolaunch_viewdense_constrained_mpc_launch17_orthogonal_bridge_v4"
+)
+GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_LAUNCH17_OBSRES2MM_SERVO_PROFILE = (
+    "goal_d455_autolaunch_viewdense_constrained_mpc_launch17_obsres2mm_servo_v5"
 )
 GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_COUNT_PROGRESS_PROFILE = (
     "goal_d455_autolaunch_viewdense_constrained_mpc_count_progress_v1"
@@ -187,6 +208,9 @@ GOAL_D455_AUTOLAUNCH_ACTUATOR_INVERSEMPC_FINAL_CADENCE_NOGOV_PROFILE = (
 GOAL_D455_AUTOLAUNCH_ACTUATOR_INVERSEMPC_FINAL_SURVIVAL_NOGOV_PROFILE = (
     "goal_d455_autolaunch_actuator_inversempc_final_survival_nogov_v1"
 )
+GOAL_D455_AUTOLAUNCH_ACTUATOR_INVERSEMPC_FINAL_OBSRES2MM_NOGOV_PROFILE = (
+    "goal_d455_autolaunch_actuator_inversempc_final_obsres2mm_nogov_v1"
+)
 GOAL_D455_AUTOLAUNCH_ACTUATOR_INVERSEMPC_FINAL_SURVIVAL_COUNTCREDIT_NOGOV_PROFILE = (
     "goal_d455_autolaunch_actuator_inversempc_final_survival_countcredit_nogov_v1"
 )
@@ -214,8 +238,15 @@ GOAL_D455_AUTOLAUNCH_PROFILES = (
     GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_DRBRIDGE_V2_PROFILE,
     GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_DRBRIDGE_V2_COUNTCREDIT_PROFILE,
     GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_DRBRIDGE_V2_COUNTCREDIT_NOMISSING_PROFILE,
+    GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_DRBRIDGE_V2_COUNTCREDIT_NOMISSING_HARDTAIL_PROFILE,
     GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_RECOVERABILITY_PROFILE,
     GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_INTERCEPT_PROFILE,
+    GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_INTERCEPT_NOMISSING_SURVIVAL_PROFILE,
+    GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_LAUNCH17_LONG_JUGGLE_PROFILE,
+    GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_LAUNCH17_HARDCONTACT_PROFILE,
+    GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_LAUNCH17_AXIS_BRIDGE_PROFILE,
+    GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_LAUNCH17_ORTHOGONAL_BRIDGE_PROFILE,
+    GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_LAUNCH17_OBSRES2MM_SERVO_PROFILE,
     GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_COUNT_PROGRESS_PROFILE,
     GOAL_D455_AUTOLAUNCH_TEACHER_STUDENT_PROFILE,
     GOAL_D455_AUTOLAUNCH_ACTUATOR_INVERSEMPC_SUCCESSREF_NOGOV_PROFILE,
@@ -223,6 +254,7 @@ GOAL_D455_AUTOLAUNCH_PROFILES = (
     GOAL_D455_AUTOLAUNCH_ACTUATOR_INVERSEMPC_FINAL_RECOVERY_NOGOV_PROFILE,
     GOAL_D455_AUTOLAUNCH_ACTUATOR_INVERSEMPC_FINAL_CADENCE_NOGOV_PROFILE,
     GOAL_D455_AUTOLAUNCH_ACTUATOR_INVERSEMPC_FINAL_SURVIVAL_NOGOV_PROFILE,
+    GOAL_D455_AUTOLAUNCH_ACTUATOR_INVERSEMPC_FINAL_OBSRES2MM_NOGOV_PROFILE,
     GOAL_D455_AUTOLAUNCH_ACTUATOR_INVERSEMPC_FINAL_SURVIVAL_COUNTCREDIT_NOGOV_PROFILE,
     GOAL_D455_AUTOLAUNCH_ACTUATOR_INVERSEMPC_FINAL_MISSING_AGE_NOGOV_PROFILE,
     GOAL_D455_AUTOLAUNCH_ACTUATOR_INVERSEMPC_FINAL_INTERCEPT_NOGOV_PROFILE,
@@ -1829,6 +1861,52 @@ def _goal_d455_autolaunch_actuator_inversempc_final_survival_nogov_v1_stages(
     return [*stages[:-1], survival_final]
 
 
+def _goal_d455_autolaunch_actuator_inversempc_final_obsres2mm_nogov_v1_stages(
+    *,
+    stack_kwargs: dict[str, object],
+    stage_steps_override: int | None,
+    critic_command_history_steps: int,
+    require_inverse_mpc_stack: bool = True,
+) -> list[CurriculumStage]:
+    """Use the measured 2 mm ball-observation residual only at launch19.
+
+    The deployed detector reports about 1--2 mm end-to-end ball-position
+    error.  Preserve the complete resume8 plant, reward, gates, missing and
+    dropout contract, but stop stacking unmeasured rotation, velocity and
+    scale biases on top of that measured residual.
+    """
+
+    stages = _goal_d455_autolaunch_actuator_inversempc_final_survival_nogov_v1_stages(
+        stack_kwargs=stack_kwargs,
+        stage_steps_override=stage_steps_override,
+        critic_command_history_steps=critic_command_history_steps,
+        require_inverse_mpc_stack=require_inverse_mpc_stack,
+    )
+    if not stages or stages[-1].name != "launch19_final_consolidation":
+        raise ValueError("final obs-residual profile requires launch19")
+
+    final = stages[-1]
+    obsres_final = replace(
+        final,
+        cfg=replace(
+            final.cfg,
+            ball_obs_pos_noise_std=0.002,
+            dr_randomize_ball_obs_frame=True,
+            dr_ball_obs_pos_bias_base_m=(0.002, 0.002, 0.002),
+            dr_ball_obs_rot_bias_deg=(0.0, 0.0, 0.0),
+            dr_ball_obs_vel_bias_base_m_s=(0.0, 0.0, 0.0),
+            dr_ball_obs_scale_range=(1.0, 1.0),
+        ),
+        notes=(
+            f"{final.notes}  Launch19 ball-observation residual matched to "
+            "the measured 1--2 mm detector error (2 mm conservative per-axis "
+            "noise/bias); unmeasured frame rotation, "
+            "constant velocity bias and scale bias are disabled."
+        ),
+    )
+    return [*stages[:-1], obsres_final]
+
+
 def _goal_d455_autolaunch_actuator_inversempc_final_survival_countcredit_nogov_v1_stages(
     *,
     stack_kwargs: dict[str, object],
@@ -2825,6 +2903,21 @@ def _goal_d455_autolaunch_viewdense_constrained_mpc_drbridge_v2_countcredit_nomi
         critic_command_history_steps=critic_command_history_steps,
         require_inverse_mpc_stack=require_inverse_mpc_stack,
     )
+    return _with_all_ball_missing_disabled(stages)
+
+
+def _with_all_ball_missing_disabled(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Disable both missing behavior and every gate that requires missing.
+
+    Keeping ``min_ball_obs_missing_refresh_rate`` from a missing-enabled
+    parent makes a no-missing course impossible to advance: the measured
+    rate is identically zero while the inherited lower bound is positive.
+    Lost-rate is an upper bound and would pass at zero, but disabling it as
+    well keeps the ablation contract explicit and prevents future coupling.
+    """
+
     no_missing: list[CurriculumStage] = []
     for stage in stages:
         no_missing.append(
@@ -2847,15 +2940,59 @@ def _goal_d455_autolaunch_viewdense_constrained_mpc_drbridge_v2_countcredit_nomi
                     ball_obs_require_view_z_high=False,
                     ball_obs_view_z_high_missing_range_m=(0.0, 0.0),
                 ),
+                min_ball_obs_missing_refresh_rate=None,
+                max_ball_obs_lost_rate=None,
                 notes=(
                     f"{stage.notes}  Temporary no-missing ablation: all ball "
                     "observation dropout, camera/view masking, coherent "
-                    "missing, height masking, stale age, and visibility-aware "
-                    "reset behavior are disabled."
+                    "missing, height masking, stale age, visibility-aware "
+                    "reset behavior, and missing/lost advancement gates are disabled."
                 ),
             )
         )
     return no_missing
+
+
+def _goal_d455_autolaunch_viewdense_constrained_mpc_drbridge_v2_countcredit_nomissing_hardtail_v1_stages(
+    *,
+    stack_kwargs: dict[str, object],
+    stage_steps_override: int | None,
+    critic_command_history_steps: int,
+    require_inverse_mpc_stack: bool = True,
+) -> list[CurriculumStage]:
+    """No-missing course with auditable hard-tail DR density at launch17+.
+
+    The physical range, reward, gates, actor observation, inverse MPC and
+    servo planner are identical to the frozen baseline.  Half of training
+    resets jointly sample the upper third of ball contact solref time and
+    actuator command-filter tau; the other half remains exactly uniform over
+    the complete original range, so no final-domain capability is removed.
+    """
+
+    stages = _goal_d455_autolaunch_viewdense_constrained_mpc_drbridge_v2_countcredit_nomissing_v1_stages(
+        stack_kwargs=stack_kwargs,
+        stage_steps_override=stage_steps_override,
+        critic_command_history_steps=critic_command_history_steps,
+        require_inverse_mpc_stack=require_inverse_mpc_stack,
+    )
+    return [
+        stage
+        if index < 17
+        else replace(
+            stage,
+            cfg=replace(
+                stage.cfg,
+                dr_hard_tail_fraction=0.50,
+                dr_hard_tail_lower_quantile=2.0 / 3.0,
+            ),
+            notes=(
+                f"{stage.notes}  Hard-tail DR density: 50% of resets jointly "
+                "sample the upper third of solref time and actuator tau; "
+                "remaining resets retain original uniform full support."
+            ),
+        )
+        for index, stage in enumerate(stages)
+    ]
 
 
 def _goal_d455_autolaunch_viewdense_constrained_mpc_recoverability_v1_stages(
@@ -2956,6 +3093,521 @@ def _goal_d455_autolaunch_viewdense_constrained_mpc_intercept_v1_stages(
             )
         )
     return repaired
+
+
+def _goal_d455_autolaunch_viewdense_constrained_mpc_intercept_nomissing_survival_v1_stages(
+    *,
+    stack_kwargs: dict[str, object],
+    stage_steps_override: int | None,
+    critic_command_history_steps: int,
+    require_inverse_mpc_stack: bool = True,
+) -> list[CurriculumStage]:
+    """Fixed-tail survival profile with causal contact quality and no missing.
+
+    This keeps W020 count credit, W021 post-hit recoverability, and W022
+    execution-aware descending interception.  It changes neither the network
+    nor PPO, inverse MPC, servo planner, DR support, or performance gates.
+    """
+
+    stages = _goal_d455_autolaunch_viewdense_constrained_mpc_intercept_v1_stages(
+        stack_kwargs=stack_kwargs,
+        stage_steps_override=stage_steps_override,
+        critic_command_history_steps=critic_command_history_steps,
+        require_inverse_mpc_stack=require_inverse_mpc_stack,
+    )
+    return _with_all_ball_missing_disabled(stages)
+
+
+def _goal_d455_autolaunch_viewdense_constrained_mpc_launch17_long_juggle_v1_stages(
+    *,
+    stack_kwargs: dict[str, object],
+    stage_steps_override: int | None,
+    critic_command_history_steps: int,
+    require_inverse_mpc_stack: bool = True,
+) -> list[CurriculumStage]:
+    """Keep launch17 fixed until the policy genuinely masters 1200 steps.
+
+    Miss-chain diagnostics show that 89.9% of failed episodes are preceded by
+    a last hit outside the successful hit-vxy/next-contact envelope.  Once the
+    ball descends, 99.6% of failures already require a return outside the
+    successful interception envelope; simply making the arm chase harder is
+    therefore not the primary repair.  Preserve inverse MPC and the servo
+    planner, but give the contact that creates the bad return immediate credit
+    and keep a non-vanishing interception gradient for the remaining chase.
+    """
+
+    stages = (
+        _goal_d455_autolaunch_viewdense_constrained_mpc_intercept_nomissing_survival_v1_stages(
+            stack_kwargs=stack_kwargs,
+            stage_steps_override=stage_steps_override,
+            critic_command_history_steps=critic_command_history_steps,
+            require_inverse_mpc_stack=require_inverse_mpc_stack,
+        )
+    )
+    index = 17
+    stage = stages[index]
+    cfg = replace(
+        stage.cfg,
+        # Immediate, causal quality of the hit that creates the next arc.
+        hit_height_penalty_weight=6.0,
+        low_hit_penalty_weight=10.0,
+        hit_vxy_penalty_weight=1.20,
+        hit_next_contact_anchor_penalty_weight=0.10,
+        post_hit_ball_vxy_penalty_weight=0.24,
+        ball_xy_soft_penalty_weight=0.60,
+        # Preserve the positive interception signal while adding a gradient
+        # outside its Gaussian tube during the actionable final 0.55 s.
+        descending_intercept_excess_penalty_weight=0.40,
+        descending_intercept_excess_radius=0.10,
+        descending_intercept_excess_sigma=0.12,
+        descending_intercept_excess_time_max=0.55,
+        # Teach commands that the unchanged inverse-MPC + servo trajectory can
+        # actually realize instead of rewarding arbitrarily distant requests.
+        command_tracking_error_penalty_weight=0.50,
+    )
+    stages[index] = replace(
+        stage,
+        name="launch17_long_juggle_1200",
+        cfg=cfg,
+        gate_mode="strict",
+        advance_gate_mode="strict",
+        target_mean_hits=12.0,
+        target_mean_len_frac=0.90,
+        target_hit1_rate=0.98,
+        target_hit3_rate=0.90,
+        target_hit12_rate=0.75,
+        target_mean_hits_ge3=12.5,
+        target_episode_truncation_rate=0.75,
+        max_recent_hit_next_contact_anchor_err=0.16,
+        min_updates=max(400, int(stage.min_updates)),
+        max_updates=None,
+        notes=(
+            f"{stage.notes}  Launch17 long-juggle repair: do not advance until "
+            "conv_len>=0.90 and full>=0.75; penalize the causal last-hit "
+            "landing/vxy/apex error, actionable descent miss, and unrealizable "
+            "command lag. Network, missing-off observation, inverse MPC, servo "
+            "planner, velocity/acceleration limits, and DR support are unchanged."
+        ),
+    )
+    # Keep the complete original tail.  The strict launch17 gate above prevents
+    # advancement until long-horizon juggling is actually learned; once it is,
+    # training must still recover the original widest spatial/DR distribution
+    # rather than treating this bridge as the final task.  Missing remains off
+    # only because that is the explicit temporary ablation for this run.
+    return stages
+
+
+def _goal_d455_autolaunch_viewdense_constrained_mpc_launch17_hardcontact_v2_stages(
+    *,
+    stack_kwargs: dict[str, object],
+    stage_steps_override: int | None,
+    critic_command_history_steps: int,
+    require_inverse_mpc_stack: bool = True,
+) -> list[CurriculumStage]:
+    """Repair the bimodal launch17 failure population without narrowing it.
+
+    Frozen-policy reset-bin diagnostics found that the upper half of ball
+    contact solref time falls to 25--37.5% full episodes, versus 62.5--75%
+    in the lower half.  Its failures are not simply a late arm response: by
+    hits 4--6 the p90 post-contact vxy rises from 0.254 to 0.425 m/s and
+    off-centre outliers approximately double, after which required intercept
+    speed rises outside the successful envelope.  Preserve the complete
+    uniform support while oversampling that hard tail and provide an immediate
+    non-saturating gradient at the causal contact event.
+    """
+
+    stages = (
+        _goal_d455_autolaunch_viewdense_constrained_mpc_launch17_long_juggle_v1_stages(
+            stack_kwargs=stack_kwargs,
+            stage_steps_override=stage_steps_override,
+            critic_command_history_steps=critic_command_history_steps,
+            require_inverse_mpc_stack=require_inverse_mpc_stack,
+        )
+    )
+    index = 17
+    stage = stages[index]
+    stages[index] = replace(
+        stage,
+        name="launch17_hardcontact_long_juggle_1200",
+        cfg=replace(
+            stage.cfg,
+            # 40% remains exactly uniform over the original complete range;
+            # 60% targets the empirically failing upper third.
+            dr_hard_tail_fraction=0.60,
+            dr_hard_tail_lower_quantile=2.0 / 3.0,
+            # Successful contacts are near 0.01 m, while ball-low/xy failures
+            # are around 0.034/0.077 m.  Penalize only the excess tail.
+            hit_contact_center_excess_penalty_weight=0.35,
+            hit_contact_center_excess_radius_m=0.020,
+            hit_contact_center_excess_sigma_m=0.030,
+            # The previous 0.35 m/s hinge made the observed 0.425 m/s hard-tail
+            # p90 almost unpenalized.  Keep normal 0.10--0.20 m/s hits free.
+            hit_vxy_soft_limit_m_s=0.25,
+            hit_vxy_penalty_weight=2.0,
+            # Mean next-anchor error did not distinguish the hard domain, and
+            # large command lag was chiefly a consequence of an unreachable
+            # return.  Retain both only as weak auxiliary signals.
+            hit_next_contact_anchor_penalty_weight=0.06,
+            command_tracking_error_penalty_weight=0.10,
+        ),
+        notes=(
+            f"{stage.notes}  V2 hard-contact repair: keep the complete original "
+            "DR support, oversample upper-third solref/tau resets, directly "
+            "penalize off-centre and high-vxy contact outliers, and reduce "
+            "consequence-only tracking/anchor shaping. All launch17 gates, "
+            "network, inverse MPC, servo planner and later stages are unchanged."
+        ),
+    )
+    return stages
+
+
+def _goal_d455_autolaunch_viewdense_constrained_mpc_launch17_axis_bridge_v3_stages(
+    *,
+    stack_kwargs: dict[str, object],
+    stage_steps_override: int | None,
+    critic_command_history_steps: int,
+    require_inverse_mpc_stack: bool = True,
+) -> list[CurriculumStage]:
+    """Separate the three launch17 failure axes before the full task.
+
+    Matched frozen-policy ablations showed that launch14 -> launch15
+    observation calibration alone reduced 1200-step completions from 60/64
+    to 43/64, while the complete launch17 observation domain reduced them to
+    35/64.  Removing either refresh noise or episode-fixed frame calibration
+    recovered 52--53/64.  V2 additionally placed 60% of resets in an
+    artificial joint solref/tau tail and later drifted from 35 to 29 uniform
+    completions and from 26 to 16 hard-tail completions.
+
+    Keep the full final observation and original independent dynamics support,
+    but introduce refresh noise and frame calibration on separate strict
+    long-horizon bridges.  Restore the existing W024 count-progress objective
+    because a zero combo coefficient improved hits 1--3 while survival after
+    hit 4 regressed.  No gate, network, inverse MPC, servo planner, velocity or
+    acceleration limit is relaxed.
+    """
+
+    stages = (
+        _goal_d455_autolaunch_viewdense_constrained_mpc_launch17_hardcontact_v2_stages(
+            stack_kwargs=stack_kwargs,
+            stage_steps_override=stage_steps_override,
+            critic_command_history_steps=critic_command_history_steps,
+            require_inverse_mpc_stack=require_inverse_mpc_stack,
+        )
+    )
+    index = 17
+    full = stages[index]
+    full_cfg = replace(
+        full.cfg,
+        # Oversampling both difficult variables together changed their
+        # correlation and dominated the training distribution.  Uniform DR
+        # already retains every original hard value and joint combination.
+        dr_hard_tail_fraction=0.0,
+        # Give later legitimate contacts increasing marginal value; the
+        # existing centre/flatness multiplier and cap remain in force.
+        hit_reward_combo=0.08,
+    )
+
+    def bridge(
+        name: str,
+        cfg: MjxJuggleConfig,
+        min_updates: int,
+        note: str,
+    ) -> CurriculumStage:
+        return replace(
+            full,
+            name=name,
+            cfg=cfg,
+            min_updates=min_updates,
+            max_updates=None,
+            notes=(
+                f"{full.notes}  V3 single-axis bridge: {note} "
+                "The same conv_len>=0.90, full>=0.75 and hit gates apply."
+            ),
+        )
+
+    # Full launch17 refresh noise and full frame-DR support are present in
+    # every bridge.  Only the density of contracted (half-deviation) frame
+    # resets changes, which prevents target-domain forgetting.
+    noise_bridge_cfg = replace(
+        full_cfg,
+        dr_ball_obs_frame_easy_fraction=0.75,
+        dr_ball_obs_frame_easy_scale=0.50,
+    )
+    frame_micro_cfg = replace(
+        full_cfg,
+        dr_ball_obs_frame_easy_fraction=0.50,
+        dr_ball_obs_frame_easy_scale=0.50,
+    )
+    frame_three_eighths_cfg = replace(
+        full_cfg,
+        dr_ball_obs_frame_easy_fraction=0.25,
+        dr_ball_obs_frame_easy_scale=0.50,
+    )
+
+    variants = [
+        bridge(
+            "launch17a_refresh_noise_long_juggle_1200",
+            noise_bridge_cfg,
+            100,
+            "learn complete refresh noise with 75% half-deviation frame resets and 25% full target resets",
+        ),
+        bridge(
+            "launch17b_frame_micro_long_juggle_1200",
+            frame_micro_cfg,
+            180,
+            "reduce half-deviation frame resets to 50% while retaining 50% full target resets",
+        ),
+        bridge(
+            "launch17c_frame_three_eighths_long_juggle_1200",
+            frame_three_eighths_cfg,
+            240,
+            "reduce half-deviation frame resets to 25% while retaining 75% full target resets",
+        ),
+        bridge(
+            "launch17_full_observation_long_juggle_1200",
+            full_cfg,
+            max(400, int(full.min_updates)),
+            "reach the unchanged complete launch17 observation and independent dynamics distribution",
+        ),
+    ]
+
+    # The original tail and its widest final distribution remain intact.  The
+    # count-progress objective continues because long sequences remain the
+    # task metric after launch17 as well.
+    tail = [
+        replace(
+            stage,
+            cfg=replace(stage.cfg, hit_reward_combo=0.08),
+            notes=f"{stage.notes}  V3 count-progress objective retained (combo=0.08, cap=14).",
+        )
+        for stage in stages[index + 1 :]
+    ]
+    return [*stages[:index], *variants, *tail]
+
+
+def _goal_d455_autolaunch_viewdense_constrained_mpc_launch17_orthogonal_bridge_v4_stages(
+    *,
+    stack_kwargs: dict[str, object],
+    stage_steps_override: int | None,
+    critic_command_history_steps: int,
+    require_inverse_mpc_stack: bool = True,
+) -> list[CurriculumStage]:
+    """Learn the two launch17 observation-error axes before combining them.
+
+    Frozen-policy, matched-seed evaluation of the V3 best checkpoint gave
+    13.47 hits with full refresh noise alone and 13.77 hits with full
+    episode-fixed frame DR alone, but only 10.44 hits when both were active.
+    V3 therefore did not implement a true single-axis bridge: every reset had
+    full refresh noise and a Bernoulli mixture selected half/full frame DR.
+
+    V4 keeps the plant, rewards, strict gates and complete final support.  It
+    first masters each error axis independently, then relearns the exact
+    launch15, launch16 and launch17 combined domains in order.  No observation
+    bound, task gate, inverse-MPC setting or servo-planner limit is relaxed.
+
+    Each stage must still pass its full strict learning gate on the domain it
+    is trained on.  The *next* orthogonal domain is only an anti-collapse
+    transfer probe: requiring an untrained axis to pass the same 1200-step
+    graduation gate before entering it makes the bridge impossible to use.
+    """
+
+    stages = _goal_d455_autolaunch_viewdense_constrained_mpc_launch17_axis_bridge_v3_stages(
+        stack_kwargs=stack_kwargs,
+        stage_steps_override=stage_steps_override,
+        critic_command_history_steps=critic_command_history_steps,
+        require_inverse_mpc_stack=require_inverse_mpc_stack,
+    )
+    index = 17
+    template = stages[index]
+    full_cfg = stages[index + 3].cfg
+
+    def observation_preset(
+        cfg: MjxJuggleConfig,
+        *,
+        pos_noise: float,
+        vel_noise: float,
+        pos_bias: float,
+        rot_bias: tuple[float, float, float],
+        vel_bias: tuple[float, float, float],
+        scale_range: tuple[float, float],
+    ) -> MjxJuggleConfig:
+        return replace(
+            cfg,
+            ball_obs_pos_noise_std=pos_noise,
+            ball_obs_vel_noise_std=vel_noise,
+            dr_ball_obs_pos_bias_base_m=(pos_bias, pos_bias, pos_bias),
+            dr_ball_obs_rot_bias_deg=rot_bias,
+            dr_ball_obs_vel_bias_base_m_s=vel_bias,
+            dr_ball_obs_scale_range=scale_range,
+            dr_ball_obs_frame_easy_fraction=0.0,
+        )
+
+    refresh_only_cfg = observation_preset(
+        full_cfg,
+        pos_noise=0.0055,
+        vel_noise=0.055,
+        pos_bias=0.0,
+        rot_bias=(0.0, 0.0, 0.0),
+        vel_bias=(0.0, 0.0, 0.0),
+        scale_range=(1.0, 1.0),
+    )
+    frame_only_cfg = observation_preset(
+        full_cfg,
+        pos_noise=0.0,
+        vel_noise=0.0,
+        pos_bias=0.004,
+        rot_bias=(0.675, 0.675, 1.0),
+        vel_bias=(0.040, 0.040, 0.055),
+        scale_range=(0.9935, 1.0065),
+    )
+    launch15_cfg = observation_preset(
+        full_cfg,
+        pos_noise=0.00475,
+        vel_noise=0.0475,
+        pos_bias=0.003,
+        rot_bias=(0.5125, 0.5125, 0.75),
+        vel_bias=(0.030, 0.030, 0.0425),
+        scale_range=(0.99525, 1.00475),
+    )
+    launch16_cfg = observation_preset(
+        full_cfg,
+        pos_noise=0.005125,
+        vel_noise=0.05125,
+        pos_bias=0.0035,
+        rot_bias=(0.59375, 0.59375, 0.875),
+        vel_bias=(0.035, 0.035, 0.04875),
+        scale_range=(0.994375, 1.005625),
+    )
+
+    def strict_stage(
+        name: str,
+        cfg: MjxJuggleConfig,
+        min_updates: int,
+        note: str,
+    ) -> CurriculumStage:
+        return replace(
+            template,
+            name=name,
+            cfg=cfg,
+            min_updates=min_updates,
+            max_updates=None,
+            gate_mode="strict",
+            advance_gate_mode="collapse",
+            notes=(
+                f"{template.notes}  V4 orthogonal observation bridge: {note} "
+                "Strict hits>=12, conv_len>=0.90 and full>=0.75 learning gates "
+                "are unchanged; entry into this untrained domain uses only the "
+                "existing anti-collapse transfer probe."
+            ),
+        )
+
+    variants = [
+        strict_stage(
+            "launch17a_refresh_noise_only_long_juggle_1200",
+            refresh_only_cfg,
+            100,
+            "master complete launch17 per-refresh Gaussian noise with frame DR disabled",
+        ),
+        strict_stage(
+            "launch17b_frame_dr_only_long_juggle_1200",
+            frame_only_cfg,
+            100,
+            "master complete launch17 episode-fixed frame DR with refresh noise disabled",
+        ),
+        strict_stage(
+            "launch17c_combined_launch15_long_juggle_1200",
+            launch15_cfg,
+            180,
+            "combine both axes at the exact launch15 calibration domain",
+        ),
+        strict_stage(
+            "launch17d_combined_launch16_long_juggle_1200",
+            launch16_cfg,
+            240,
+            "increase both axes to the exact launch16 calibration domain",
+        ),
+        strict_stage(
+            "launch17_full_observation_long_juggle_1200",
+            full_cfg,
+            400,
+            "reach the unchanged complete launch17 calibration and independent dynamics domain",
+        ),
+    ]
+    return [*stages[:index], *variants, *stages[index + 4 :]]
+
+
+def _goal_d455_autolaunch_viewdense_constrained_mpc_launch17_obsres2mm_servo_v5_stages(
+    *,
+    stack_kwargs: dict[str, object],
+    stage_steps_override: int | None,
+    critic_command_history_steps: int,
+    require_inverse_mpc_stack: bool = True,
+) -> list[CurriculumStage]:
+    """Train launch17 and the original final domain with measured observation error.
+
+    Matched-seed evaluation of the same frozen launch17c checkpoint showed that
+    replacing the synthetic episode-fixed camera-frame distortion with the
+    measured 2 mm position residual raised the 1200-step truncation rate from
+    75.0% to 83.6% (96/128 to 107/128) and mean length fraction from 0.867 to
+    0.921.  The previous observation ladder was therefore teaching a hidden
+    calibration error larger than the real sensor residual, not a harder
+    juggling task.
+
+    V5 changes only the ball observation-error distribution at launch17 and
+    launch19.  The complete launch17/final physical randomization, rewards,
+    strict 1200-step gates, fitted actuator, actual-feedback inverse MPC, and
+    servo-planner velocity/acceleration limits remain inherited unchanged.
+    Missing remains disabled.  No state estimator is added.
+    """
+
+    stages = _goal_d455_autolaunch_viewdense_constrained_mpc_launch17_orthogonal_bridge_v4_stages(
+        stack_kwargs=stack_kwargs,
+        stage_steps_override=stage_steps_override,
+        critic_command_history_steps=critic_command_history_steps,
+        require_inverse_mpc_stack=require_inverse_mpc_stack,
+    )
+
+    def measured_observation(cfg: MjxJuggleConfig) -> MjxJuggleConfig:
+        return replace(
+            cfg,
+            ball_obs_pos_noise_std=0.002,
+            ball_obs_vel_noise_std=0.07,
+            dr_ball_obs_pos_bias_base_m=(0.002, 0.002, 0.002),
+            dr_ball_obs_rot_bias_deg=(0.0, 0.0, 0.0),
+            dr_ball_obs_vel_bias_base_m_s=(0.0, 0.0, 0.0),
+            dr_ball_obs_scale_range=(1.0, 1.0),
+            dr_ball_obs_frame_easy_fraction=0.0,
+        )
+
+    launch17 = replace(
+        stages[19],
+        name="launch17c_measured_obsres2mm_servo_long_juggle_1200",
+        cfg=measured_observation(stages[19].cfg),
+        min_updates=max(180, int(stages[19].min_updates)),
+        max_updates=None,
+        gate_mode="strict",
+        advance_gate_mode="collapse",
+        notes=(
+            f"{stages[19].notes}  V5 measured-observation repair: retain the "
+            "complete launch17 physical/reward/control domain while replacing "
+            "synthetic camera-frame distortion with the measured 2 mm residual."
+        ),
+    )
+    final = replace(
+        stages[-1],
+        name="launch19_final_measured_obsres2mm_servo_consolidation",
+        cfg=measured_observation(stages[-1].cfg),
+        min_updates=max(360, int(stages[-1].min_updates)),
+        max_updates=None,
+        gate_mode="strict",
+        advance_gate_mode="strict",
+        notes=(
+            f"{stages[-1].notes}  V5 measured-observation final: preserve the "
+            "original widest physical/reward domain and strict final gate with "
+            "the measured 2 mm observation residual and unchanged servo planner."
+        ),
+    )
+    return [*stages[:19], launch17, final]
 
 
 def _goal_d455_autolaunch_viewdense_constrained_mpc_count_progress_v1_stages(
@@ -11628,8 +12280,15 @@ def build_curriculum(
             GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_DRBRIDGE_V2_PROFILE: _goal_d455_autolaunch_viewdense_constrained_mpc_drbridge_v2_stages,
             GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_DRBRIDGE_V2_COUNTCREDIT_PROFILE: _goal_d455_autolaunch_viewdense_constrained_mpc_drbridge_v2_countcredit_v1_stages,
             GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_DRBRIDGE_V2_COUNTCREDIT_NOMISSING_PROFILE: _goal_d455_autolaunch_viewdense_constrained_mpc_drbridge_v2_countcredit_nomissing_v1_stages,
+            GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_DRBRIDGE_V2_COUNTCREDIT_NOMISSING_HARDTAIL_PROFILE: _goal_d455_autolaunch_viewdense_constrained_mpc_drbridge_v2_countcredit_nomissing_hardtail_v1_stages,
             GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_RECOVERABILITY_PROFILE: _goal_d455_autolaunch_viewdense_constrained_mpc_recoverability_v1_stages,
             GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_INTERCEPT_PROFILE: _goal_d455_autolaunch_viewdense_constrained_mpc_intercept_v1_stages,
+            GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_INTERCEPT_NOMISSING_SURVIVAL_PROFILE: _goal_d455_autolaunch_viewdense_constrained_mpc_intercept_nomissing_survival_v1_stages,
+            GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_LAUNCH17_LONG_JUGGLE_PROFILE: _goal_d455_autolaunch_viewdense_constrained_mpc_launch17_long_juggle_v1_stages,
+            GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_LAUNCH17_HARDCONTACT_PROFILE: _goal_d455_autolaunch_viewdense_constrained_mpc_launch17_hardcontact_v2_stages,
+            GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_LAUNCH17_AXIS_BRIDGE_PROFILE: _goal_d455_autolaunch_viewdense_constrained_mpc_launch17_axis_bridge_v3_stages,
+            GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_LAUNCH17_ORTHOGONAL_BRIDGE_PROFILE: _goal_d455_autolaunch_viewdense_constrained_mpc_launch17_orthogonal_bridge_v4_stages,
+            GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_LAUNCH17_OBSRES2MM_SERVO_PROFILE: _goal_d455_autolaunch_viewdense_constrained_mpc_launch17_obsres2mm_servo_v5_stages,
             GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_COUNT_PROGRESS_PROFILE: _goal_d455_autolaunch_viewdense_constrained_mpc_count_progress_v1_stages,
             GOAL_D455_AUTOLAUNCH_TEACHER_STUDENT_PROFILE: _goal_d455_autolaunch_teacherstudent_drivegov_v1_stages,
             GOAL_D455_AUTOLAUNCH_ACTUATOR_INVERSEMPC_SUCCESSREF_NOGOV_PROFILE: _goal_d455_autolaunch_actuator_inversempc_successref_nogov_v1_stages,
@@ -11637,6 +12296,7 @@ def build_curriculum(
             GOAL_D455_AUTOLAUNCH_ACTUATOR_INVERSEMPC_FINAL_RECOVERY_NOGOV_PROFILE: _goal_d455_autolaunch_actuator_inversempc_final_recovery_nogov_v1_stages,
             GOAL_D455_AUTOLAUNCH_ACTUATOR_INVERSEMPC_FINAL_CADENCE_NOGOV_PROFILE: _goal_d455_autolaunch_actuator_inversempc_final_cadence_nogov_v1_stages,
             GOAL_D455_AUTOLAUNCH_ACTUATOR_INVERSEMPC_FINAL_SURVIVAL_NOGOV_PROFILE: _goal_d455_autolaunch_actuator_inversempc_final_survival_nogov_v1_stages,
+            GOAL_D455_AUTOLAUNCH_ACTUATOR_INVERSEMPC_FINAL_OBSRES2MM_NOGOV_PROFILE: _goal_d455_autolaunch_actuator_inversempc_final_obsres2mm_nogov_v1_stages,
             GOAL_D455_AUTOLAUNCH_ACTUATOR_INVERSEMPC_FINAL_SURVIVAL_COUNTCREDIT_NOGOV_PROFILE: _goal_d455_autolaunch_actuator_inversempc_final_survival_countcredit_nogov_v1_stages,
             GOAL_D455_AUTOLAUNCH_ACTUATOR_INVERSEMPC_FINAL_MISSING_AGE_NOGOV_PROFILE: _goal_d455_autolaunch_actuator_inversempc_final_missing_age_nogov_v1_stages,
             GOAL_D455_AUTOLAUNCH_ACTUATOR_INVERSEMPC_FINAL_INTERCEPT_NOGOV_PROFILE: _goal_d455_autolaunch_actuator_inversempc_final_intercept_nogov_v1_stages,
@@ -13134,6 +13794,7 @@ def parse_args() -> argparse.Namespace:
             "goal_d455_autolaunch_viewdense_constrained_mpc_drbridge_v1 preserves W019's plant, rewards, actuator and safety contracts, but repairs the launch15+ curriculum with 25/37.5/50/75/100% observation-calibration DR bridges and strict advancement gates; "
             "goal_d455_autolaunch_viewdense_constrained_mpc_drbridge_v2 keeps those DR bridges and strict current-stage gates, but uses anti-collapse-only next-stage probes and shorter evidence-based consolidation floors so each new DR distribution is learned after advancement; "
             "goal_d455_autolaunch_viewdense_constrained_mpc_drbridge_v2_countcredit_v1 is W020: it preserves the complete W019 V2 plant/course/gates and replaces hit-count-growing terminal costs with fixed target-count barriers so every additional valid hit has positive marginal credit; "
+            "goal_d455_autolaunch_viewdense_constrained_mpc_launch17_obsres2mm_servo_v5 resumes the proven launch17 policy on the unchanged inverse-MPC plus servo-planner plant, removes synthetic camera-frame distortion beyond the measured 2 mm observation residual, and then trains the original widest final physical/reward domain; "
             "goal_d455_autolaunch_idealpd_v1 reuses the original 20260716 goal_d455_autolaunch_v1 curriculum/gates/rewards while disabling actuator command filtering, delay conditioning, and compensation for the ideal-PD policy->real compensator ablation; "
             "goal_d455_autolaunch_idealpd67_v1 keeps that original course and the deployed 67D 72 ms command-history/error/phase observation contract, but applies the current position command immediately with XML PD and no actuator filter or compensation; "
             "goal_d455_autolaunch_idealpd67_viewdense_v1 preserves that ideal-PD67 plant and the original full-horizon gates, while adding mild view/next-contact shaping and measured launch14/15 minimum-update floors; "
@@ -13143,6 +13804,7 @@ def parse_args() -> argparse.Namespace:
             "goal_d455_autolaunch_actuator_inversempc_final_recovery_nogov_v1 keeps launch00-launch18 byte-identical to the success-reference no-governor course, then makes launch19 a real recoverability bridge with monotonic hit credit, fixed failure barriers, and stronger next-contact/post-hit shaping; "
             "goal_d455_autolaunch_actuator_inversempc_final_cadence_nogov_v1 keeps that same plant and launch00-launch18 course, then adds only bounded launch19 cadence shaping and a period gate consistent with 13 hits in six seconds; "
             "goal_d455_autolaunch_actuator_inversempc_final_survival_nogov_v1 preserves that cadence profile and changes only launch19 recoverability shaping, with modest post-hit survival credit plus lateral-drift, hit-vxy and next-contact costs; "
+            "goal_d455_autolaunch_actuator_inversempc_final_obsres2mm_nogov_v1 preserves the resume8 launch19 plant, reward and gates while matching ball observation-frame DR to the measured 1-2 mm position residual and disabling unmeasured rotation, velocity and scale biases; "
             "goal_d455_autolaunch_actuator_inversempc_final_intercept_nogov_v1 preserves that survival profile and changes only launch19 by rewarding the actual racket at the predicted descending-ball crossing point; "
             "goal_d455_autolaunch_idealpd67_actuator_inversempc_finetune_v1 keeps that final-recovery task contract but restores the original delayed-command 67D observation, 74 ms actuator filter, and inverse-MPC execution stack without bottom actual-state limiting; "
             "goal_d455_autolaunch_idealpd67_actuator_inversempc_residual_v1 keeps the same matched task/actuator contract but uses the final 8 Hz q/dq/ddq/jerk governor for frozen-teacher residual transfer; "

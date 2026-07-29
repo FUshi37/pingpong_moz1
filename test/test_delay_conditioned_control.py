@@ -1245,6 +1245,7 @@ def test_validator_episode_metrics_are_globally_weighted() -> None:
     pytest.importorskip("mujoco")
 
     from validate_juggle_mjx_ppo import (  # noqa: E402
+        accumulate_named_episode_metrics,
         add_terminal_step_metrics,
         aggregate_episode_metrics,
     )
@@ -1305,3 +1306,25 @@ def test_validator_episode_metrics_are_globally_weighted() -> None:
     assert terminal_row["hit_camera_v_frac_sum"] == pytest.approx(1.25)
     assert terminal_row["last/hit_camera_v_frac_sum"] == pytest.approx(0.20)
     assert terminal_row["ball_obs_lost_active"] == pytest.approx(1.0)
+
+    accumulators: dict[str, np.ndarray] = {}
+    accumulate_named_episode_metrics(
+        accumulators,
+        {
+            "reward/hit_bonus": np.asarray([1.0, 0.0]),
+            "reward/total": np.asarray([1.5, -0.5]),
+            "not_reward": np.asarray([99.0, 99.0]),
+        },
+        prefix="reward/",
+    )
+    accumulate_named_episode_metrics(
+        accumulators,
+        {
+            "reward/hit_bonus": np.asarray([0.0, 2.0]),
+            "reward/total": np.asarray([0.5, 2.5]),
+        },
+        prefix="reward/",
+    )
+    assert accumulators["reward/hit_bonus"] == pytest.approx([1.0, 2.0])
+    assert accumulators["reward/total"] == pytest.approx([2.0, 2.0])
+    assert "not_reward" not in accumulators
