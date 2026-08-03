@@ -16,9 +16,61 @@ if str(RL_SIM_DIR) not in sys.path:
     sys.path.insert(0, str(RL_SIM_DIR))
 
 from sim2real_bridger import (  # noqa: E402
+    correction_relative_governor_step_jax,
+    correction_relative_governor_step_numpy,
     constrained_compensation_step_jax,
     constrained_compensation_step_numpy,
 )
+
+
+def test_correction_relative_governor_bounds_total_command_and_matches_jax() -> None:
+    dt = 0.005
+    nominal = np.deg2rad(np.asarray([20.1, -20.1, 0.1, 20.1, -0.1, 0.1, -0.1]))
+    previous_nominal = np.deg2rad(np.asarray([20.0, -20.0, 0.0, 20.0, 0.0, 0.0, 0.0]))
+    previous_nominal_vel = (nominal - previous_nominal) / dt
+    previous_sent = previous_nominal.copy()
+    previous_sent_vel = previous_nominal_vel.copy()
+    raw = nominal + np.deg2rad(np.asarray([12.0, -12.0, 12.0, -12.0, 12.0, -12.0, 12.0]))
+    low = np.full(7, -3.0)
+    high = np.full(7, 3.0)
+    vmax = np.deg2rad(np.full(7, 300.0))
+    amax = np.deg2rad(np.full(7, 3000.0))
+
+    numpy_step = correction_relative_governor_step_numpy(
+        raw, nominal, previous_nominal, previous_nominal_vel,
+        previous_sent, previous_sent_vel, low, high, vmax, amax, dt=dt,
+    )
+    jax_step = correction_relative_governor_step_jax(
+        raw, nominal, previous_nominal, previous_nominal_vel,
+        previous_sent, previous_sent_vel, low, high, vmax, amax, dt=dt,
+    )
+    for numpy_value, jax_value in zip(numpy_step, jax_step):
+        np.testing.assert_allclose(numpy_value, np.asarray(jax_value), atol=5e-6)
+    assert np.all(np.abs(numpy_step.qvel) <= vmax + 1e-8)
+    assert np.all(np.abs(numpy_step.qacc) <= amax + 1e-8)
+    assert np.all(numpy_step.q >= low)
+    assert np.all(numpy_step.q <= high)
+
+    # A replayed nominal command may itself contain an infeasible discrete
+    # jump.  The final q path must still obey the absolute drive limits.
+    jumped_nominal = nominal + np.deg2rad(30.0)
+    jumped = correction_relative_governor_step_numpy(
+        jumped_nominal,
+        jumped_nominal,
+        nominal,
+        previous_nominal_vel,
+        numpy_step.q,
+        numpy_step.qvel,
+        low,
+        high,
+        vmax,
+        amax,
+        dt=dt,
+    )
+    assert np.all(np.abs(jumped.qvel) <= vmax + 1e-8)
+    assert np.all(np.abs(jumped.qacc) <= amax + 1e-8)
+
+
 from sim2real_bridger_preview_mpc import run_receding_preview_compensation  # noqa: E402
 from pingpong_controller.safety_limiter import RightArmCommandSafetyLimiter  # noqa: E402
 

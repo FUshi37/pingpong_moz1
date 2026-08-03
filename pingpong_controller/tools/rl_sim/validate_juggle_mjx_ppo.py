@@ -63,6 +63,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--deterministic", action="store_true", help="Use policy mean instead of sampling.")
     p.add_argument("--action-gain", type=float, default=1.0, help="Multiply policy action before clipping.")
     p.add_argument(
+        "--actuator-compensation-mode",
+        choices=[
+            "none",
+            "sport_horizon_inverse",
+            "sport_analytic_inverse",
+            "sport_regularized_inverse",
+            "sport_safe_analytic_inverse",
+        ],
+        default=None,
+        help="Evaluation-only actuator compensation override.",
+    )
+    p.add_argument(
         "--arm-post-compensation-limiter",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -87,6 +99,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Evaluation-only override for the target-aware acceleration "
             "planner after delay/FOPDT and before the unchanged position PD."
+        ),
+    )
+    p.add_argument(
+        "--arm-servo-planner-before-actuator-model",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Evaluation-only ordering override: inverse MPC -> predictive "
+            "servo governor -> delay/FOPDT -> XML position PD."
         ),
     )
     p.add_argument("--arm-servo-target-velocity-scale", type=float, default=None)
@@ -336,6 +357,18 @@ def env_config_from_checkpoint(payload: dict, args: argparse.Namespace) -> MjxJu
             cfg,
             arm_servo_target_tracking_planner=bool(arm_servo_target_tracking_planner),
         )
+    arm_servo_planner_before_actuator_model = getattr(
+        args,
+        "arm_servo_planner_before_actuator_model",
+        None,
+    )
+    if arm_servo_planner_before_actuator_model is not None:
+        cfg = replace(
+            cfg,
+            arm_servo_planner_before_actuator_model=bool(
+                arm_servo_planner_before_actuator_model
+            ),
+        )
     arm_servo_target_velocity_scale = getattr(
         args,
         "arm_servo_target_velocity_scale",
@@ -475,6 +508,12 @@ def env_config_from_checkpoint(payload: dict, args: argparse.Namespace) -> MjxJu
         )
     if args.right_arm_pd_profile is not None:
         cfg = replace(cfg, right_arm_pd_profile=str(args.right_arm_pd_profile))
+    actuator_compensation_mode = getattr(args, "actuator_compensation_mode", None)
+    if actuator_compensation_mode is not None:
+        cfg = replace(
+            cfg,
+            actuator_compensation_mode=str(actuator_compensation_mode),
+        )
     if args.racket_z_hard_limit_down is not None:
         cfg = replace(cfg, racket_z_hard_limit_down=float(args.racket_z_hard_limit_down))
     if args.racket_z_hard_limit_up is not None:
@@ -824,6 +863,9 @@ def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float, i
                 or key.startswith("raw_action_clip_")
                 or key.startswith("ball_obs_")
                 or key.startswith("hit_camera_")
+                or key.startswith("racket_angular_velocity_")
+                or key == "racket_tilt_angular_speed_rad_s"
+                or key == "racket_spin_angular_speed_rad_s"
                 or key
                 in {
                     "hit_event_count",
@@ -1018,6 +1060,8 @@ def trace_row_from_host(
         "reward": float(host["reward"][env_i]),
         "return": float(host["episode_return"][env_i]),
         "hits": float(host["hit_count"][env_i]),
+        "new_hit": float(host["new_hit"][env_i]),
+        "in_contact": float(host["in_contact"][env_i]),
         "done": float(host["done"][env_i]),
         "terminated": float(host["terminated"][env_i]),
         "truncated": float(host["truncated"][env_i]),
@@ -1098,6 +1142,15 @@ def trace_row_from_host(
             or key.startswith("reset_")
             or key.startswith("ball_obs_")
             or key.startswith("hit_camera_")
+            or key
+            in {
+                "racket_up_cos",
+                "hit_racket_up_cos_sum",
+                "racket_flatness_pen",
+                "racket_tilt_angular_speed_rad_s",
+                "racket_spin_angular_speed_rad_s",
+            }
+            or key.startswith("racket_angular_velocity_")
             or key in {"ball_view_z_high_exceeded", "ball_view_in_bounds", "ball_view_z_ideal"}
         ):
             row[key] = float(value[env_i])

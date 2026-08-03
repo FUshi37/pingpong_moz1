@@ -355,6 +355,40 @@ def test_idealpd67_keeps_72ms_features_but_executes_latest_command() -> None:
     )
 
 
+def test_step_q_ref_bypasses_policy_integrator_but_keeps_actuator_delay() -> None:
+    jax = pytest.importorskip("jax")
+    jnp = pytest.importorskip("jax.numpy")
+    pytest.importorskip("mujoco")
+
+    from mjx_juggle_env import MjxJuggleConfig, MjxJuggleEnv  # noqa: E402
+
+    cfg = MjxJuggleConfig(
+        domain_randomization=False,
+        enable_delay_conditioning=True,
+        delay_min_ms=10.0,
+        delay_max_ms=10.0,
+        delay_jitter_ms=0.0,
+        delay_sampling_mode="uniform",
+        actuator_cmd_filter=False,
+        actuator_compensation_mode="none",
+    )
+    env = MjxJuggleEnv(RL_SIM_DIR / "moz1_pd.xml", n_envs=1, cfg=cfg)
+    state, _obs = env.reset(jax.random.split(jax.random.PRNGKey(2026), 1))
+    warm_q = np.asarray(state.arm_cmd_q)
+    target = jnp.asarray(warm_q + 0.05, dtype=jnp.float32)
+
+    state1, _obs, _reward, _done, metrics1 = env.step_q_ref(state, target)
+    np.testing.assert_allclose(np.asarray(metrics1["q_ref_latest"]), target, atol=1e-7)
+    np.testing.assert_allclose(np.asarray(metrics1["q_ref_active"]), warm_q, atol=1e-7)
+    np.testing.assert_allclose(np.asarray(state1.arm_cmd_q), target, atol=1e-7)
+
+    state2, _obs, _reward, _done, metrics2 = env.step_q_ref(state1, target)
+    np.testing.assert_allclose(np.asarray(metrics2["q_ref_active"]), warm_q, atol=1e-7)
+    state3, _obs, _reward, _done, metrics3 = env.step_q_ref(state2, target)
+    np.testing.assert_allclose(np.asarray(metrics3["q_ref_active"]), target, atol=1e-7)
+    np.testing.assert_allclose(np.asarray(state3.arm_cmd_q), target, atol=1e-7)
+
+
 def test_actual_limiter_reports_bounded_fraction_and_penalizes_preprojection_violation() -> None:
     jax = pytest.importorskip("jax")
     jnp = pytest.importorskip("jax.numpy")

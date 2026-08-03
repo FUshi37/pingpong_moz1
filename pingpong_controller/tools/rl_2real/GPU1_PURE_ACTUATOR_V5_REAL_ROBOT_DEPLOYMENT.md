@@ -1,185 +1,256 @@
-# GPU1 pure-actuator v5 实物部署与提交说明
+# GPU1 pure-actuator v5 代码修改与版本提交说明
 
-## 1. 提交对象
+## 1. 版本范围
 
-- 分支：`main`。
-- 基线提交：`609e8c6f3f32c801b0f2b396fa6f396c6cb47019`
-  (`deploy: add GPU0 measured-observation servo policy`)。
-- 上一个 GPU1 部署提交：`7cf280441c0ba93cf13ebca04887037ffb9d1faf`
-  (`deploy: add GPU1 resume8 inverse-MPC policy`)。
-- 本次模型：
+- 模型提交：`4f47e6d3` (`deploy: add GPU1 pure-actuator policy`)。
+- 基线：`609e8c6f3f32c801b0f2b396fa6f396c6cb47019`。
+- 最佳模型：
   `pingpong_controller/outputs/rl_sim/goal_d455_gpu1_pure_stable_v5_recovery_20260802/mjx_curriculum_best.pkl`。
-- 模型 SHA-256：
+- SHA-256：
   `9d7e94e9ef803fcbe9385ab97485626b2529394be62c75136c69d873adffaa79`。
-- 文件大小：2,589,311 bytes。
+- checkpoint：stage 21、stage update 870、global update 2095、global step
+  `1533116416`，actor 67D、action 7D。
 
-本次只提交一个最佳 checkpoint，不提交 `last`、中间 checkpoint、视频、
-action 曲线、W&B 目录或训练日志。
+本版本的主要修改是引入并训练一套新的右臂执行器模型。模型执行栈固定为：
 
-## 2. 模型选择与训练结果
+```text
+PPO acceleration action
+  -> qdd/qdot/q policy integrator
+  -> per-joint command delay
+  -> underdamped second-order actuator model
+  -> sport task-space fitted MuJoCo position PD
+```
 
-最佳 checkpoint 位于第 21 阶段
-`launch19_final_measured_obsres2mm_sport_nocomp_consolidation`，stage update
-870、global update 2095、global step `1533116416`，best stage score 为
-`38.780487182711454`。网络接口是 67D actor observation、7D action；231D
-asymmetric critic 只在训练中使用。
+本 checkpoint 不使用 compensation、inverse MPC、teacher、servo planner 或
+额外的实际状态 governor。
 
-checkpoint 所在更新的关键指标为：
+## 2. 新执行器模型
 
-| 指标 | 数值 |
+### 2.1 数学模型
+
+每个右臂关节使用带纯延迟的欠阻尼二阶位置响应：
+
+```text
+q_target(t) = q_warm + gain * (q_cmd(t-delay) - q_warm)
+
+q_act'' + 2*zeta*wn*q_act' + wn^2*q_act = wn^2*q_target
+```
+
+其中 `wn`、`zeta`、`gain` 和 delay 均支持每关节独立设置。MJX step 没有使用
+Euler 近似，而是对控制周期内的零阶保持目标使用欠阻尼二阶系统的离散解析
+状态转移矩阵：
+
+```text
+wd    = wn * sqrt(1-zeta^2)
+decay = exp(-zeta*wn*dt)
+
+[q(k+1)]   [a11 a12] [q(k)]   + [1-a11] q_target
+[v(k+1)] = [a21 a22] [v(k)]   + [ -a21] q_target
+```
+
+对应代码：
+
+- 配置字段：`mjx_juggle_env.py` 的 `MjxJuggleConfig.actuator_cmd_model`、
+  `actuator_cmd_natural_frequency_rad_s`、`actuator_cmd_damping_ratio`、
+  `actuator_cmd_gain_per_joint` 和 `actuator_cmd_delay_ms_per_joint`；
+- 参数检查和 delay-ms→step 转换：`MjxJuggleEnv.__init__`；
+- 每关节延迟索引和二阶解析更新：`MjxJuggleEnv._step_impl` 中的
+  `second_order_actuator` 分支；
+- 二阶内部状态：`EnvState.arm_actuator_mode1_q/qvel`。
+
+### 2.2 标称每关节参数
+
+参数由课程中的 `sport_actuator_replay_fit/dr` preset 写入环境：
+
+| Joint | wn (rad/s) | zeta | gain | delay (ms) |
+|---|---:|---:|---:|---:|
+| RightArm-0 | 20.36384925 | 0.391768 | 0.99788351 | 45 |
+| RightArm-1 | 22.65597475 | 0.366169 | 0.99661190 | 50 |
+| RightArm-2 | 22.65047050 | 0.345738 | 0.99231151 | 45 |
+| RightArm-3 | 21.73053300 | 0.346000 | 0.99094239 | 40 |
+| RightArm-4 | 19.66336425 | 0.347896 | 0.982326685 | 35 |
+| RightArm-5 | 22.81552625 | 0.345814 | 0.992694585 | 45 |
+| RightArm-6 | 23.64581725 | 0.380713 | 0.983194325 | 55 |
+
+与旧的单一 `tau/gain` 一阶 command filter 相比，这个模型显式表达了实物中
+观察到的延迟和超调，且允许七个关节具有不同响应。
+
+### 2.3 执行器 DR
+
+`sport_actuator_replay_dr` 在课程允许 actuator DR 的阶段，按 episode 采样：
+
+| DR 参数 | 范围 |
 |---|---:|
-| mean hits | 13.1575 |
-| recent mean hits (hits >= 3) | 13.5603 |
-| mean episode length | 1128.1 |
-| 1200-step episode rate | 0.8973 |
-| hit1 / hit3 / hit12 rate | 1.0000 / 0.9658 / 0.8288 |
-| camera-visible hit rate | 0.9984 |
-| lower-band hit rate | 0.9678 |
-| mean hit horizontal velocity | 0.1358 m/s |
+| natural-frequency scale | [0.90, 1.10] |
+| damping-ratio scale | [0.90, 1.10] |
+| gain scale | [0.99, 1.01] |
+| delay offset | [-2, +1] control steps |
 
-最终收敛窗口为 mean hits 13.3293、hits>=3 mean 13.5203、length fraction
-0.9598、full rate 0.9120，并通过课程收敛判定。本次选择训练过程中按
-task score 冻结的 best checkpoint，不是简单选择最后保存的模型。实物部署前
-的确定性任务回放仍应在目标软件版本和 XML 上单独执行，不能用训练窗口代替。
+DR 状态保存在 `EnvState.second_order_*` 字段中，并在 reset 时采样。课程代码
+将 `dr_randomize_second_order_actuator` 与原课程的 actuator-DR gate 绑定，避免
+球或接触 DR 开启时提前引入执行器 DR。
 
-## 3. 与前两次部署的关键差异
+### 2.4 sport PD profile
 
-本模型不是 GPU1 resume8 的 inverse-MPC 路径，也不是 GPU0 的 servo-planner
-路径。固定执行契约如下：
+`mjx_juggle_env.py` 新增 `SPORT_TASKSPACE_FIT_RIGHT_ARM_PD` 和
+`sport_taskspace_fit_v1`。训练加载基础
+`pingpong_controller/tools/rl_sim/moz1_pd.xml`，再通过
+`_apply_right_arm_pd_profile()` 生成临时 MJX XML；没有修改仓库中的基础 XML。
 
-| 项目 | 本模型 |
-|---|---|
-| 执行器模型 | 训练仿真中使用 second-order sport actuator model |
-| 执行器 compensation | `none` |
-| servo target planner | 关闭 |
-| software command delay/filter | 实物端关闭 |
-| policy/control rate | 200 Hz，`dt=0.005 s` |
-| actor input/output | 67D / 7D |
-| ball observation | 60 Hz 测量保持，位置单位 m、速度单位 m/s |
-| joint state/command | 右臂 7 关节，rad / rad/s / rad |
+该 PD 与二阶 command response 是通过任务空间回放联合选出的 composite plant，
+不能被解释为实物驱动器内部私有 PD 的直接测量值。
 
-训练中的 second-order 响应、每关节延迟和轻量 DR 用来近似真实执行器，并不
-表示部署时还要在软件里再执行一遍同样的延迟/滤波。控制器必须：
+## 3. 课程和训练代码修改
 
-1. 保留 checkpoint 所需的命令历史，以构造 delay-conditioned 67D 观测；
-2. 将当前策略积分得到的名义关节位置目标直接发送给真实驱动；
-3. 不启用 compensation、inverse MPC 或 servo planner；
-4. 仍然经过独立的 `RightArmCommandSafetyLimiter` 和底层驱动限位。
+### 3.1 新 preset
 
-如果把 `arm_actuator_q_ref_active`（仿真延迟后的历史目标）再次发送给实物，
-就会在真实执行器自身延迟之外叠加第二次软件延迟。本次
-`mjx_policy_controller.py` 的最小修复正是避免这个错误。
+`train_juggle_mjx_curriculum.py::_delay_conditioned_control_kwargs()` 新增：
 
-## 4. 本次需要提交的文件
+- `sport_actuator_replay_fit`：固定标称二阶执行器；
+- `sport_actuator_replay_dr`：标称模型加有界 episode DR；
+- `sport_actuator_replay_homotopy_dr`：执行器渐进接入实验；
+- ideal、delay-only、overshoot-only 三个执行器消融 preset。
 
-仅包含：
+本模型实际使用 `sport_actuator_replay_dr`。
 
-1. `pingpong_controller/tools/rl_2real/mjx_policy_controller.py`：
-   compensation=`none` 时输出当前名义目标，历史延迟只服务于观测；
-2. `pingpong_controller/outputs/rl_sim/goal_d455_gpu1_pure_stable_v5_recovery_20260802/mjx_curriculum_best.pkl`：
-   唯一提交的最佳模型；
-3. 本文档。
+### 3.2 新课程 profile
 
-以下运行时文件已经存在于 `main`，本次不重复修改：
+本模型使用：
 
-- `pingpong_controller/pingpong_node.py`；
-- `pingpong_controller/mjx_policy.py`；
-- `pingpong_controller/safety_limiter.py`；
+```text
+goal_d455_sport_taskspace_obsres2mm_nocomp_direct_v1
+```
+
+它复用 GPU0 文档中的21阶段课程槽位、DR 顺序和 full-episode 进阶逻辑，并通过
+`_sport_taskspace_obsres2mm_nocomp_direct_v1_stages()` 针对无补偿二阶执行器增加：
+
+- 右臂姿态与软范围 reward；
+- 关节速度/加速度 envelope 使用代价，不缩小物理范围；
+- action smoothness 和 delay jerk reward；
+- 接触时拍面水平度、角速度约束指标；
+- hit-to-hit joint-cycle closure、excursion 和 action-DC reward；
+- launch01 起的击球高度损失，抑制二次击球过冲；
+- early-stage convergence hold，防止刚过门槛立即进阶。
+
+`_sport_pure_actuator_quality_repair_stages()` 进一步加入：
+
+- 更明确的 D455 view-center reward；
+- 缩小逐次击球关节单向漂移的免费 deadband；
+- 击球后主动大幅下降/远离球的 retreat reward。
+
+这些均为训练 reward 和 checkpoint 选择指标，不是部署时的隐藏控制器。
+
+### 3.3 训练入口
+
+精确训练入口：
+
+```text
+pingpong_controller/tools/rl_sim/launch_gpu1_pure_stable_v5_recovery.sh
+```
+
+核心参数：GPU1、seed 976、640 environments、128 rollout steps、batch 16384、
+4 epochs、LR `2e-4`、clip `0.15`；stage 18 后切换为 256 steps、2 epochs、
+LR `5e-5`。启动脚本通过 `run_with_host_memory_guard.sh` 保留主机可用内存并在
+内存压力过高时请求训练安全停止。
+
+该 run 从本机 v4 的 `mjx_curriculum_last.pkl`、stage 17 继续训练。按照“只提交
+最佳模型”的要求，v4 和 v5 中间 checkpoint 不提交。因此本版本可以审计和
+验证最终 checkpoint，但若要逐 step 重放 v4→v5 优化历史，仍需训练归档中的
+v4 checkpoint 和 optimizer 状态。
+
+## 4. checkpoint 与部署控制器修改
+
+训练器把完整 `env_config` 保存进 checkpoint，其中包括二阶执行器参数、DR、
+67D delay-conditioned observation、compensation mode 和 planner flags。
+
+`mjx_policy_controller.py` 从 checkpoint 读取这些配置，用它们恢复 actor 的
+67D observation contract。对于本模型：
+
+```text
+actuator_cmd_model = second_order
+actuator_compensation_mode = none
+arm_servo_target_tracking_planner = false
+enable_delay_conditioning = true
+```
+
+部署控制器保留 command history 来构造训练时使用的 active-command/error 特征，
+但 compensation=`none` 时返回 `arm_actuator_q_ref_latest`，不返回
+`arm_actuator_q_ref_active`。这项修改防止把仿真中的 command delay 再串联到
+本身已经有延迟和超调的实物执行器上。
+
+对应提交代码位于：
+
+```text
+MJXPolicyController.predict()
+  direct_physical_actuator
+  deployment_q
+```
+
+## 5. 仿真验证和测试修改
+
+- `validate_juggle_mjx_ppo.py`：从 checkpoint 恢复执行器环境配置，并补充
+  contact、拍面角速度和姿态诊断 trace；
+- `test_goal_d455_curriculum.py`：检查 sport preset 的二阶参数、DR 阶段绑定、
+  direct/no-comp/no-planner 契约以及 launch00 full gate；
+- `test_delay_conditioned_control.py`：检查 q-reference、延迟 buffer 和执行器
+  输入语义；
+- `test_sim2real_bridger.py`：检查 MJX/NumPy 共享控制原语的一致性；
+- `sim2real_bridger.py` 和 `delay_control.py`：提供环境导入所需的共享原语及
+  package/direct-script 两种导入方式。
+
+共享仿真文件仍保留其他实验模式，但本 checkpoint 的配置将它们全部关闭；
+它们不属于本模型的实际执行栈。
+
+## 6. 本版本提交文件
+
+模型部署提交 `4f47e6d3`：
+
+- `pingpong_controller/outputs/rl_sim/goal_d455_gpu1_pure_stable_v5_recovery_20260802/mjx_curriculum_best.pkl`；
+- `pingpong_controller/tools/rl_2real/mjx_policy_controller.py`；
+- 本说明文档的初版。
+
+新执行器仿真源码 companion commit：
+
+- `pingpong_controller/tools/rl_sim/mjx_juggle_env.py`；
+- `pingpong_controller/tools/rl_sim/train_juggle_mjx_curriculum.py`；
+- `pingpong_controller/tools/rl_sim/validate_juggle_mjx_ppo.py`；
+- `pingpong_controller/tools/rl_sim/sim2real_bridger.py`；
 - `pingpong_controller/tools/rl_sim/delay_control.py`；
-- `pingpong_controller/models/moz1_pd.xml`。
+- `pingpong_controller/tools/rl_sim/launch_gpu1_pure_stable_v5_recovery.sh`；
+- `pingpong_controller/tools/rl_sim/run_with_host_memory_guard.sh`；
+- `test/test_goal_d455_curriculum.py`；
+- `test/test_delay_conditioned_control.py`；
+- `test/test_sim2real_bridger.py`；
+- 本说明文档的代码变更版。
 
-当前工作区的 XML、训练代码、补偿器、jerk/governor、缓存和其他实验输出均
-与该 checkpoint 的最小部署无关，禁止加入本提交。
+明确排除：基础 XML 的本地实验修改、GPU0 脚本、teacher reference、模型逆补偿
+网络、视频、action 曲线、W&B、训练日志、`last` 和中间 checkpoint。
 
-## 5. 部署前冒烟测试
+## 7. 精确提交指令
 
-先验证模型加载、维度、FK 和控制器输出：
-
-```bash
-cd /home/yangzhe/Project/pingpong_controller
-PYTHONPATH=pingpong_controller/tools/rl_sim \
-/home/yangzhe/miniconda3/envs/pingpong/bin/python \
-  pingpong_controller/tools/rl_2real/mjx_policy_controller.py \
-  --checkpoint pingpong_controller/outputs/rl_sim/goal_d455_gpu1_pure_stable_v5_recovery_20260802/mjx_curriculum_best.pkl \
-  --robot-xml pingpong_controller/models/moz1_pd.xml \
-  --steps 20 --ball-valid \
-  --arm-q-deg 32,-58,43,98,26,-6,47 \
-  --arm-dq-deg-s 0,0,0,0,0,0,0
-```
-
-检查输出至少满足：`obs_dim=67`、`act_dim=7`、delay conditioning 开启、
-`actuator_compensation_mode=none`、`drive_target_tracking_planner=False`，且
-全部输出有限。代码级验证还必须满足 published command 等于 latest nominal
-target，而不是 delayed active target。
-
-## 6. ROS 2 启动示例
-
-完成工作区构建并 source 后：
-
-```bash
-cd /home/yangzhe/Project/pingpong_controller
-source install/setup.bash
-ros2 run pingpong_controller pingpong_node --ros-args \
-  -p enable_rl_policy:=true \
-  -p rl_policy_backend:=mjx \
-  -p rl_model_path:=$PWD/pingpong_controller/outputs/rl_sim/goal_d455_gpu1_pure_stable_v5_recovery_20260802/mjx_curriculum_best.pkl \
-  -p robot_xml_path:=$PWD/pingpong_controller/models/moz1_pd.xml \
-  -p rl_require_fk:=true \
-  -p control_rate_hz:=200.0 \
-  -p rl_policy_dt:=0.005 \
-  -p rl_action_gain:=1.0 \
-  -p rl_action_scale_mult:=1.0 \
-  -p record_rl_trace:=true
-```
-
-不要额外打开 compensation、command-delay filter 或 servo planner。启动日志
-应显示 MJX backend、67D actor，并显示 compensation=`none`、planner=false。
-
-## 7. 实物上机顺序与安全检查
-
-该模型已通过仿真回放和控制器推理检查，但尚不能把这些结果等同于实物安全
-验证。首次上机按以下顺序进行：
-
-1. 机器人禁能或命令 topic 重映射时启动节点，确认关节顺序、符号、单位、
-   `base_link` 球坐标和 200 Hz 周期；
-2. 确认控制器读取的是真实 `q/dq`，球丢失、过期和无效状态能阻止危险输出；
-3. 首次使能使用 `rl_action_gain:=0.1`，无球短时检查关节方向、命令跳变、
-   safety limiter、急停和通信 watchdog；
-4. 再按 0.2、0.4、0.7、1.0 分级增加，每级记录
-   `/pingpong/rl_joint_cmd_state` 和 RL trace；
-5. 每级检查肘部外翻/内翻、拍面倾斜、命令速度/加速度、驱动跟踪误差、温度
-   和限位触发。任一项异常立即停机，不通过增益或补偿器掩盖坐标/时序错误。
-
-模型训练时使用完整 `action_gain=1.0`。低增益只用于受控 bring-up，不代表
-最终部署配置；增益变化会改变闭环行为，必须逐级验证。
-
-## 8. 精确提交指令
-
-由于工作区很脏，必须按文件暂存，禁止 `git add .`：
+当前工作区包含其他实验，必须逐文件暂存：
 
 ```bash
 cd /home/yangzhe/Project/pingpong_controller
 git switch main
-git add -p pingpong_controller/tools/rl_2real/mjx_policy_controller.py
 git add pingpong_controller/tools/rl_2real/GPU1_PURE_ACTUATOR_V5_REAL_ROBOT_DEPLOYMENT.md
-git add pingpong_controller/outputs/rl_sim/goal_d455_gpu1_pure_stable_v5_recovery_20260802/mjx_curriculum_best.pkl
+git add pingpong_controller/tools/rl_sim/mjx_juggle_env.py
+git add pingpong_controller/tools/rl_sim/train_juggle_mjx_curriculum.py
+git add pingpong_controller/tools/rl_sim/validate_juggle_mjx_ppo.py
+git add pingpong_controller/tools/rl_sim/sim2real_bridger.py
+git add pingpong_controller/tools/rl_sim/delay_control.py
+git add pingpong_controller/tools/rl_sim/launch_gpu1_pure_stable_v5_recovery.sh
+git add pingpong_controller/tools/rl_sim/run_with_host_memory_guard.sh
+git add test/test_goal_d455_curriculum.py
+git add test/test_delay_conditioned_control.py
+git add test/test_sim2real_bridger.py
+git diff --cached --check
 git diff --cached --stat
 git diff --cached --name-only
-sha256sum pingpong_controller/outputs/rl_sim/goal_d455_gpu1_pure_stable_v5_recovery_20260802/mjx_curriculum_best.pkl
-git commit -m "deploy: add GPU1 pure-actuator policy"
+git commit -m "sim: version GPU1 sport actuator training stack"
 ```
 
-执行 `git add -p` 时，只选择 `predict()` 末尾从 delayed active target 改为
-latest nominal target 的 hunk，拒绝同一文件中所有 compensation 实验 hunk。
-自动化操作可用等价的 index-only patch。提交后检查：
-
-```bash
-git show --stat --oneline HEAD
-git show --name-only --format= HEAD
-git status --short
-```
-
-如需同步远端，在再次确认提交文件只有上述三项后执行：
+提交后只有在确认文件列表与第6节一致时才同步远端：
 
 ```bash
 git push origin main

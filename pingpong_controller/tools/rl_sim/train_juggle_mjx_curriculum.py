@@ -109,6 +109,12 @@ DELAY_ABLATION_PRESETS = (
     "delay_command_state_phase_smoothing_antiwindup",
     "real_actuator_replay_hidden50",
     "real_actuator_replay_fit",
+    "sport_actuator_replay_fit",
+    "sport_actuator_replay_dr",
+    "sport_actuator_replay_homotopy_dr",
+    "sport_actuator_ablation_ideal",
+    "sport_actuator_ablation_delay_only",
+    "sport_actuator_ablation_overshoot_only",
     "real_actuator_replay_dr",
 )
 
@@ -176,6 +182,38 @@ GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_LAUNCH17_ORTHOGONAL_BRIDGE_PROFIL
 GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_LAUNCH17_OBSRES2MM_SERVO_PROFILE = (
     "goal_d455_autolaunch_viewdense_constrained_mpc_launch17_obsres2mm_servo_v5"
 )
+GOAL_D455_AUTOLAUNCH_SPORT_ACTUATOR_OBSRES2MM_NOCOMP_PROFILE = (
+    "goal_d455_autolaunch_sport_actuator_obsres2mm_nocomp_v1"
+)
+GOAL_D455_AUTOLAUNCH_SPORT_ACTUATOR_OBSRES2MM_INVERSEMPC_PROFILE = (
+    "goal_d455_autolaunch_sport_actuator_obsres2mm_inversempc_v1"
+)
+GOAL_D455_SPORT_TASKSPACE_SUCCESSREF_OBSRES2MM_NOCOMP_PROFILE = (
+    "goal_d455_sport_taskspace_successref_obsres2mm_nocomp_v1"
+)
+GOAL_D455_SPORT_TASKSPACE_OBSRES2MM_NOCOMP_DIRECT_PROFILE = (
+    "goal_d455_sport_taskspace_obsres2mm_nocomp_direct_v1"
+)
+GOAL_D455_SPORT_TASKSPACE_OBSRES2MM_ANALYTIC_DIRECT_PROFILE = (
+    "goal_d455_sport_taskspace_obsres2mm_analytic_direct_v1"
+)
+GOAL_D455_SPORT_TASKSPACE_SUCCESSREF_PROFILES = (
+    GOAL_D455_SPORT_TASKSPACE_SUCCESSREF_OBSRES2MM_NOCOMP_PROFILE,
+)
+GOAL_D455_AUTOLAUNCH_SPORT_ACTUATOR_PROFILES = (
+    GOAL_D455_AUTOLAUNCH_SPORT_ACTUATOR_OBSRES2MM_NOCOMP_PROFILE,
+    GOAL_D455_AUTOLAUNCH_SPORT_ACTUATOR_OBSRES2MM_INVERSEMPC_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_OBSRES2MM_NOCOMP_DIRECT_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_OBSRES2MM_ANALYTIC_DIRECT_PROFILE,
+    *GOAL_D455_SPORT_TASKSPACE_SUCCESSREF_PROFILES,
+)
+SPORT_PERSISTENT_ANALYTIC_COMPENSATION_MODES = {
+    "sport_persistent_analytic_inverse",
+    "sport_persistent_analytic_smith",
+    "sport_persistent_analytic_smith_dob",
+    "sport_persistent_analytic_smith_dob_harmonic",
+    "sport_persistent_analytic_full",
+}
 GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_COUNT_PROGRESS_PROFILE = (
     "goal_d455_autolaunch_viewdense_constrained_mpc_count_progress_v1"
 )
@@ -247,6 +285,7 @@ GOAL_D455_AUTOLAUNCH_PROFILES = (
     GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_LAUNCH17_AXIS_BRIDGE_PROFILE,
     GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_LAUNCH17_ORTHOGONAL_BRIDGE_PROFILE,
     GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_LAUNCH17_OBSRES2MM_SERVO_PROFILE,
+    *GOAL_D455_AUTOLAUNCH_SPORT_ACTUATOR_PROFILES,
     GOAL_D455_AUTOLAUNCH_VIEWDENSE_CONSTRAINED_MPC_COUNT_PROGRESS_PROFILE,
     GOAL_D455_AUTOLAUNCH_TEACHER_STUDENT_PROFILE,
     GOAL_D455_AUTOLAUNCH_ACTUATOR_INVERSEMPC_SUCCESSREF_NOGOV_PROFILE,
@@ -382,10 +421,16 @@ class CurriculumStage:
     max_recent_mean_hit_camera_v_frac: float | None = None
     target_episode_truncation_rate: float | None = None
     target_racket_up_cos: float | None = None
+    max_recent_hit_racket_angular_speed_rad_s: float | None = None
+    max_recent_arm_posture_error_deg: float | None = None
+    max_recent_phase_teacher_q_norm_error: float | None = None
     min_ball_obs_missing_refresh_rate: float | None = None
     max_ball_obs_lost_rate: float | None = None
     policy_updates_enabled: bool = True
     max_updates: int | None = None
+    # Require the complete rolling-window gate to stay true before advancing.
+    # One preserves the behavior of historical profiles.
+    convergence_hold_updates: int = 1
 
 
 class StopRequest:
@@ -3608,6 +3653,805 @@ def _goal_d455_autolaunch_viewdense_constrained_mpc_launch17_obsres2mm_servo_v5_
         ),
     )
     return [*stages[:19], launch17, final]
+
+
+def _sport_taskspace_obsres2mm_nocomp_direct_v1_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Adapt the documented 21-stage GPU0 course to the uncompensated plant.
+
+    This deliberately does not prepend an acquisition ladder or duplicate any
+    DR stage.  Keep the documented hit/length/full-episode/DR progression in
+    every slot, including launch00 full>=0.02.  The full-episode gate is the
+    only early criterion that proves the policy has discovered a genuinely
+    stable repeated-contact orbit rather than a short hit-count burst.  Adapt
+    reward shaping for the uncompensated plant without weakening that
+    graduation contract.
+    """
+
+    if len(stages) != 21:
+        raise ValueError(
+            "sport direct no-comp profile expects the documented 21-stage course"
+        )
+
+    adapted: list[CurriculumStage] = []
+    for index, stage in enumerate(stages):
+        # Shape acquisition gently, then tighten periodicity only after the
+        # policy can already sustain several contacts.  Starting launch00 at
+        # the final weights makes a rare third hit carry several unrelated
+        # event costs and can suppress the repeated-contact discovery itself.
+        if index == 0:
+            cycle_closure_weight = 0.50
+            cycle_action_dc_weight = 0.10
+            cycle_excursion_weight = 0.25
+        elif index <= 2:
+            cycle_closure_weight = 1.00
+            cycle_action_dc_weight = 0.25
+            cycle_excursion_weight = 0.50
+        elif index <= 5:
+            cycle_closure_weight = 2.00
+            cycle_action_dc_weight = 0.50
+            cycle_excursion_weight = 1.00
+        else:
+            cycle_closure_weight = 4.00
+            cycle_action_dc_weight = 0.75
+            cycle_excursion_weight = 1.50
+        cfg = replace(
+            stage.cfg,
+            # The reference servo/inverse-MPC plant did not need posture
+            # shaping.  Without compensation, zero posture cost admits the
+            # observed flying-elbow solution because only racket pose matters.
+            posture_weight=max(0.02, float(stage.cfg.posture_weight)),
+            # Preserve the hardware velocity/acceleration envelopes.  Natural
+            # motion is learned through below-limit usage costs and right-arm
+            # posture shaping, not by pretending the physical robot is slower.
+            arm_posture_penalty_weight=max(
+                0.10, float(stage.cfg.arm_posture_penalty_weight)
+            ),
+            arm_command_posture_penalty_weight=max(
+                0.06, float(stage.cfg.arm_command_posture_penalty_weight)
+            ),
+            arm_posture_soft_limit_penalty_weight=max(
+                0.80, float(stage.cfg.arm_posture_soft_limit_penalty_weight)
+            ),
+            arm_posture_joint_weights=(2.0, 2.5, 2.0, 1.0, 1.5, 0.75, 0.5),
+            arm_posture_soft_limit_deg=(35.0, 35.0, 35.0, 45.0, 40.0, 55.0, 60.0),
+            arm_velocity_usage_penalty_weight=max(
+                0.04, float(stage.cfg.arm_velocity_usage_penalty_weight)
+            ),
+            arm_acceleration_usage_penalty_weight=max(
+                0.015, float(stage.cfg.arm_acceleration_usage_penalty_weight)
+            ),
+            arm_vel_limit_penalty_weight=max(
+                0.06, float(stage.cfg.arm_vel_limit_penalty_weight)
+            ),
+            arm_acc_limit_penalty_weight=max(
+                0.08, float(stage.cfg.arm_acc_limit_penalty_weight)
+            ),
+            arm_limiter_penalty_weight=max(
+                0.05, float(stage.cfg.arm_limiter_penalty_weight)
+            ),
+            # Keep execution pure: the policy command goes directly into the
+            # fitted actuator model.  Anti-windup rescales commands from plant
+            # tracking error and would itself be an extra downstream policy.
+            enable_anti_windup=False,
+            best_checkpoint_max_arm_posture_soft_exceed_fraction=0.02,
+            best_checkpoint_max_arm_command_soft_exceed_fraction=0.02,
+            best_checkpoint_max_arm_qvel_limit_exceed_fraction=0.005,
+            best_checkpoint_max_arm_qacc_limit_exceed_fraction=0.01,
+            # Preserve the reference course's causal command smoothing.  It
+            # is especially important for the delayed underdamped actuator,
+            # but remains a reward term rather than a hidden downstream plan.
+            action_delta_penalty_weight=max(
+                0.0012, float(stage.cfg.action_delta_penalty_weight)
+            ),
+            delay_action_jerk_penalty_weight=max(
+                3.0e-7, float(stage.cfg.delay_action_jerk_penalty_weight)
+            ),
+            # A deployment-facing direct policy must contact the ball with an
+            # approximately horizontal racket.  The inherited branch had both
+            # flatness penalties disabled and accepted cos(up)>=0.955 (about
+            # 17 degrees), which explains the visibly tilted impacts.
+            racket_flatness_penalty_weight=max(
+                0.08, float(stage.cfg.racket_flatness_penalty_weight)
+            ),
+            racket_flatness_target_cos=max(
+                0.985, float(stage.cfg.racket_flatness_target_cos)
+            ),
+            racket_flatness_sigma=min(
+                0.030, float(stage.cfg.racket_flatness_sigma)
+            ),
+            hit_flatness_target_cos=max(
+                0.990, float(stage.cfg.hit_flatness_target_cos)
+            ),
+            hit_flatness_sigma=min(
+                0.020, float(stage.cfg.hit_flatness_sigma)
+            ),
+            center_flat_hit_reward_weight=max(
+                2.40, float(stage.cfg.center_flat_hit_reward_weight)
+            ),
+            hit_flatness_excess_penalty_weight=max(
+                1.50, float(stage.cfg.hit_flatness_excess_penalty_weight)
+            ),
+            contact_flatness_penalty_weight=max(
+                0.80, float(stage.cfg.contact_flatness_penalty_weight)
+            ),
+            # Horizontal contact alone does not prevent the face from rotating
+            # rapidly through the collision.  Penalize realized rigid-body
+            # angular speed at the counted hit while leaving translational
+            # racket speed and the robot's physical joint limits unchanged.
+            hit_racket_angular_speed_penalty_weight=max(
+                0.10 if index == 0 else 0.30,
+                float(stage.cfg.hit_racket_angular_speed_penalty_weight),
+            ),
+            hit_racket_angular_speed_soft_limit_rad_s=min(
+                1.20,
+                float(stage.cfg.hit_racket_angular_speed_soft_limit_rad_s),
+            ),
+            hit_racket_angular_speed_scale_rad_s=min(
+                1.50,
+                float(stage.cfg.hit_racket_angular_speed_scale_rad_s),
+            ),
+            # Penalize only non-closing hit-to-hit cycles and their net action
+            # bias.  Physical q/dq/qdd limits and large-displacement recovery
+            # remain unchanged; this is not a hidden controller or planner.
+            hit_cycle_q_closure_penalty_weight=max(
+                cycle_closure_weight,
+                float(stage.cfg.hit_cycle_q_closure_penalty_weight),
+            ),
+            hit_cycle_joint_weights=(2.0, 2.5, 2.0, 1.25, 1.5, 1.0, 1.0),
+            hit_cycle_action_dc_penalty_weight=max(
+                cycle_action_dc_weight,
+                float(stage.cfg.hit_cycle_action_dc_penalty_weight),
+            ),
+            hit_cycle_q_excursion_penalty_weight=max(
+                cycle_excursion_weight,
+                float(stage.cfg.hit_cycle_q_excursion_penalty_weight),
+            ),
+            # The reference servo/planner stack bounded contact impulse in
+            # launch01--16 even though their explicit height loss was zero.
+            # The direct underdamped plant has no such downstream mechanism:
+            # experiments showed 83.6% of two-hit episodes terminating above
+            # the z limit, with second-hit vz rising from 1.88 to 3.14 m/s.
+            # Activate half of the documented launch17 event loss as soon as
+            # the course first asks for a repeat hit; weight 6 eliminated the
+            # high exits but over-corrected them into low exits.  Leave
+            # launch00 acquisition free.
+            hit_height_penalty_weight=(
+                max(3.0, float(stage.cfg.hit_height_penalty_weight))
+                if index >= 1
+                else float(stage.cfg.hit_height_penalty_weight)
+            ),
+        )
+        adapted.append(
+            replace(
+                stage,
+                cfg=cfg,
+                convergence_hold_updates=(12 if index <= 2 else (8 if index <= 4 else 4)),
+                max_recent_hit_racket_angular_speed_rad_s=(
+                    1.80 if index == 0 else 1.50
+                ),
+                target_episode_truncation_rate=stage.target_episode_truncation_rate,
+                notes=(
+                    f"{stage.notes}  Direct uncompensated sport adaptation: "
+                    "retain this exact GPU0 course slot, DR domain, and "
+                    "progressive full-episode graduation gate; mild posture and "
+                    "causal command-smoothness, horizontal-contact shaping, "
+                    "stage-ramped self-referential hit-cycle closure and excursion, "
+                    "right-arm posture, "
+                    "and physical-envelope usage costs prevent delay/overshoot "
+                    "from being solved by redundant-arm drift without reducing "
+                    "the robot's physical speed or acceleration limits; from launch01, "
+                    "a half-strength late-stage height loss closes the measured "
+                    "second-hit vertical-overshoot loophole."
+                ),
+            )
+        )
+    return adapted
+
+
+def _sport_pure_actuator_quality_repair_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Repair view and slow joint-ratchet loopholes for the full plant.
+
+    This shaping is intentionally not applied to the homotopy/phase-teacher
+    run: its measured failure is an actuator curriculum discontinuity, while
+    the full-plant run exhibits a distinct high-hit, low-view local optimum.
+    """
+
+    repaired: list[CurriculumStage] = []
+    for index, stage in enumerate(stages):
+        cfg = replace(
+            stage.cfg,
+            arm_posture_penalty_weight=max(
+                0.12, float(stage.cfg.arm_posture_penalty_weight)
+            ),
+            arm_command_posture_penalty_weight=max(
+                0.07, float(stage.cfg.arm_command_posture_penalty_weight)
+            ),
+            arm_posture_soft_limit_penalty_weight=max(
+                0.90, float(stage.cfg.arm_posture_soft_limit_penalty_weight)
+            ),
+            hit_cycle_q_closure_penalty_weight=max(
+                0.75 if index == 0 else (1.25 if index <= 2 else 2.0),
+                float(stage.cfg.hit_cycle_q_closure_penalty_weight),
+            ),
+            # Still allows broad cyclic recovery, but no longer grants 8--15
+            # free degrees in the same direction after every contact.
+            hit_cycle_q_deadband_deg=(6.0, 6.0, 8.0, 9.0, 9.0, 11.0, 11.0),
+            ball_view_xy_center_penalty_weight=max(
+                0.075, float(stage.cfg.ball_view_xy_center_penalty_weight)
+            ),
+            ball_view_out_of_bounds_penalty_weight=max(
+                0.30, float(stage.cfg.ball_view_out_of_bounds_penalty_weight)
+            ),
+            hit_apex_view_center_penalty_weight=max(
+                0.06 if index == 0 else (0.10 if index <= 4 else 0.12),
+                float(stage.cfg.hit_apex_view_center_penalty_weight),
+            ),
+            # The previous pure-actuator policy fell 8.6 cm on average in the
+            # first 300 ms after a hit.  Allow a natural 3.5 cm reset, but make
+            # the large active retreat costly without imposing a trajectory.
+            post_hit_racket_retreat_penalty_weight=max(
+                0.35, float(stage.cfg.post_hit_racket_retreat_penalty_weight)
+            ),
+            post_hit_racket_retreat_window_s=0.35,
+            post_hit_racket_retreat_deadband_m=0.035,
+            post_hit_racket_retreat_scale_m=0.050,
+            post_hit_racket_downward_speed_soft_limit_m_s=0.15,
+            post_hit_racket_downward_speed_scale_m_s=0.50,
+        )
+        repaired.append(
+            replace(
+                stage,
+                cfg=cfg,
+                notes=(
+                    f"{stage.notes} Pure full-actuator quality repair: align "
+                    "the hit-apex reward with the existing D455 view gate and "
+                    "close the per-hit joint-ratchet deadband; no teacher, "
+                    "compensation, planner, hard joint range, or reduced "
+                    "velocity/acceleration envelope."
+                ),
+            )
+        )
+    return repaired
+
+
+def _sport_taskspace_successref_obsres2mm_nocomp_v1_stages(
+    inherited: list[CurriculumStage],
+    *,
+    stage_steps_override: int | None,
+    experiment: str = "baseline",
+) -> list[CurriculumStage]:
+    """Build a sport-plant hit-count ladder before the proven D455 DR tail.
+
+    The servo reference can ask launch00 for a full 1200-step episode because
+    its inverse-MPC and trajectory planner already make repeated contacts easy.
+    The fitted sport task-space plant must first acquire the repeated-contact
+    attractor.  Keep hits one through three free of recoverability penalties,
+    then ramp the same centre-return signals used by the successful reference
+    only after a three-hit policy has graduated.  The inherited ball/contact/
+    actuator/geometry/observation sequence and final 13-hit gate are retained.
+    """
+
+    if len(inherited) != 21:
+        raise ValueError(
+            "sport success-reference profile expects the 21-stage measured-2mm course"
+        )
+    if experiment not in {
+        "baseline", "count", "recover", "combined", "indexed", "preparatory",
+        "contact_velocity",
+        "contact_quality",
+        "formal_v2", "formal_v2_posture003", "formal_v2_posture010", "formal_v2_posture100",
+    }:
+        raise ValueError(f"unknown sport success-reference experiment: {experiment}")
+
+    formal_v2 = experiment.startswith("formal_v2")
+    stage3_posture_weight = {
+        "formal_v2_posture003": 0.03,
+        "formal_v2_posture010": 0.10,
+        "formal_v2_posture100": 1.00,
+    }.get(experiment)
+    stage2_combo = (
+        0.20
+        if experiment in {
+            "count", "combined", "indexed", "preparatory", "contact_velocity",
+            "contact_quality",
+            "formal_v2", "formal_v2_posture003", "formal_v2_posture010", "formal_v2_posture100",
+        }
+        else 0.06
+    )
+    stage2_recover = experiment in {"recover", "combined"}
+    stage2_indexed = experiment == "indexed"
+    stage2_preparatory = experiment == "preparatory"
+    stage2_contact_velocity = experiment == "contact_velocity"
+    stage2_contact_quality = experiment == "contact_quality"
+    stage2_strong_recover = (
+        stage2_indexed
+        or stage2_preparatory
+        or stage2_contact_velocity
+        or stage2_contact_quality
+    )
+
+    def steps(default_steps: int) -> int:
+        return (
+            int(stage_steps_override)
+            if stage_steps_override is not None
+            else int(default_steps)
+        )
+
+    def reward_cfg(
+        cfg: MjxJuggleConfig,
+        *,
+        combo: float,
+        post_vxy: float = 0.0,
+        hit_vxy_weight: float = 0.0,
+        hit_vxy_limit: float = 0.80,
+        next_anchor_weight: float = 0.0,
+        next_anchor_sigma: float = 0.16,
+        recoverability_min_count: int = 1,
+        hit_racket_vxy_weight: float = 0.0,
+        hit_racket_vxy_limit: float = 0.35,
+        contact_center_weight: float = 0.0,
+        command_tracking_weight: float | None = None,
+        arm_acc_limit_weight: float | None = None,
+        combo_quality_independent: bool = False,
+        posture_weight: float | None = None,
+        racket_flatness_weight: float | None = None,
+        contact_flatness_weight: float | None = None,
+    ) -> MjxJuggleConfig:
+        return replace(
+            cfg,
+            hit_reward_combo=float(combo),
+            hit_combo_count_cap=14,
+            post_hit_ball_vxy_penalty_weight=float(post_vxy),
+            hit_vxy_penalty_weight=float(hit_vxy_weight),
+            hit_vxy_soft_limit_m_s=float(hit_vxy_limit),
+            hit_next_contact_anchor_penalty_weight=float(next_anchor_weight),
+            hit_next_contact_anchor_sigma_m=float(next_anchor_sigma),
+            hit_recoverability_min_count=int(recoverability_min_count),
+            hit_racket_vxy_penalty_weight=float(hit_racket_vxy_weight),
+            hit_racket_vxy_soft_limit_m_s=float(hit_racket_vxy_limit),
+            hit_contact_center_excess_penalty_weight=float(contact_center_weight),
+            command_tracking_error_penalty_weight=(
+                float(cfg.command_tracking_error_penalty_weight)
+                if command_tracking_weight is None
+                else float(command_tracking_weight)
+            ),
+            arm_acc_limit_penalty_weight=(
+                float(cfg.arm_acc_limit_penalty_weight)
+                if arm_acc_limit_weight is None
+                else float(arm_acc_limit_weight)
+            ),
+            hit_combo_quality_independent=bool(combo_quality_independent),
+            posture_weight=(
+                float(cfg.posture_weight)
+                if posture_weight is None
+                else float(posture_weight)
+            ),
+            racket_flatness_penalty_weight=(
+                float(cfg.racket_flatness_penalty_weight)
+                if racket_flatness_weight is None
+                else float(racket_flatness_weight)
+            ),
+            contact_flatness_penalty_weight=(
+                float(cfg.contact_flatness_penalty_weight)
+                if contact_flatness_weight is None
+                else float(contact_flatness_weight)
+            ),
+        )
+
+    def ladder_stage(
+        template: CurriculumStage,
+        *,
+        name: str,
+        total_steps: int,
+        cfg: MjxJuggleConfig,
+        notes: str,
+        target_hits: float,
+        target_len: float,
+        min_updates: int,
+        hit1: float,
+        hit3: float | None,
+        hits_ge3: float | None,
+        full_rate: float | None,
+        hit12: float | None = None,
+        max_hit_vxy: float | None = None,
+        max_next_anchor: float | None = None,
+    ) -> CurriculumStage:
+        return replace(
+            template,
+            name=name,
+            total_steps=steps(total_steps),
+            cfg=cfg,
+            notes=notes,
+            gate_mode="strict",
+            advance_gate_mode="collapse",
+            target_mean_hits=float(target_hits),
+            target_mean_len_frac=float(target_len),
+            min_updates=int(min_updates),
+            max_updates=None,
+            min_recent_mean_return=None,
+            target_hit1_rate=float(hit1),
+            target_hit3_rate=hit3,
+            target_hit12_rate=hit12,
+            target_mean_hits_ge3=hits_ge3,
+            target_episode_truncation_rate=full_rate,
+            target_min_hit_interval_s=(0.32 if hit3 is not None else None),
+            target_max_hit_interval_s=(0.58 if hit3 is not None else None),
+            target_hit_camera_visible_rate=None,
+            target_hit_camera_lower_band_rate=None,
+            max_recent_mean_hit_vxy=max_hit_vxy,
+            max_recent_hit_next_contact_anchor_err=max_next_anchor,
+            max_recent_mean_hit_camera_v_frac=None,
+            target_racket_up_cos=None,
+            min_ball_obs_missing_refresh_rate=None,
+            max_ball_obs_lost_rate=None,
+        )
+
+    acquisition = inherited[0]
+    local = inherited[1]
+    workspace = inherited[2]
+    ladder = [
+        ladder_stage(
+            acquisition,
+            name="sport00_first_hit_acquisition",
+            total_steps=3_000_000,
+            cfg=reward_cfg(
+                acquisition.cfg,
+                combo=0.0,
+                command_tracking_weight=0.08 if formal_v2 else None,
+                arm_acc_limit_weight=0.002 if formal_v2 else None,
+            ),
+            notes="Acquire the first valid upward hit on the nominal sport task-space plant; no recoverability penalty is active.",
+            target_hits=0.95,
+            target_len=0.09,
+            min_updates=20,
+            hit1=0.75,
+            hit3=None,
+            hits_ge3=None,
+            full_rate=None,
+        ),
+        ladder_stage(
+            acquisition,
+            name="sport01_two_hit_acquisition",
+            total_steps=4_000_000,
+            cfg=reward_cfg(
+                acquisition.cfg,
+                combo=0.03,
+                recoverability_min_count=2 if formal_v2 else 1,
+                hit_racket_vxy_weight=2.0 if formal_v2 else 0.0,
+                hit_racket_vxy_limit=0.35,
+                contact_center_weight=0.15 if formal_v2 else 0.0,
+                command_tracking_weight=0.10 if formal_v2 else None,
+                arm_acc_limit_weight=0.003 if formal_v2 else None,
+            ),
+            notes="Acquire a repeat contact while preserving exploration; later hits receive only a small count bonus.",
+            target_hits=1.80,
+            target_len=0.15,
+            min_updates=25,
+            hit1=0.92,
+            hit3=None,
+            hits_ge3=None,
+            full_rate=None,
+        ),
+        ladder_stage(
+            acquisition,
+            name="sport02_three_hit_acquisition",
+            total_steps=5_000_000,
+            cfg=reward_cfg(
+                acquisition.cfg,
+                combo=stage2_combo,
+                post_vxy=0.12 if stage2_strong_recover else (0.02 if stage2_recover else 0.0),
+                hit_vxy_weight=0.65 if stage2_strong_recover else (0.15 if stage2_recover else 0.0),
+                hit_vxy_limit=0.50 if stage2_strong_recover else (0.65 if stage2_recover else 0.80),
+                next_anchor_weight=0.04 if stage2_strong_recover else (0.008 if stage2_recover else 0.0),
+                next_anchor_sigma=0.14 if stage2_strong_recover else (0.20 if stage2_recover else 0.16),
+                recoverability_min_count=(
+                    2
+                    if (
+                        stage2_preparatory
+                        or stage2_contact_velocity
+                        or stage2_contact_quality
+                        or formal_v2
+                    )
+                    else (3 if stage2_indexed else 1)
+                ),
+                hit_racket_vxy_weight=(
+                    2.0
+                    if formal_v2
+                    else (
+                        4.0
+                        if (stage2_contact_velocity or stage2_contact_quality)
+                        else 0.0
+                    )
+                ),
+                hit_racket_vxy_limit=0.35 if formal_v2 else 0.30,
+                contact_center_weight=(
+                    0.15
+                    if formal_v2
+                    else (0.35 if stage2_contact_quality else 0.0)
+                ),
+                command_tracking_weight=(
+                    0.10
+                    if formal_v2
+                    else (0.12 if stage2_contact_quality else None)
+                ),
+                arm_acc_limit_weight=0.003 if formal_v2 else None,
+                combo_quality_independent=formal_v2,
+                racket_flatness_weight=0.15 if formal_v2 else None,
+                contact_flatness_weight=0.20 if formal_v2 else None,
+            ),
+            notes=(
+                "Reach a reliable third hit with a controlled experiment on "
+                f"later-hit count credit and recoverability (variant={experiment})."
+            ),
+            target_hits=2.65,
+            target_len=0.21,
+            min_updates=35,
+            hit1=0.98,
+            hit3=0.65,
+            hits_ge3=3.0,
+            full_rate=None,
+        ),
+        ladder_stage(
+            acquisition,
+            name="sport03_four_hit_recovery",
+            total_steps=6_000_000,
+            cfg=reward_cfg(
+                acquisition.cfg,
+                # Keep the count-progress signal continuous across the exact
+                # transition that asks the policy to discover a fourth hit.
+                # Dropping 0.20 -> 0.08 here made the measured hit-bonus fall
+                # even while mean_hits rose, starving the new contact of
+                # marginal credit on the uncompensated actuator plant.
+                combo=0.20 if formal_v2 else 0.08,
+                post_vxy=0.04,
+                hit_vxy_weight=0.20,
+                hit_vxy_limit=0.70,
+                next_anchor_weight=0.01,
+                next_anchor_sigma=0.16,
+                recoverability_min_count=2 if formal_v2 else 1,
+                hit_racket_vxy_weight=3.5 if formal_v2 else 0.0,
+                hit_racket_vxy_limit=0.30,
+                contact_center_weight=0.30 if formal_v2 else 0.0,
+                command_tracking_weight=0.12 if formal_v2 else None,
+                arm_acc_limit_weight=0.004 if formal_v2 else None,
+                combo_quality_independent=formal_v2,
+                posture_weight=stage3_posture_weight,
+                racket_flatness_weight=0.30 if formal_v2 else None,
+                contact_flatness_weight=0.45 if formal_v2 else None,
+            ),
+            notes="Turn the established third contact into a recoverable fourth contact with deliberately weak centre-return shaping.",
+            target_hits=3.40,
+            target_len=0.28,
+            min_updates=45,
+            hit1=0.98,
+            hit3=0.78,
+            hits_ge3=3.80,
+            # This is a four-hit acquisition bridge, not a full-horizon
+            # endurance stage.  A 1% truncation gate implicitly asks for
+            # roughly 12 contacts in a 1200-step episode and was never met on
+            # the uncompensated plant; leave endurance gating to stage 04+.
+            full_rate=None if formal_v2 else 0.01,
+            max_hit_vxy=0.70,
+            max_next_anchor=0.22,
+        ),
+        ladder_stage(
+            local,
+            name="sport04_centered_six_hit",
+            total_steps=7_000_000,
+            cfg=reward_cfg(
+                local.cfg,
+                combo=0.16 if formal_v2 else 0.08,
+                post_vxy=0.08,
+                hit_vxy_weight=0.35,
+                hit_vxy_limit=0.60,
+                next_anchor_weight=0.02,
+                next_anchor_sigma=0.15,
+                recoverability_min_count=2 if formal_v2 else 1,
+                hit_racket_vxy_weight=3.0 if formal_v2 else 0.0,
+                hit_racket_vxy_limit=0.30,
+                contact_center_weight=0.25 if formal_v2 else 0.0,
+                command_tracking_weight=0.11 if formal_v2 else None,
+                arm_acc_limit_weight=0.003 if formal_v2 else None,
+                combo_quality_independent=formal_v2,
+                racket_flatness_weight=0.30 if formal_v2 else None,
+                contact_flatness_weight=0.45 if formal_v2 else None,
+            ),
+            notes="Expand the local workspace while growing the conditional three-hit tail instead of merely increasing hit3 coverage.",
+            target_hits=5.0,
+            target_len=0.40,
+            min_updates=55,
+            hit1=0.98,
+            hit3=0.86,
+            hits_ge3=5.60,
+            full_rate=0.12,
+            max_hit_vxy=0.58,
+            max_next_anchor=0.19,
+        ),
+        ladder_stage(
+            workspace,
+            name="sport05_nominal_seven_hit",
+            total_steps=9_000_000,
+            cfg=reward_cfg(
+                workspace.cfg,
+                combo=0.14 if formal_v2 else 0.08,
+                post_vxy=0.14,
+                hit_vxy_weight=0.65,
+                hit_vxy_limit=0.50,
+                next_anchor_weight=0.04,
+                next_anchor_sigma=0.14,
+                hit_racket_vxy_weight=2.5 if formal_v2 else 0.0,
+                hit_racket_vxy_limit=0.30,
+                contact_center_weight=0.20 if formal_v2 else 0.0,
+                command_tracking_weight=0.10 if formal_v2 else None,
+                arm_acc_limit_weight=0.003 if formal_v2 else None,
+                combo_quality_independent=formal_v2,
+                racket_flatness_weight=0.30 if formal_v2 else None,
+                contact_flatness_weight=0.45 if formal_v2 else None,
+            ),
+            notes="Consolidate a seven-hit nominal attractor before any domain randomization is enabled.",
+            target_hits=7.0,
+            target_len=0.55,
+            min_updates=75,
+            hit1=0.99,
+            hit3=0.88,
+            hit12=0.10,
+            hits_ge3=7.6,
+            full_rate=0.35,
+            max_hit_vxy=0.50,
+            max_next_anchor=0.16,
+        ),
+        ladder_stage(
+            workspace,
+            name="sport06_nominal_nine_hit",
+            total_steps=12_000_000,
+            cfg=reward_cfg(
+                workspace.cfg,
+                combo=0.12 if formal_v2 else 0.08,
+                post_vxy=0.18,
+                hit_vxy_weight=0.90,
+                hit_vxy_limit=0.45,
+                next_anchor_weight=0.06,
+                next_anchor_sigma=0.13,
+                hit_racket_vxy_weight=2.0 if formal_v2 else 0.0,
+                hit_racket_vxy_limit=0.30,
+                contact_center_weight=0.20 if formal_v2 else 0.0,
+                command_tracking_weight=0.10 if formal_v2 else None,
+                arm_acc_limit_weight=0.003 if formal_v2 else None,
+                combo_quality_independent=formal_v2,
+                racket_flatness_weight=0.30 if formal_v2 else None,
+                contact_flatness_weight=0.45 if formal_v2 else None,
+            ),
+            notes="Require a robust nominal nine-hit attractor before the successful reference DR sequence begins.",
+            target_hits=8.0,
+            target_len=0.62,
+            min_updates=100,
+            hit1=0.995,
+            hit3=0.90,
+            hit12=0.25,
+            hits_ge3=8.3,
+            full_rate=0.50,
+            max_hit_vxy=0.45,
+            max_next_anchor=0.145,
+        ),
+    ]
+
+    inherited_tail = inherited[3:]
+    # The successful reference contains deliberately relaxed DR/observation
+    # bridges.  Those were safe with inverse-MPC, but on the sport plant they
+    # would explicitly permit mean_hits_ge3 to collapse (12.8 -> 5.0 in the
+    # first draft).  Make progress quality monotone across distribution
+    # changes: a harder stage may take longer, but it cannot graduate with a
+    # worse repeated-contact policy than the preceding stage.
+    tail_mean_hits_floor = (
+        8.2, 8.4, 8.6, 8.8, 9.0, 9.4, 9.8, 10.4, 10.8,
+        11.2, 11.5, 11.8, 12.0, 12.1, 12.2, 12.4, 12.6, 13.0,
+    )
+    tail_mean_hits_ge3_floor = (
+        8.5, 8.7, 8.9, 9.1, 9.3, 9.9, 10.3, 10.9, 11.3,
+        11.7, 12.0, 12.3, 12.4, 12.5, 12.6, 12.7, 13.0, 13.5,
+    )
+    tail_hit3_floor = (
+        0.90, 0.90, 0.90, 0.90, 0.90, 0.90, 0.90, 0.90, 0.90,
+        0.90, 0.90, 0.90, 0.90, 0.90, 0.90, 0.90, 0.90, 0.90,
+    )
+    tail_full_rate_floor = (
+        0.52, 0.54, 0.56, 0.58, 0.60, 0.62, 0.64, 0.66, 0.68,
+        0.72, 0.75, 0.78, 0.79, 0.80, 0.81, 0.82, 0.84, 0.86,
+    )
+    if not (
+        len(inherited_tail)
+        == len(tail_mean_hits_floor)
+        == len(tail_mean_hits_ge3_floor)
+        == len(tail_hit3_floor)
+        == len(tail_full_rate_floor)
+    ):
+        raise ValueError("sport success-reference tail gate schedule is misaligned")
+
+    tail: list[CurriculumStage] = []
+    for tail_index, (inherited_index, stage) in enumerate(
+        zip(range(3, len(inherited)), inherited_tail, strict=True)
+    ):
+        actuator_or_later = inherited_index >= 5
+        cfg = reward_cfg(
+            stage.cfg,
+            combo=max(0.12 if formal_v2 else 0.08, float(stage.cfg.hit_reward_combo)),
+            post_vxy=max(
+                0.18 if actuator_or_later else 0.14,
+                float(stage.cfg.post_hit_ball_vxy_penalty_weight),
+            ),
+            hit_vxy_weight=max(
+                0.90 if actuator_or_later else 0.65,
+                float(stage.cfg.hit_vxy_penalty_weight),
+            ),
+            hit_vxy_limit=min(
+                0.45 if actuator_or_later else 0.50,
+                float(stage.cfg.hit_vxy_soft_limit_m_s),
+            ),
+            next_anchor_weight=max(
+                0.06 if actuator_or_later else 0.04,
+                float(stage.cfg.hit_next_contact_anchor_penalty_weight),
+            ),
+            next_anchor_sigma=min(
+                0.13 if actuator_or_later else 0.14,
+                float(stage.cfg.hit_next_contact_anchor_sigma_m),
+            ),
+            hit_racket_vxy_weight=2.0 if formal_v2 else 0.0,
+            hit_racket_vxy_limit=0.30,
+            contact_center_weight=0.20 if formal_v2 else 0.0,
+            command_tracking_weight=(
+                max(0.10, float(stage.cfg.command_tracking_error_penalty_weight))
+                if formal_v2
+                else None
+            ),
+            arm_acc_limit_weight=(
+                max(0.003, float(stage.cfg.arm_acc_limit_penalty_weight))
+                if formal_v2
+                else None
+            ),
+            combo_quality_independent=formal_v2,
+            racket_flatness_weight=(
+                max(0.30, float(stage.cfg.racket_flatness_penalty_weight))
+                if formal_v2
+                else None
+            ),
+            contact_flatness_weight=(
+                max(0.45, float(stage.cfg.contact_flatness_penalty_weight))
+                if formal_v2
+                else None
+            ),
+        )
+        tail.append(
+            replace(
+                stage,
+                cfg=cfg,
+                target_mean_hits=max(
+                    float(stage.target_mean_hits), tail_mean_hits_floor[tail_index]
+                ),
+                target_hit3_rate=max(
+                    float(stage.target_hit3_rate), tail_hit3_floor[tail_index]
+                ),
+                target_mean_hits_ge3=max(
+                    float(stage.target_mean_hits_ge3),
+                    tail_mean_hits_ge3_floor[tail_index],
+                ),
+                target_episode_truncation_rate=max(
+                    float(stage.target_episode_truncation_rate),
+                    tail_full_rate_floor[tail_index],
+                ),
+                notes=(
+                    f"{stage.notes}  Sport success-reference tail: preserve "
+                    "the graduated long-juggle attractor with count-progress "
+                    "and centre-return credit; repeated-contact graduation "
+                    "gates never regress across distribution changes."
+                ),
+            )
+        )
+
+    return [*ladder, *tail]
 
 
 def _goal_d455_autolaunch_viewdense_constrained_mpc_count_progress_v1_stages(
@@ -11618,6 +12462,94 @@ def _delay_conditioned_control_kwargs(preset: str) -> dict[str, object]:
             dr_actuator_cmd_tau_range=(0.074, 0.074),
             dr_actuator_cmd_gain_range=(1.0, 1.0),
         )
+    sport_second_order_presets = {
+        "sport_actuator_replay_fit",
+        "sport_actuator_replay_dr",
+        "sport_actuator_replay_homotopy_dr",
+        "sport_actuator_ablation_overshoot_only",
+    }
+    sport_ablation_presets = {
+        "sport_actuator_ablation_ideal",
+        "sport_actuator_ablation_delay_only",
+        "sport_actuator_ablation_overshoot_only",
+    }
+    if preset in sport_second_order_presets:
+        kwargs.update(
+            delay_min_ms=45.0,
+            delay_max_ms=45.0,
+            delay_bin_edges_ms=(45.0, 45.0),
+            delay_jitter_ms=0.0,
+            delay_sampling_mode="uniform",
+            include_command_state=True,
+            include_active_command_error=True,
+            include_phase_features=True,
+            actuator_cmd_filter=True,
+            actuator_cmd_model="second_order",
+            right_arm_pd_profile="sport_taskspace_fit_v1",
+            # Tau remains in the deployed 67D observation contract; for this
+            # second-order model it records the approximate 1/mean(wn) scale.
+            actuator_cmd_tau=1.0 / 21.31,
+            actuator_cmd_gain=1.0,
+            actuator_cmd_natural_frequency_rad_s=(
+                20.36384925, 22.65597475, 22.65047050, 21.73053300,
+                19.66336425, 22.81552625, 23.64581725,
+            ),
+            actuator_cmd_damping_ratio=(
+                0.391768, 0.366169, 0.345738, 0.346000,
+                0.347896, 0.345814, 0.380713,
+            ),
+            actuator_cmd_gain_per_joint=(
+                0.99788351, 0.99661190, 0.99231151, 0.99094239,
+                0.982326685, 0.992694585, 0.983194325,
+            ),
+            actuator_cmd_delay_ms_per_joint=(
+                45.0, 50.0, 45.0, 40.0, 35.0, 45.0, 55.0,
+            ),
+            dr_randomize_actuator_cmd_filter=False,
+            dr_actuator_cmd_tau_range=(1.0 / 21.31, 1.0 / 21.31),
+            dr_actuator_cmd_gain_range=(1.0, 1.0),
+        )
+        if preset == "sport_actuator_ablation_overshoot_only":
+            # Preserve the identified underdamped poles/gains and sport PD but
+            # remove every explicit transport-delay sample.
+            kwargs.update(
+                delay_min_ms=0.0,
+                delay_max_ms=0.0,
+                delay_bin_edges_ms=(0.0, 0.0),
+                actuator_cmd_delay_ms_per_joint=(0.0,) * 7,
+            )
+        if preset in {"sport_actuator_replay_dr", "sport_actuator_replay_homotopy_dr"}:
+            kwargs.update(
+                dr_randomize_second_order_actuator=True,
+                # Conservative support around the task-space-selected nominal
+                # composite plant.  It spans trajectory-to-trajectory
+                # variation without pretending q-only replay uniquely
+                # separates the private planner and low-level PD gains.
+                dr_second_order_frequency_scale_range=(0.90, 1.10),
+                dr_second_order_damping_scale_range=(0.90, 1.10),
+                dr_second_order_gain_scale_range=(0.99, 1.01),
+                dr_second_order_delay_offset_steps_range=(-2, 1),
+            )
+    if preset in sport_ablation_presets - sport_second_order_presets:
+        # Same 67-D command/error/phase observation contract and sport-mode
+        # effective PD as the fitted plant, with the dynamic actuator removed.
+        # The delay-only condition still uses the causal q-reference buffer.
+        delay_ms = (
+            45.0 if preset == "sport_actuator_ablation_delay_only" else 0.0
+        )
+        kwargs.update(
+            delay_min_ms=delay_ms,
+            delay_max_ms=delay_ms,
+            delay_bin_edges_ms=(delay_ms, delay_ms),
+            delay_jitter_ms=0.0,
+            delay_sampling_mode="uniform",
+            include_command_state=True,
+            include_active_command_error=True,
+            include_phase_features=True,
+            actuator_cmd_filter=False,
+            right_arm_pd_profile="sport_taskspace_fit_v1",
+            dr_randomize_actuator_cmd_filter=False,
+        )
     if preset == "real_actuator_replay_dr":
         kwargs.update(
             delay_min_ms=60.0,
@@ -11919,6 +12851,7 @@ def _apply_arm_safety_overrides(
     arm_post_compensation_limiter: bool | None,
     arm_servo_target_limiter: bool | None,
     arm_servo_target_tracking_planner: bool | None,
+    arm_servo_planner_before_actuator_model: bool | None,
     arm_servo_target_velocity_scale: float | None,
     arm_servo_target_acceleration_scale: float | None,
     arm_actual_state_limiter: bool | None,
@@ -11938,6 +12871,10 @@ def _apply_arm_safety_overrides(
     if arm_servo_target_tracking_planner is not None:
         updates["arm_servo_target_tracking_planner"] = bool(
             arm_servo_target_tracking_planner
+        )
+    if arm_servo_planner_before_actuator_model is not None:
+        updates["arm_servo_planner_before_actuator_model"] = bool(
+            arm_servo_planner_before_actuator_model
         )
     if arm_servo_target_velocity_scale is not None:
         updates["arm_servo_target_velocity_scale"] = float(
@@ -12031,6 +12968,7 @@ def build_curriculum(
     arm_post_compensation_limiter: bool | None = None,
     arm_servo_target_limiter: bool | None = None,
     arm_servo_target_tracking_planner: bool | None = None,
+    arm_servo_planner_before_actuator_model: bool | None = None,
     arm_servo_target_velocity_scale: float | None = None,
     arm_servo_target_acceleration_scale: float | None = None,
     arm_actual_state_limiter: bool | None = None,
@@ -12039,6 +12977,7 @@ def build_curriculum(
     arm_actual_governor_damping_ratio: float | None = None,
     arm_actual_jerk_limit_deg_s3: float | None = None,
     right_arm_pd_profile: str | None = None,
+    actuator_model_inverse_mlp_path: str | None = None,
 ) -> list[CurriculumStage]:
     if curriculum_profile in GOAL_D455_IDEALPD_PROFILES:
         preserve_deployed_67d = curriculum_profile in GOAL_D455_IDEALPD67_PROFILES
@@ -12167,6 +13106,7 @@ def build_curriculum(
             arm_post_compensation_limiter=arm_post_compensation_limiter,
             arm_servo_target_limiter=arm_servo_target_limiter,
             arm_servo_target_tracking_planner=arm_servo_target_tracking_planner,
+            arm_servo_planner_before_actuator_model=arm_servo_planner_before_actuator_model,
             arm_servo_target_velocity_scale=arm_servo_target_velocity_scale,
             arm_servo_target_acceleration_scale=arm_servo_target_acceleration_scale,
             arm_actual_state_limiter=arm_actual_state_limiter,
@@ -12176,6 +13116,368 @@ def build_curriculum(
             arm_actual_jerk_limit_deg_s3=arm_actual_jerk_limit_deg_s3,
             right_arm_pd_profile=right_arm_pd_profile,
         )
+
+    if curriculum_profile in GOAL_D455_AUTOLAUNCH_SPORT_ACTUATOR_PROFILES:
+        sport_direct_nocomp = (
+            curriculum_profile
+            == GOAL_D455_SPORT_TASKSPACE_OBSRES2MM_NOCOMP_DIRECT_PROFILE
+        )
+        if sport_direct_nocomp and actuator_compensation_mode not in (None, "none"):
+            raise ValueError(
+                f"{curriculum_profile} requires uncompensated policy output"
+            )
+        sport_inverse_mpc = (
+            curriculum_profile
+            == GOAL_D455_AUTOLAUNCH_SPORT_ACTUATOR_OBSRES2MM_INVERSEMPC_PROFILE
+        )
+        sport_model_inverse_mlp = actuator_compensation_mode in {
+            "sport_model_inverse_mlp",
+            "model_inverse_mlp",
+            "causal_model_inverse_mlp",
+        }
+        sport_horizon_inverse = actuator_compensation_mode in {
+            "sport_horizon_inverse",
+            "horizon_inverse",
+            "planned_horizon_inverse",
+            "sport_bandlimited_horizon_inverse",
+            "bandlimited_horizon_inverse",
+        }
+        sport_bandlimited_horizon_inverse = actuator_compensation_mode in {
+            "sport_bandlimited_horizon_inverse",
+            "bandlimited_horizon_inverse",
+        }
+        sport_safe_analytic_inverse = actuator_compensation_mode in {
+            "sport_safe_analytic_inverse",
+            "sport_regularized_inverse",
+            "regularized_inverse",
+            "bandlimited_model_inverse",
+        } | SPORT_PERSISTENT_ANALYTIC_COMPENSATION_MODES
+        if bool(high_latency_obs):
+            raise ValueError(f"{curriculum_profile} fixes actor obs_dim at 67")
+        if delay_ablation_preset not in {
+            "baseline_current",
+            "sport_actuator_replay_fit",
+            "sport_actuator_replay_dr",
+            "sport_actuator_replay_homotopy_dr",
+            "sport_actuator_ablation_ideal",
+            "sport_actuator_ablation_delay_only",
+            "sport_actuator_ablation_overshoot_only",
+        }:
+            raise ValueError(
+                f"{curriculum_profile} requires --delay-ablation-preset "
+                "sport_actuator_replay_fit"
+            )
+        if any(
+            value is not None
+            for value in (
+                delay_min_ms,
+                delay_max_ms,
+                delay_jitter_ms,
+                delay_sampling_mode,
+            )
+        ):
+            raise ValueError(f"{curriculum_profile} owns its fitted delay model")
+        if actuator_cmd_filter is False:
+            raise ValueError(f"{curriculum_profile} requires the sport actuator model")
+        expected_compensation = (
+            "sport_model_inverse_mlp"
+            if sport_model_inverse_mlp
+            else (
+                "sport_safe_analytic_inverse"
+                if sport_safe_analytic_inverse
+                else (
+                    (
+                        "sport_bandlimited_horizon_inverse"
+                        if sport_bandlimited_horizon_inverse
+                        else "sport_horizon_inverse"
+                    )
+                    if sport_horizon_inverse
+                    else ("inverse_mpc" if sport_inverse_mpc else "none")
+                )
+            )
+        )
+        if actuator_compensation_mode in SPORT_PERSISTENT_ANALYTIC_COMPENSATION_MODES:
+            expected_compensation = str(actuator_compensation_mode)
+        if actuator_compensation_mode not in (None, expected_compensation):
+            raise ValueError(
+                f"{curriculum_profile} requires {expected_compensation} compensation"
+            )
+        if actuator_lead_compensation:
+            raise ValueError(f"{curriculum_profile} does not use lead compensation")
+        if arm_servo_target_tracking_planner is True:
+            raise ValueError(f"{curriculum_profile} disables the servo planner")
+        if sport_model_inverse_mlp:
+            model_path = Path(str(actuator_model_inverse_mlp_path or "")).expanduser()
+            if not model_path.is_file():
+                raise ValueError(
+                    f"{curriculum_profile} model-inverse compensation requires a fitted "
+                    f"--actuator-model-inverse-mlp-path, got {model_path}"
+                )
+
+        selected_sport_preset = (
+            "sport_actuator_replay_fit"
+            if delay_ablation_preset == "baseline_current"
+            else delay_ablation_preset
+        )
+        stack_kwargs = _delay_conditioned_control_kwargs(selected_sport_preset)
+        stack_kwargs.update(
+            actuator_compensation_mode=expected_compensation,
+            actuator_model_inverse_mlp_path=(
+                str(model_path.resolve()) if sport_model_inverse_mlp else ""
+            ),
+            actuator_lead_compensation=False,
+            actuator_mpc_beta=1.0,
+            actuator_mpc_delay_scale=1.0,
+            actuator_mpc_tau_scale=1.0,
+            actuator_mpc_horizon_steps=12,
+            actuator_mpc_tracking_weight=1.0,
+            actuator_mpc_nominal_weight=0.25,
+            actuator_mpc_delta_weight=10.0,
+            actuator_mpc_max_delta_rad=float(np.deg2rad(10.0)),
+            actuator_mpc_feedback_source="applied",
+            actuator_mpc_command_dynamics_constraint=False,
+            arm_post_compensation_limiter=bool(sport_safe_analytic_inverse),
+            arm_servo_target_limiter=False,
+            arm_servo_target_tracking_planner=False,
+            arm_servo_planner_before_actuator_model=False,
+            arm_actual_state_limiter=False,
+            arm_actual_target_tracking_governor=False,
+        )
+        stages = _goal_d455_autolaunch_viewdense_constrained_mpc_launch17_obsres2mm_servo_v5_stages(
+            stack_kwargs=stack_kwargs,
+            stage_steps_override=stage_steps_override,
+            critic_command_history_steps=max(12, int(critic_command_history_steps)),
+            require_inverse_mpc_stack=False,
+        )
+        stages = [
+            replace(
+                stage,
+                name=stage.name.replace(
+                    "servo",
+                    (
+                        "sport_model_inverse_mlp"
+                        if sport_model_inverse_mlp
+                        else (
+                            "sport_safe_analytic_inverse"
+                            if sport_safe_analytic_inverse
+                            else (
+                                "sport_horizon_inverse"
+                                if sport_horizon_inverse
+                                else ("sport_inversempc" if sport_inverse_mpc else "sport_nocomp")
+                            )
+                        )
+                    ),
+                ),
+                cfg=replace(
+                    stage.cfg,
+                    right_arm_pd_profile=str(stack_kwargs["right_arm_pd_profile"]),
+                    actuator_compensation_mode=expected_compensation,
+                    actuator_model_inverse_mlp_path=(
+                        str(model_path.resolve()) if sport_model_inverse_mlp else ""
+                    ),
+                    actuator_lead_compensation=False,
+                    actuator_mpc_beta=1.0,
+                    actuator_mpc_delay_scale=1.0,
+                    actuator_mpc_tau_scale=1.0,
+                    actuator_mpc_horizon_steps=12,
+                    actuator_mpc_tracking_weight=1.0,
+                    actuator_mpc_nominal_weight=0.25,
+                    actuator_mpc_delta_weight=10.0,
+                    actuator_mpc_max_delta_rad=float(np.deg2rad(10.0)),
+                    actuator_mpc_feedback_source="applied",
+                    actuator_mpc_command_dynamics_constraint=False,
+                    arm_post_compensation_limiter=bool(sport_safe_analytic_inverse),
+                    arm_servo_target_limiter=False,
+                    arm_servo_target_tracking_planner=False,
+                    arm_servo_planner_before_actuator_model=False,
+                    arm_actual_state_limiter=False,
+                    arm_actual_target_tracking_governor=False,
+                    action_filter_tau_ms=(
+                        max(float(stage.cfg.action_filter_tau_ms), 20.0)
+                        if sport_safe_analytic_inverse
+                        else float(stage.cfg.action_filter_tau_ms)
+                    ),
+                    action_jerk_limit=(
+                        60.0 if sport_safe_analytic_inverse else float(stage.cfg.action_jerk_limit)
+                    ),
+                    action_delta_penalty_weight=(
+                        max(float(stage.cfg.action_delta_penalty_weight), 0.0012)
+                        if sport_safe_analytic_inverse
+                        else float(stage.cfg.action_delta_penalty_weight)
+                    ),
+                    delay_action_jerk_penalty_weight=(
+                        max(float(stage.cfg.delay_action_jerk_penalty_weight), 3.0e-7)
+                        if sport_safe_analytic_inverse
+                        else float(stage.cfg.delay_action_jerk_penalty_weight)
+                    ),
+                    arm_vel_limit_penalty_weight=(
+                        max(float(stage.cfg.arm_vel_limit_penalty_weight), 0.06)
+                        if sport_safe_analytic_inverse
+                        else float(stage.cfg.arm_vel_limit_penalty_weight)
+                    ),
+                    arm_acc_limit_penalty_weight=(
+                        max(float(stage.cfg.arm_acc_limit_penalty_weight), 0.08)
+                        if sport_safe_analytic_inverse
+                        else float(stage.cfg.arm_acc_limit_penalty_weight)
+                    ),
+                    arm_limiter_penalty_weight=(
+                        max(float(stage.cfg.arm_limiter_penalty_weight), 0.08)
+                        if sport_safe_analytic_inverse
+                        else float(stage.cfg.arm_limiter_penalty_weight)
+                    ),
+                    racket_vertical_acc_penalty_weight=(
+                        max(float(stage.cfg.racket_vertical_acc_penalty_weight), 0.002)
+                        if sport_safe_analytic_inverse
+                        else float(stage.cfg.racket_vertical_acc_penalty_weight)
+                    ),
+                    # Keep the inherited curriculum's one-axis-at-a-time DR
+                    # semantics.  The sport preset owns the second-order DR
+                    # envelope globally, but it must not become active merely
+                    # because ball/contact DR turns domain_randomization on in
+                    # launch03/04.  Couple it to the stage's actuator DR gate.
+                    dr_randomize_second_order_actuator=bool(
+                        selected_sport_preset in {
+                            "sport_actuator_replay_dr",
+                            "sport_actuator_replay_homotopy_dr",
+                        }
+                        and stage.cfg.dr_randomize_actuator
+                    ),
+                ),
+                notes=(
+                    f"{stage.notes}  Sport-mode replay-fit plant"
+                    + (
+                        " with bounded hidden second-order actuator DR"
+                        if selected_sport_preset in {
+                            "sport_actuator_replay_dr",
+                            "sport_actuator_replay_homotopy_dr",
+                        }
+                        else ""
+                    )
+                    + "; no actuator "
+                    + (
+                        "servo planner; causal sport model-inverse MLP uses only policy "
+                        "q/qvel/qdd history and measured joint q/dq, then emits q only."
+                        if sport_model_inverse_mlp
+                        else (
+                            "servo planner; causal two-pole bandwidth-limited analytic "
+                            "inverse plus mandatory publish-time q/qdot/qdd projection; "
+                            "the physical interface receives q only."
+                            if sport_safe_analytic_inverse
+                            else (
+                                "servo planner; analytic sport horizon inverse expands the "
+                                "7-D policy acceleration into a bounded 26-point/125 ms "
+                                "strategy plan and emits q only."
+                                if sport_horizon_inverse
+                                else (
+                                    "servo planner; tuned second-order inverse MPC uses applied "
+                                    "feedback, beta=1, horizon=12, delta weight=10 and a 10 deg cap."
+                                    if sport_inverse_mpc
+                                    else "compensation and no downstream servo planner."
+                                )
+                            )
+                        )
+                    )
+                ),
+            )
+            for stage in stages
+        ]
+        if curriculum_profile in GOAL_D455_SPORT_TASKSPACE_SUCCESSREF_PROFILES:
+            experiment = {
+                GOAL_D455_SPORT_TASKSPACE_SUCCESSREF_OBSRES2MM_NOCOMP_PROFILE: "baseline",
+            }[curriculum_profile]
+            stages = _sport_taskspace_successref_obsres2mm_nocomp_v1_stages(
+                stages,
+                stage_steps_override=stage_steps_override,
+                experiment=experiment,
+            )
+        if curriculum_profile in {
+            GOAL_D455_SPORT_TASKSPACE_OBSRES2MM_NOCOMP_DIRECT_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_OBSRES2MM_ANALYTIC_DIRECT_PROFILE,
+        }:
+            stages = _sport_taskspace_obsres2mm_nocomp_direct_v1_stages(stages)
+        if (
+            curriculum_profile
+            == GOAL_D455_SPORT_TASKSPACE_OBSRES2MM_NOCOMP_DIRECT_PROFILE
+            and selected_sport_preset == "sport_actuator_replay_dr"
+        ):
+            stages = _sport_pure_actuator_quality_repair_stages(stages)
+        if selected_sport_preset == "sport_actuator_replay_homotopy_dr":
+            # Same 21 task stages, with a smooth actuator-only continuation in
+            # the first five slots.  The old 0.65 -> 1.00 jump simultaneously
+            # added 20.75 ms delay and reduced damping from 0.55 to about 0.36
+            # at launch02.  No task stage is added or removed.
+            homotopy_stages: list[CurriculumStage] = []
+            nominal_delay = np.asarray(
+                (45.0, 50.0, 45.0, 40.0, 35.0, 45.0, 55.0),
+                dtype=np.float32,
+            )
+            for stage_index, stage in enumerate(stages):
+                delay_scales = (0.30, 0.65, 0.82, 0.92, 1.00)
+                damping_scales = (0.80, 0.55, 0.46, 0.41)
+                if stage_index < len(delay_scales):
+                    delay_scale = delay_scales[stage_index]
+                    damping = (
+                        (damping_scales[stage_index],) * 7
+                        if stage_index < len(damping_scales)
+                        else stage.cfg.actuator_cmd_damping_ratio
+                    )
+                else:
+                    delay_scale = 1.0
+                    damping = stage.cfg.actuator_cmd_damping_ratio
+                delays = tuple(float(v) for v in nominal_delay * delay_scale)
+                cfg = replace(
+                    stage.cfg,
+                    delay_min_ms=float(45.0 * delay_scale),
+                    delay_max_ms=float(45.0 * delay_scale),
+                    delay_bin_edges_ms=(float(45.0 * delay_scale),) * 2,
+                    actuator_cmd_damping_ratio=damping,
+                    actuator_cmd_delay_ms_per_joint=delays,
+                )
+                homotopy_stages.append(
+                    replace(
+                        stage,
+                        cfg=cfg,
+                        notes=(
+                            f"{stage.notes} Actuator homotopy scale: delay="
+                            f"{delay_scale:.2f}, damping_mean="
+                            f"{float(np.mean(np.asarray(damping))):.3f}."
+                        ),
+                    )
+                )
+            stages = homotopy_stages
+        for stage in stages:
+            cfg = stage.cfg
+            learning_ablation = selected_sport_preset.startswith(
+                "sport_actuator_ablation_"
+            )
+            if not (
+                cfg.enable_delay_conditioning
+                and (
+                    learning_ablation
+                    or (
+                        cfg.actuator_cmd_filter
+                        and cfg.actuator_cmd_model == "second_order"
+                        and len(tuple(cfg.actuator_cmd_delay_ms_per_joint)) == 7
+                        and all(
+                            float(delay_ms) >= 0.0
+                            for delay_ms in cfg.actuator_cmd_delay_ms_per_joint
+                        )
+                    )
+                )
+                and cfg.right_arm_pd_profile == "sport_taskspace_fit_v1"
+                and cfg.actuator_compensation_mode == expected_compensation
+                and (
+                    not sport_model_inverse_mlp
+                    or Path(cfg.actuator_model_inverse_mlp_path).is_file()
+                )
+                and not cfg.arm_servo_target_tracking_planner
+                and cfg.asymmetric_critic
+                and int(cfg.critic_command_history_steps) == 12
+            ):
+                raise ValueError(
+                    f"{stage.name} escaped the sport/{expected_compensation}/no-planner contract"
+                )
+        return stages
 
     if curriculum_profile in (ROBUST_JUGGLE_PROFILE, *D455_67D_INVERSE_MPC_PROFILES):
         if bool(high_latency_obs):
@@ -12314,6 +13616,7 @@ def build_curriculum(
             arm_post_compensation_limiter=arm_post_compensation_limiter,
             arm_servo_target_limiter=arm_servo_target_limiter,
             arm_servo_target_tracking_planner=arm_servo_target_tracking_planner,
+            arm_servo_planner_before_actuator_model=arm_servo_planner_before_actuator_model,
             arm_servo_target_velocity_scale=arm_servo_target_velocity_scale,
             arm_servo_target_acceleration_scale=arm_servo_target_acceleration_scale,
             arm_actual_state_limiter=arm_actual_state_limiter,
@@ -13723,6 +15026,7 @@ def build_curriculum(
         arm_post_compensation_limiter=arm_post_compensation_limiter,
         arm_servo_target_limiter=arm_servo_target_limiter,
         arm_servo_target_tracking_planner=arm_servo_target_tracking_planner,
+        arm_servo_planner_before_actuator_model=arm_servo_planner_before_actuator_model,
         arm_servo_target_velocity_scale=arm_servo_target_velocity_scale,
         arm_servo_target_acceleration_scale=arm_servo_target_acceleration_scale,
         arm_actual_state_limiter=arm_actual_state_limiter,
@@ -13791,10 +15095,11 @@ def parse_args() -> argparse.Namespace:
             "goal_d455_autolaunch_viewdense_drivegov_successref_v1 is W017: W016 plus conservative post-hit survival, smooth-action, reachable-command and per-hit failure shaping adapted from the proven actuator-learning run, while retaining D455, original inverse MPC and the final hard drive governor; "
             "goal_d455_autolaunch_viewdense_drivegov_highapex_v1 is the withdrawn W018 analysis profile and must not be trained because it preserves W017's post-physics governor plant; "
             "goal_d455_autolaunch_viewdense_constrained_mpc_v1 is W019: W017 task shaping with original inverse-MPC/FOPDT/XML-PD parameters, but the position trajectory actually sent to PD is causally planned at full qvel/0.8 qacc, post-physics state rewriting is off, and base lift/tip terminates; "
-            "goal_d455_autolaunch_viewdense_constrained_mpc_drbridge_v1 preserves W019's plant, rewards, actuator and safety contracts, but repairs the launch15+ curriculum with 25/37.5/50/75/100% observation-calibration DR bridges and strict advancement gates; "
+            "goal_d455_autolaunch_viewdense_constrained_mpc_drbridge_v1 preserves W019's plant, rewards, actuator and safety contracts, but repairs the launch15+ curriculum with 25/37.5/50/75/100%% observation-calibration DR bridges and strict advancement gates; "
             "goal_d455_autolaunch_viewdense_constrained_mpc_drbridge_v2 keeps those DR bridges and strict current-stage gates, but uses anti-collapse-only next-stage probes and shorter evidence-based consolidation floors so each new DR distribution is learned after advancement; "
             "goal_d455_autolaunch_viewdense_constrained_mpc_drbridge_v2_countcredit_v1 is W020: it preserves the complete W019 V2 plant/course/gates and replaces hit-count-growing terminal costs with fixed target-count barriers so every additional valid hit has positive marginal credit; "
             "goal_d455_autolaunch_viewdense_constrained_mpc_launch17_obsres2mm_servo_v5 resumes the proven launch17 policy on the unchanged inverse-MPC plus servo-planner plant, removes synthetic camera-frame distortion beyond the measured 2 mm observation residual, and then trains the original widest final physical/reward domain; "
+            "goal_d455_sport_taskspace_successref_obsres2mm_nocomp_v1 trains the sport task-space second-order actuator from scratch without compensation or servo planning, using a repeated-contact acquisition ladder and monotone success-reference gates through the measured 2 mm final task; "
             "goal_d455_autolaunch_idealpd_v1 reuses the original 20260716 goal_d455_autolaunch_v1 curriculum/gates/rewards while disabling actuator command filtering, delay conditioning, and compensation for the ideal-PD policy->real compensator ablation; "
             "goal_d455_autolaunch_idealpd67_v1 keeps that original course and the deployed 67D 72 ms command-history/error/phase observation contract, but applies the current position command immediately with XML PD and no actuator filter or compensation; "
             "goal_d455_autolaunch_idealpd67_viewdense_v1 preserves that ideal-PD67 plant and the original full-horizon gates, while adding mild view/next-contact shaping and measured launch14/15 minimum-update floors; "
@@ -13872,9 +15177,25 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--actuator-compensation-mode",
-        choices=["none", "lead", "inverse_smith", "inverse_mpc", "sim2real_bridger"],
+        choices=[
+            "none",
+            "lead",
+            "inverse_smith",
+            "inverse_mpc",
+            "sim2real_bridger",
+            "sport_model_inverse_mlp",
+            "sport_horizon_inverse",
+            "sport_bandlimited_horizon_inverse",
+            "sport_safe_analytic_inverse",
+        ],
         default=None,
         help="Output-side actuator compensation before the command delay/filter path.",
+    )
+    p.add_argument(
+        "--actuator-model-inverse-mlp-path",
+        type=Path,
+        default=None,
+        help="Fitted causal model-inverse model.npz used by sport_model_inverse_mlp.",
     )
     p.add_argument(
         "--actuator-lead-compensation",
@@ -13984,6 +15305,15 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Override the target-aware acceleration planner after actuator "
             "delay/FOPDT and before the unchanged position PD."
+        ),
+    )
+    p.add_argument(
+        "--arm-servo-planner-before-actuator-model",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Use inverse MPC -> predictive servo governor -> delay/FOPDT -> "
+            "XML position PD."
         ),
     )
     p.add_argument("--arm-servo-target-velocity-scale", type=float, default=None)
@@ -14154,6 +15484,35 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--minibatch-size", type=int, default=8192)
     p.add_argument("--update-epochs", type=int, default=4)
     p.add_argument("--learning-rate", type=float, default=3e-4)
+    p.add_argument(
+        "--mid-training-start-stage",
+        type=int,
+        default=0,
+        help=(
+            "1-based curriculum stage at which to switch from acquisition to "
+            "mid-course training parameters; 0 disables the middle phase."
+        ),
+    )
+    p.add_argument("--mid-n-steps", type=int, default=None)
+    p.add_argument("--mid-learning-rate", type=float, default=None)
+    p.add_argument("--mid-update-epochs", type=int, default=None)
+    p.add_argument("--mid-ent-coef", type=float, default=None)
+    p.add_argument("--mid-convergence-window", type=int, default=None)
+    p.add_argument(
+        "--late-optimizer-start-stage",
+        type=int,
+        default=0,
+        help=(
+            "1-based curriculum stage at which to switch to the late optimizer; "
+            "0 disables the switch. This keeps a high early LR without continuing "
+            "large PPO updates through the full-survival stages."
+        ),
+    )
+    p.add_argument("--late-learning-rate", type=float, default=1e-4)
+    p.add_argument("--late-update-epochs", type=int, default=2)
+    p.add_argument("--late-n-steps", type=int, default=None)
+    p.add_argument("--late-ent-coef", type=float, default=None)
+    p.add_argument("--late-convergence-window", type=int, default=None)
     p.add_argument("--gamma", type=float, default=0.995)
     p.add_argument("--gae-lambda", type=float, default=0.95)
     p.add_argument(
@@ -14264,6 +15623,36 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=1.0,
         help="Absolute clip for teacher action targets; 0 disables target clipping.",
+    )
+    p.add_argument(
+        "--phase-teacher-reference",
+        type=Path,
+        default=None,
+        help=(
+            "Training-only .npz successful-motion reference containing phase-indexed "
+            "q/dq and racket-z targets. It never supplies student actions."
+        ),
+    )
+    p.add_argument(
+        "--phase-teacher-strength",
+        type=float,
+        default=1.0,
+        help=(
+            "Global multiplier for the bounded phase teacher. Per-stage scheduling "
+            "keeps early acquisition exploratory and decays guidance in wide recovery stages."
+        ),
+    )
+    p.add_argument(
+        "--phase-teacher-posture-mode",
+        choices=("taskspace_only", "reset_centered", "absolute"),
+        default="reset_centered",
+        help=(
+            "How to transfer the successful cycle. taskspace_only keeps only "
+            "phase-conditioned racket z/vz guidance and disables old q/dq targets; "
+            "reset_centered removes the "
+            "old controller's posture/DC offset and places only its periodic motion "
+            "around the current reset pose; absolute preserves the recorded posture."
+        ),
     )
     p.add_argument(
         "--residual-teacher-checkpoint",
@@ -14477,6 +15866,43 @@ def parse_args() -> argparse.Namespace:
     args = p.parse_args()
     if args.actor_anchor_kl_coef < 0.0:
         p.error("--actor-anchor-kl-coef must be >= 0")
+    if (
+        args.learning_rate <= 0.0
+        or args.late_learning_rate <= 0.0
+        or (args.mid_learning_rate is not None and args.mid_learning_rate <= 0.0)
+    ):
+        p.error("learning rates must be positive")
+    if (
+        args.update_epochs <= 0
+        or args.late_update_epochs <= 0
+        or (args.mid_update_epochs is not None and args.mid_update_epochs <= 0)
+    ):
+        p.error("update epochs must be positive")
+    if args.mid_training_start_stage < 0 or args.late_optimizer_start_stage < 0:
+        p.error("training phase start stages must be >= 0")
+    if (
+        args.mid_training_start_stage > 0
+        and args.late_optimizer_start_stage > 0
+        and args.mid_training_start_stage >= args.late_optimizer_start_stage
+    ):
+        p.error("--mid-training-start-stage must precede --late-optimizer-start-stage")
+    for option, value in (
+        ("--n-steps", args.n_steps),
+        ("--mid-n-steps", args.mid_n_steps),
+        ("--late-n-steps", args.late_n_steps),
+        ("--convergence-window", args.convergence_window),
+        ("--mid-convergence-window", args.mid_convergence_window),
+        ("--late-convergence-window", args.late_convergence_window),
+    ):
+        if value is not None and int(value) <= 0:
+            p.error(f"{option} must be positive")
+    for option, value in (
+        ("--ent-coef", args.ent_coef),
+        ("--mid-ent-coef", args.mid_ent_coef),
+        ("--late-ent-coef", args.late_ent_coef),
+    ):
+        if value is not None and float(value) < 0.0:
+            p.error(f"{option} must be >= 0")
     if args.target_kl < 0.0:
         p.error("--target-kl must be >= 0")
     if args.failure_focus_hit_threshold < 0:
@@ -14493,6 +15919,8 @@ def parse_args() -> argparse.Namespace:
         p.error("--teacher-distill-coef must be >= 0")
     if args.teacher_distill_action_clip < 0.0:
         p.error("--teacher-distill-action-clip must be >= 0")
+    if args.phase_teacher_strength < 0.0:
+        p.error("--phase-teacher-strength must be >= 0")
     teacher_distill_enabled = float(args.teacher_distill_coef) > 0.0
     if teacher_distill_enabled:
         if args.teacher_distill_checkpoint is None:
@@ -14506,6 +15934,13 @@ def parse_args() -> argparse.Namespace:
             p.error("teacher distillation cannot be combined with residual-teacher training")
     if args.teacher_distill_replay_obs is not None and not args.teacher_distill_replay_obs.exists():
         p.error(f"teacher replay file not found: {args.teacher_distill_replay_obs}")
+    if args.phase_teacher_reference is not None:
+        if not args.phase_teacher_reference.exists():
+            p.error(f"phase teacher reference not found: {args.phase_teacher_reference}")
+        if teacher_distill_enabled:
+            p.error(
+                "phase trajectory teacher cannot be combined with old-domain action distillation"
+            )
     if not 0.0 < float(args.residual_action_scale) <= 1.0:
         p.error("--residual-action-scale must be in (0, 1]")
     if float(args.residual_l2_coef) < 0.0:
@@ -14540,7 +15975,121 @@ def parse_args() -> argparse.Namespace:
         args.actuator_cmd_filter = False
         args.asymmetric_critic = True
         args.critic_command_history_steps = 12
-    if args.curriculum_profile in (ROBUST_JUGGLE_PROFILE, *D455_67D_INVERSE_MPC_PROFILES):
+    if args.curriculum_profile in GOAL_D455_AUTOLAUNCH_SPORT_ACTUATOR_PROFILES:
+        sport_direct_nocomp = (
+            args.curriculum_profile
+            == GOAL_D455_SPORT_TASKSPACE_OBSRES2MM_NOCOMP_DIRECT_PROFILE
+        )
+        if sport_direct_nocomp and args.actuator_compensation_mode not in (None, "none"):
+            p.error(f"{args.curriculum_profile} requires --actuator-compensation-mode none")
+        sport_inverse_mpc = (
+            args.curriculum_profile
+            == GOAL_D455_AUTOLAUNCH_SPORT_ACTUATOR_OBSRES2MM_INVERSEMPC_PROFILE
+        )
+        sport_model_inverse_mlp = args.actuator_compensation_mode == "sport_model_inverse_mlp"
+        sport_horizon_inverse = args.actuator_compensation_mode in {
+            "sport_horizon_inverse",
+            "sport_bandlimited_horizon_inverse",
+        }
+        sport_bandlimited_horizon_inverse = (
+            args.actuator_compensation_mode == "sport_bandlimited_horizon_inverse"
+        )
+        sport_safe_analytic_inverse = (
+            args.actuator_compensation_mode == "sport_safe_analytic_inverse"
+            or args.actuator_compensation_mode
+            in SPORT_PERSISTENT_ANALYTIC_COMPENSATION_MODES
+        )
+        expected_compensation = (
+            "sport_model_inverse_mlp"
+            if sport_model_inverse_mlp
+            else (
+                "sport_safe_analytic_inverse"
+                if sport_safe_analytic_inverse
+                else (
+                    (
+                        "sport_bandlimited_horizon_inverse"
+                        if sport_bandlimited_horizon_inverse
+                        else "sport_horizon_inverse"
+                    )
+                    if sport_horizon_inverse
+                    else ("inverse_mpc" if sport_inverse_mpc else "none")
+                )
+            )
+        )
+        if args.actuator_compensation_mode in SPORT_PERSISTENT_ANALYTIC_COMPENSATION_MODES:
+            expected_compensation = str(args.actuator_compensation_mode)
+        if args.high_latency_obs:
+            p.error(f"{args.curriculum_profile} fixes actor obs_dim at 67")
+        if args.delay_ablation_preset not in {
+            "baseline_current",
+            "sport_actuator_replay_fit",
+            "sport_actuator_replay_dr",
+            "sport_actuator_replay_homotopy_dr",
+            "sport_actuator_ablation_ideal",
+            "sport_actuator_ablation_delay_only",
+            "sport_actuator_ablation_overshoot_only",
+        }:
+            p.error(
+                f"{args.curriculum_profile} requires sport_actuator_replay_fit"
+            )
+        if args.actuator_compensation_mode not in (None, expected_compensation):
+            p.error(
+                f"{args.curriculum_profile} requires {expected_compensation}"
+            )
+        if args.actuator_cmd_filter is False:
+            p.error(f"{args.curriculum_profile} requires the sport actuator model")
+        if args.arm_servo_target_tracking_planner is True:
+            p.error(f"{args.curriculum_profile} disables the servo planner")
+        if sport_model_inverse_mlp:
+            if (
+                args.actuator_model_inverse_mlp_path is None
+                or not args.actuator_model_inverse_mlp_path.is_file()
+            ):
+                p.error(
+                    "--actuator-compensation-mode sport_model_inverse_mlp requires "
+                    "--actuator-model-inverse-mlp-path pointing to model.npz"
+                )
+        learning_ablation = args.delay_ablation_preset.startswith(
+            "sport_actuator_ablation_"
+        )
+        if args.delay_ablation_preset == "baseline_current":
+            args.delay_ablation_preset = "sport_actuator_replay_fit"
+        args.actuator_compensation_mode = expected_compensation
+        args.actuator_cmd_filter = None if learning_ablation else True
+        if sport_inverse_mpc:
+            args.actuator_mpc_beta = 1.0
+            args.actuator_mpc_delay_scale = 1.0
+            args.actuator_mpc_tau_scale = 1.0
+            args.actuator_mpc_horizon_steps = 12
+            args.actuator_mpc_tracking_weight = 1.0
+            args.actuator_mpc_nominal_weight = 0.25
+            args.actuator_mpc_delta_weight = 10.0
+            args.actuator_mpc_max_delta_deg = 10.0
+            args.actuator_mpc_feedback_source = "applied"
+            args.actuator_mpc_command_dynamics_constraint = False
+        args.arm_post_compensation_limiter = bool(sport_safe_analytic_inverse)
+        args.arm_servo_target_limiter = False
+        args.arm_servo_target_tracking_planner = False
+        args.arm_servo_planner_before_actuator_model = False
+        args.arm_actual_state_limiter = False
+        args.arm_actual_target_tracking_governor = False
+        if sport_safe_analytic_inverse:
+            # Keep the policy action within a realizable bandwidth and make
+            # further high-frequency exploitation costly.  These settings are
+            # part of the checkpoint/deployment contract and are reproduced by
+            # the NumPy controller's smooth_action path.
+            args.action_filter_tau_ms = max(
+                20.0, float(getattr(args, "action_filter_tau_ms", 0.0) or 0.0)
+            )
+            args.action_jerk_limit = 60.0
+        args.asymmetric_critic = True
+        args.critic_command_history_steps = 12
+    if (
+        args.curriculum_profile
+        in (ROBUST_JUGGLE_PROFILE, *D455_67D_INVERSE_MPC_PROFILES)
+        and args.curriculum_profile
+        not in GOAL_D455_AUTOLAUNCH_SPORT_ACTUATOR_PROFILES
+    ):
         if args.high_latency_obs:
             p.error(f"{args.curriculum_profile} fixes actor obs_dim at 67; do not use --high-latency-obs")
         if args.delay_ablation_preset not in {"baseline_current", "real_actuator_replay_fit"}:
@@ -15037,6 +16586,27 @@ def _recent_mean(recent: list[dict[str, object]], key: str) -> float:
     return float(np.mean(values))
 
 
+def _recent_event_conditional_mean(
+    recent: list[dict[str, object]],
+    value_key: str,
+    event_key: str,
+) -> float:
+    """Recover an event-conditional mean from rollout-wide step means."""
+
+    value_sum = 0.0
+    event_sum = 0.0
+    for row in recent:
+        value = _finite_float(row, value_key)
+        events = _finite_float(row, event_key)
+        if value is None or events is None or events <= 0.0:
+            continue
+        value_sum += value
+        event_sum += events
+    if event_sum <= 0.0:
+        return float("nan")
+    return float(value_sum / event_sum)
+
+
 def _positive_gate_floor(value: float, target: float | None, ratio: float = 0.90) -> bool:
     if target is None:
         return True
@@ -15128,6 +16698,17 @@ def convergence_status(
         "mean_hit_next_contact_anchor_err",
     )
     recent_racket_up_cos = _recent_mean(recent, "racket_up_cos")
+    recent_hit_racket_angular_speed_rad_s = _recent_event_conditional_mean(
+        recent,
+        "hit_racket_angular_speed_rad_s",
+        "new_hit",
+    )
+    recent_arm_posture_error_deg = np.degrees(
+        _recent_mean(recent, "arm_posture_error_max_rad")
+    )
+    recent_phase_teacher_q_norm_error = _recent_mean(
+        recent, "phase_teacher_q_norm_error"
+    )
 
     required_updates = max(int(stage.min_updates), int(args.min_stage_updates))
     enough_updates = stage_update >= required_updates
@@ -15282,6 +16863,38 @@ def convergence_status(
             np.isfinite(recent_racket_up_cos)
             and recent_racket_up_cos >= float(stage.target_racket_up_cos)
         )
+    )
+    hit_racket_angular_speed_ok = (
+        True
+        if stage.max_recent_hit_racket_angular_speed_rad_s is None
+        else bool(
+            np.isfinite(recent_hit_racket_angular_speed_rad_s)
+            and recent_hit_racket_angular_speed_rad_s
+            <= float(stage.max_recent_hit_racket_angular_speed_rad_s)
+        )
+    )
+    arm_posture_error_ok = (
+        True
+        if stage.max_recent_arm_posture_error_deg is None
+        else bool(
+            np.isfinite(recent_arm_posture_error_deg)
+            and recent_arm_posture_error_deg
+            <= float(stage.max_recent_arm_posture_error_deg)
+        )
+    )
+    phase_teacher_q_error_ok = (
+        True
+        if stage.max_recent_phase_teacher_q_norm_error is None
+        else bool(
+            np.isfinite(recent_phase_teacher_q_norm_error)
+            and recent_phase_teacher_q_norm_error
+            <= float(stage.max_recent_phase_teacher_q_norm_error)
+        )
+    )
+    behavior_quality_ok = bool(
+        hit_racket_angular_speed_ok
+        and arm_posture_error_ok
+        and phase_teacher_q_error_ok
     )
     missing_exposure_ok = (
         True
@@ -15438,7 +17051,7 @@ def convergence_status(
     else:
         raise ValueError(f"unknown curriculum gate_mode: {stage.gate_mode}")
 
-    converged = bool(
+    base_converged = bool(
         args.advance_mode == "converged"
         and enough_updates
         and enough_window
@@ -15447,11 +17060,27 @@ def convergence_status(
         and performance_gate_ok
         and hit_interval_ok
         and hit_interval_max_ok
+        and behavior_quality_ok
         and missing_exposure_ok
         and lost_rate_ok
     )
+    hold_required = max(1, int(stage.convergence_hold_updates))
+    hold_count = 0
+    if base_converged:
+        hold_count = 1
+        # The current row has already been appended but does not have status
+        # fields until this function returns.  Count immediately preceding
+        # base-gate passes only; any failed update resets the hold.
+        for prior in reversed(history[:-1]):
+            if float(prior.get("convergence/base_stage_converged", 0.0)) < 0.5:
+                break
+            hold_count += 1
+    converged = bool(base_converged and hold_count >= hold_required)
     return {
         "convergence/stage_converged": float(converged),
+        "convergence/base_stage_converged": float(base_converged),
+        "convergence/hold_count": float(hold_count),
+        "convergence/hold_required": float(hold_required),
         "convergence/gate_mode_balanced": float(stage.gate_mode == "balanced"),
         "convergence/gate_mode_balanced_probe": float(
             stage.gate_mode == "balanced_probe"
@@ -15491,6 +17120,13 @@ def convergence_status(
         "convergence/recent_mean_hit_vxy": recent_mean_hit_vxy,
         "convergence/recent_mean_hit_next_contact_anchor_err": recent_mean_hit_next_contact_anchor_err,
         "convergence/recent_racket_up_cos": recent_racket_up_cos,
+        "convergence/recent_hit_racket_angular_speed_rad_s": (
+            recent_hit_racket_angular_speed_rad_s
+        ),
+        "convergence/recent_arm_posture_error_deg": recent_arm_posture_error_deg,
+        "convergence/recent_phase_teacher_q_norm_error": (
+            recent_phase_teacher_q_norm_error
+        ),
         "convergence/target_mean_hits": float(stage.target_mean_hits),
         "convergence/target_mean_len_frac": float(stage.target_mean_len_frac),
         "convergence/min_recent_mean_return": (
@@ -15571,6 +17207,21 @@ def convergence_status(
             if stage.target_racket_up_cos is not None
             else 0.0
         ),
+        "convergence/max_recent_hit_racket_angular_speed_rad_s": (
+            float(stage.max_recent_hit_racket_angular_speed_rad_s)
+            if stage.max_recent_hit_racket_angular_speed_rad_s is not None
+            else 0.0
+        ),
+        "convergence/max_recent_arm_posture_error_deg": (
+            float(stage.max_recent_arm_posture_error_deg)
+            if stage.max_recent_arm_posture_error_deg is not None
+            else 0.0
+        ),
+        "convergence/max_recent_phase_teacher_q_norm_error": (
+            float(stage.max_recent_phase_teacher_q_norm_error)
+            if stage.max_recent_phase_teacher_q_norm_error is not None
+            else 0.0
+        ),
         "convergence/min_ball_obs_missing_refresh_rate": (
             float(stage.min_ball_obs_missing_refresh_rate)
             if stage.min_ball_obs_missing_refresh_rate is not None
@@ -15602,6 +17253,14 @@ def convergence_status(
         "convergence/hit_recoverability_ok": float(hit_recoverability_ok),
         "convergence/episode_truncation_ok": float(episode_truncation_ok),
         "convergence/racket_up_cos_ok": float(racket_up_cos_ok),
+        "convergence/hit_racket_angular_speed_ok": float(
+            hit_racket_angular_speed_ok
+        ),
+        "convergence/arm_posture_error_ok": float(arm_posture_error_ok),
+        "convergence/phase_teacher_q_error_ok": float(
+            phase_teacher_q_error_ok
+        ),
+        "convergence/behavior_quality_ok": float(behavior_quality_ok),
         "convergence/missing_exposure_ok": float(missing_exposure_ok),
         "convergence/lost_rate_ok": float(lost_rate_ok),
         "convergence/min_updates": float(required_updates),
@@ -15648,7 +17307,44 @@ def stage_best_score(row: dict[str, object], stage: CurriculumStage) -> float | 
     recent_return = _finite_float(row, "convergence/recent_mean_return")
     if recent_hits is None or recent_len_frac is None or recent_return is None:
         return None
+    # A high-hit checkpoint is not useful when the redundant arm has learned a
+    # flying-elbow solution.  Profile-specific guards reject such checkpoints
+    # from the best slot while periodic/last checkpoints remain available for
+    # diagnosis.  Defaults of 1.0 preserve historical profiles.
+    checkpoint_guards = (
+        (
+            "arm_posture_soft_exceed_fraction",
+            stage.cfg.best_checkpoint_max_arm_posture_soft_exceed_fraction,
+        ),
+        (
+            "arm_command_posture_soft_exceed_fraction",
+            stage.cfg.best_checkpoint_max_arm_command_soft_exceed_fraction,
+        ),
+        (
+            "arm_qvel_limit_exceed_fraction",
+            stage.cfg.best_checkpoint_max_arm_qvel_limit_exceed_fraction,
+        ),
+        (
+            "arm_qacc_limit_exceed_fraction",
+            stage.cfg.best_checkpoint_max_arm_qacc_limit_exceed_fraction,
+        ),
+    )
+    for metric_name, limit in checkpoint_guards:
+        if float(limit) >= 1.0:
+            continue
+        value = _finite_float(row, metric_name)
+        if value is None or value > float(limit):
+            return None
     score = recent_hits + 10.0 * recent_len_frac + 0.10 * recent_return
+    if float(stage.cfg.arm_posture_penalty_weight) > 0.0:
+        actual_posture_max = _finite_float(row, "arm_posture_error_max_rad")
+        command_posture_max = _finite_float(
+            row, "arm_command_posture_error_max_rad"
+        )
+        if actual_posture_max is not None:
+            score -= 5.0 * actual_posture_max
+        if command_posture_max is not None:
+            score -= 3.0 * command_posture_max
     score += _gate_metric_score(
         _finite_float(row, "convergence/recent_camera_visible"),
         stage.target_camera_visible,
@@ -16870,6 +18566,217 @@ def finish_wandb_run(wandb_run, args: argparse.Namespace, progress_path: Path) -
     wandb_run.finish()
 
 
+def apply_phase_teacher_reference(
+    stages: list[CurriculumStage],
+    reference_path: Path,
+    global_strength: float,
+    posture_mode: str,
+) -> list[CurriculumStage]:
+    """Attach successful q/dq/task-space behavior without copying actions."""
+
+    with np.load(reference_path) as payload:
+        phase = np.asarray(payload["phase"], dtype=np.float32)
+        q = np.asarray(payload["q_rad"], dtype=np.float32)
+        dq = np.asarray(payload["dq_rad_s"], dtype=np.float32)
+        racket_z = np.asarray(payload["racket_z_rel_m"], dtype=np.float32)
+        racket_vz = np.asarray(payload["racket_vz_m_s"], dtype=np.float32)
+        ball_vz_scale = float(np.asarray(payload["ball_vz_scale_m_s"]).item())
+    if (
+        phase.ndim != 1
+        or phase.shape[0] < 2
+        or q.shape != (phase.shape[0], 7)
+        or dq.shape != q.shape
+        or racket_z.shape != phase.shape
+        or racket_vz.shape != phase.shape
+    ):
+        raise SystemExit(
+            "[mjx_curriculum] invalid phase teacher shapes: "
+            f"phase={phase.shape}, q={q.shape}, dq={dq.shape}, "
+            f"racket_z={racket_z.shape}, racket_vz={racket_vz.shape}"
+        )
+    if not np.allclose(
+        phase, np.linspace(0.0, 1.0, len(phase), dtype=np.float32), atol=1e-5
+    ):
+        raise SystemExit("[mjx_curriculum] phase teacher grid must be uniform from 0 to 1")
+    if not all(np.all(np.isfinite(array)) for array in (q, dq, racket_z, racket_vz)):
+        raise SystemExit("[mjx_curriculum] phase teacher contains non-finite targets")
+
+    racket_z_tuple = tuple(float(x) for x in racket_z)
+    racket_vz_tuple = tuple(float(x) for x in racket_vz)
+    guided: list[CurriculumStage] = []
+    for index, stage in enumerate(stages):
+        if posture_mode in {"taskspace_only", "reset_centered"}:
+            reset_q = np.deg2rad(
+                np.asarray(stage.cfg.right_arm_reset_degrees, dtype=np.float32)
+            )
+            # The old servo/compensation stack settled at a posture far from the
+            # current direct-actuator reset.  Copying that absolute offset after
+            # the first hit creates a discontinuous objective and encourages the
+            # exact joint drift this teacher is intended to prevent.  Transfer
+            # only the cyclic coordination and zero-mean velocity profile.
+            stage_q = reset_q[None, :] + (q - np.mean(q, axis=0, keepdims=True))
+            stage_dq = dq - np.mean(dq, axis=0, keepdims=True)
+        else:
+            stage_q = q
+            stage_dq = dq
+        q_tuple = tuple(tuple(float(x) for x in row) for row in stage_q)
+        dq_tuple = tuple(tuple(float(x) for x in row) for row in stage_dq)
+        if index == 0:
+            stage_scale = 0.70
+        elif index <= 4:
+            stage_scale = 1.00
+        elif index <= 12:
+            stage_scale = 0.75
+        elif index <= 16:
+            stage_scale = 0.55
+        else:
+            stage_scale = 0.35
+        strength = float(global_strength) * stage_scale
+        taskspace_only = posture_mode == "taskspace_only"
+        guided.append(
+            replace(
+                stage,
+                cfg=replace(
+                    stage.cfg,
+                    phase_teacher_q_reference_rad=q_tuple,
+                    phase_teacher_dq_reference_rad_s=dq_tuple,
+                    phase_teacher_racket_z_rel_reference_m=racket_z_tuple,
+                    phase_teacher_racket_vz_reference_m_s=racket_vz_tuple,
+                    phase_teacher_ball_vz_scale_m_s=ball_vz_scale,
+                    phase_teacher_strength=strength,
+                    # The successful reference cycle moves only about
+                    # 2--9 degrees peak-to-peak.  The previous 20--30 degree
+                    # sigma made visibly deformed motion almost free.  Keep a
+                    # generous actuator-transfer margin while making the
+                    # realized q/dq teacher behavior consequential.
+                    phase_teacher_q_weight=(
+                        0.0
+                        if taskspace_only
+                        else max(0.080, float(stage.cfg.phase_teacher_q_weight))
+                    ),
+                    phase_teacher_dq_weight=(
+                        0.0
+                        if taskspace_only
+                        else max(0.020, float(stage.cfg.phase_teacher_dq_weight))
+                    ),
+                    phase_teacher_racket_z_weight=(
+                        max(0.080, float(stage.cfg.phase_teacher_racket_z_weight))
+                        if taskspace_only
+                        else float(stage.cfg.phase_teacher_racket_z_weight)
+                    ),
+                    phase_teacher_racket_vz_weight=(
+                        max(0.020, float(stage.cfg.phase_teacher_racket_vz_weight))
+                        if taskspace_only
+                        else float(stage.cfg.phase_teacher_racket_vz_weight)
+                    ),
+                    # Axis diagnostics show that the malformed GPU0 policy is
+                    # dominated by local-z paddle spin and local-x roll, while
+                    # local-y is the useful vertical juggling stroke.  Replace
+                    # the old direction-agnostic tilt cost with local-xz only.
+                    racket_tilt_angular_speed_penalty_weight=(
+                        0.0
+                        if taskspace_only
+                        else float(stage.cfg.racket_tilt_angular_speed_penalty_weight)
+                    ),
+                    racket_stability_angular_speed_mode=(
+                        "local_xz"
+                        if taskspace_only
+                        else str(stage.cfg.racket_stability_angular_speed_mode)
+                    ),
+                    racket_stability_angular_speed_penalty_weight=(
+                        max(
+                            0.12 if index == 0 else 0.50,
+                            float(stage.cfg.racket_stability_angular_speed_penalty_weight),
+                        )
+                        if taskspace_only
+                        else float(stage.cfg.racket_stability_angular_speed_penalty_weight)
+                    ),
+                    racket_stability_angular_speed_soft_limit_rad_s=(
+                        (0.65 if index == 0 else 0.50) if taskspace_only else float(
+                            stage.cfg.racket_stability_angular_speed_soft_limit_rad_s
+                        )
+                    ),
+                    racket_stability_angular_speed_scale_rad_s=(
+                        (0.90 if index == 0 else 0.70) if taskspace_only else float(
+                            stage.cfg.racket_stability_angular_speed_scale_rad_s
+                        )
+                    ),
+                    # Match the sparse impact objective to the graduation
+                    # metric.  Previously the reward had a 1.20 rad/s dead
+                    # zone while the gate required 0.90 rad/s, so a high-hit
+                    # policy had little incentive to leave its 2.3 rad/s
+                    # local optimum.  Keep launch00 gentler for acquisition.
+                    hit_racket_angular_speed_penalty_weight=(
+                        max(
+                            0.20 if index == 0 else 1.00,
+                            float(stage.cfg.hit_racket_angular_speed_penalty_weight),
+                        )
+                        if taskspace_only
+                        else float(stage.cfg.hit_racket_angular_speed_penalty_weight)
+                    ),
+                    hit_racket_angular_speed_soft_limit_rad_s=(
+                        min(
+                            1.00 if index == 0 else 0.70,
+                            float(stage.cfg.hit_racket_angular_speed_soft_limit_rad_s),
+                        )
+                        if taskspace_only
+                        else float(stage.cfg.hit_racket_angular_speed_soft_limit_rad_s)
+                    ),
+                    hit_racket_angular_speed_scale_rad_s=(
+                        min(
+                            1.00 if index == 0 else 0.70,
+                            float(stage.cfg.hit_racket_angular_speed_scale_rad_s),
+                        )
+                        if taskspace_only
+                        else float(stage.cfg.hit_racket_angular_speed_scale_rad_s)
+                    ),
+                    phase_teacher_q_sigma_deg=(
+                        15.0, 15.0, 18.0, 18.0, 18.0, 22.0, 22.0
+                    ),
+                    phase_teacher_dq_sigma_rad_s=(
+                        2.0, 2.0, 2.0, 2.0, 2.0, 2.5, 2.5
+                    ),
+                    phase_teacher_activate_after_hits=1,
+                ),
+                max_recent_arm_posture_error_deg=(
+                    18.0 if index == 0 else (20.0 if index <= 4 else (24.0 if index <= 12 else 28.0))
+                ),
+                max_recent_phase_teacher_q_norm_error=(
+                    None
+                    if taskspace_only
+                    else (
+                        0.70
+                        if index == 0
+                        else (0.75 if index <= 4 else (0.80 if index <= 12 else 0.90))
+                    )
+                ),
+                max_recent_hit_racket_angular_speed_rad_s=(
+                    (1.10 if index == 0 else 0.90)
+                    if taskspace_only
+                    else stage.max_recent_hit_racket_angular_speed_rad_s
+                ),
+                notes=(
+                    f"{stage.notes} Phase teacher: successful servo "
+                    f"{'task-space racket-z/vz' if taskspace_only else 'q/dq and racket-z'} "
+                    f"behavior only, posture_mode={posture_mode}, "
+                    f"strength={strength:.3f}, active "
+                    "after first hit; tighter realized-motion tolerance and "
+                    "behavior-quality graduation gates; staged local-xz impact and "
+                    "dense stability objectives preserve the useful local-y stroke; "
+                    "no teacher action target "
+                    "and no joint hard range."
+                ),
+            )
+        )
+    print(
+        "[mjx_curriculum] phase teacher loaded: "
+        f"path={reference_path} bins={len(phase)} ball_vz_scale={ball_vz_scale:.3f} "
+        f"global_strength={global_strength:.3f} posture_mode={posture_mode}; "
+        "old-domain action targets=off"
+    )
+    return guided
+
+
 def main() -> None:
     args = parse_args()
     args.save_dir.mkdir(parents=True, exist_ok=True)
@@ -16959,6 +18866,7 @@ def main() -> None:
         args.arm_post_compensation_limiter,
         args.arm_servo_target_limiter,
         args.arm_servo_target_tracking_planner,
+        args.arm_servo_planner_before_actuator_model,
         args.arm_servo_target_velocity_scale,
         args.arm_servo_target_acceleration_scale,
         args.arm_actual_state_limiter,
@@ -16967,7 +18875,19 @@ def main() -> None:
         args.arm_actual_governor_damping_ratio,
         args.arm_actual_jerk_limit_deg_s3,
         args.right_arm_pd_profile,
+        (
+            str(args.actuator_model_inverse_mlp_path.resolve())
+            if args.actuator_model_inverse_mlp_path is not None
+            else None
+        ),
     )
+    if args.phase_teacher_reference is not None:
+        stages = apply_phase_teacher_reference(
+            stages,
+            args.phase_teacher_reference,
+            args.phase_teacher_strength,
+            args.phase_teacher_posture_mode,
+        )
     if args.max_stages > 0:
         stages = stages[: int(args.max_stages)]
     progress_path = args.save_dir / "curriculum_progress.csv"
@@ -17391,17 +19311,68 @@ def main() -> None:
             running_return=jnp.zeros((args.n_envs,), dtype=jnp.float32),
             running_length=jnp.zeros((args.n_envs,), dtype=jnp.int32),
         )
+        training_phase = "early"
+        effective_n_steps = int(args.n_steps)
+        effective_learning_rate = float(args.learning_rate)
+        effective_update_epochs = int(args.update_epochs)
+        effective_ent_coef = float(args.ent_coef)
+        effective_convergence_window = int(args.convergence_window)
+        use_mid_training = bool(
+            int(args.mid_training_start_stage) > 0
+            and stage_idx >= int(args.mid_training_start_stage)
+        )
+        if use_mid_training:
+            training_phase = "mid"
+            if args.mid_n_steps is not None:
+                effective_n_steps = int(args.mid_n_steps)
+            if args.mid_learning_rate is not None:
+                effective_learning_rate = float(args.mid_learning_rate)
+            if args.mid_update_epochs is not None:
+                effective_update_epochs = int(args.mid_update_epochs)
+            if args.mid_ent_coef is not None:
+                effective_ent_coef = float(args.mid_ent_coef)
+            if args.mid_convergence_window is not None:
+                effective_convergence_window = int(args.mid_convergence_window)
+        use_late_optimizer = bool(
+            int(args.late_optimizer_start_stage) > 0
+            and stage_idx >= int(args.late_optimizer_start_stage)
+        )
+        if use_late_optimizer:
+            training_phase = "late"
+            effective_learning_rate = float(args.late_learning_rate)
+            effective_update_epochs = int(args.late_update_epochs)
+            if args.late_n_steps is not None:
+                effective_n_steps = int(args.late_n_steps)
+            if args.late_ent_coef is not None:
+                effective_ent_coef = float(args.late_ent_coef)
+            if args.late_convergence_window is not None:
+                effective_convergence_window = int(args.late_convergence_window)
+        effective_batch_steps = int(args.n_envs) * effective_n_steps
+        if effective_batch_steps % int(args.minibatch_size) != 0:
+            raise SystemExit(
+                "[mjx_curriculum] phase batch must be divisible by minibatch size: "
+                f"phase={training_phase} n_envs={args.n_envs} "
+                f"n_steps={effective_n_steps} minibatch={args.minibatch_size}"
+            )
+        print(
+            "[mjx_curriculum] training_phase: "
+            f"stage={stage_idx}/{len(stages)} "
+            f"phase={training_phase} n_steps={effective_n_steps} "
+            f"lr={effective_learning_rate:.3g} epochs={effective_update_epochs} "
+            f"ent_coef={effective_ent_coef:.3g} "
+            f"convergence_window={effective_convergence_window}"
+        )
         collect_rollout, update = make_train_fns(
             env=env,
-            n_steps=args.n_steps,
-            update_epochs=args.update_epochs,
+            n_steps=effective_n_steps,
+            update_epochs=effective_update_epochs,
             minibatch_size=args.minibatch_size,
             gamma=args.gamma,
             gae_lambda=args.gae_lambda,
-            learning_rate=args.learning_rate,
+            learning_rate=effective_learning_rate,
             clip_range=args.clip_range,
             vf_coef=args.vf_coef,
-            ent_coef=args.ent_coef,
+            ent_coef=effective_ent_coef,
             max_grad_norm=args.max_grad_norm,
             min_log_std=args.min_log_std,
             target_kl=args.target_kl,
@@ -17428,11 +19399,11 @@ def main() -> None:
             teacher_distill_action_clip=args.teacher_distill_action_clip,
             time_limit_bootstrap=args.time_limit_bootstrap,
         )
-        batch_steps = int(args.n_envs) * int(args.n_steps)
+        batch_steps = effective_batch_steps
         stage_updates = stage_update_cap(stage, args, batch_steps)
         stage_history: list[dict[str, object]] = []
         stage_metric_warmup_updates = (
-            int(np.ceil(float(env.max_steps) / max(1, int(args.n_steps))))
+            int(np.ceil(float(env.max_steps) / max(1, effective_n_steps)))
             if int(args.stage_metric_warmup_updates) < 0
             else int(args.stage_metric_warmup_updates)
         )
@@ -17480,6 +19451,13 @@ def main() -> None:
                 "global_update": global_update,
                 "global_step": global_step,
                 "sps": float(batch_steps / max(elapsed, 1e-9)),
+                "optimizer/phase": training_phase,
+                "optimizer/n_steps": effective_n_steps,
+                "optimizer/learning_rate": effective_learning_rate,
+                "optimizer/update_epochs": effective_update_epochs,
+                "optimizer/ent_coef": effective_ent_coef,
+                "optimizer/convergence_window": effective_convergence_window,
+                "optimizer/late": float(use_late_optimizer),
                 "episodes": done_count,
                 "mean_return": float(ep_ret[done].mean()) if done_count > 0 else float("nan"),
                 "mean_len": float(ep_len[done].mean()) if done_count > 0 else float("nan"),
@@ -17490,7 +19468,9 @@ def main() -> None:
             }
             stage_history.append(row)
             metric_history = stage_history[stage_metric_warmup_updates:]
-            status = convergence_status(metric_history, stage, env, args, stage_update)
+            stage_args = argparse.Namespace(**vars(args))
+            stage_args.convergence_window = effective_convergence_window
+            status = convergence_status(metric_history, stage, env, stage_args, stage_update)
             status["convergence/metric_warmup_updates"] = float(
                 stage_metric_warmup_updates
             )
@@ -17692,7 +19672,8 @@ def main() -> None:
             score = stage_best_score(row, stage)
             if (
                 score is not None
-                and float(row.get("convergence/recent_updates", 0.0)) >= max(1, int(args.convergence_window))
+                and float(row.get("convergence/recent_updates", 0.0))
+                >= max(1, effective_convergence_window)
                 and score > best_stage_score
             ):
                 best_stage_score = score

@@ -49,6 +49,7 @@ def test_w019_constrained_compensation_contract() -> None:
         assert cfg.arm_servo_target_tracking_planner
         assert cfg.arm_servo_target_velocity_scale == pytest.approx(1.0)
         assert cfg.arm_servo_target_acceleration_scale == pytest.approx(0.8)
+
         assert not cfg.arm_actual_state_limiter
         assert not cfg.arm_actual_target_tracking_governor
         assert cfg.right_arm_pd_profile == "xml"
@@ -90,6 +91,7 @@ def test_w019_drbridge_preserves_plant_and_repairs_tail() -> None:
         assert cfg.arm_servo_target_tracking_planner
         assert cfg.arm_servo_target_velocity_scale == pytest.approx(1.0)
         assert cfg.arm_servo_target_acceleration_scale == pytest.approx(0.8)
+
         assert cfg.actuator_compensation_mode == "inverse_mpc"
         assert cfg.actuator_mpc_feedback_source == "actual"
         assert not cfg.arm_actual_state_limiter
@@ -223,6 +225,7 @@ def test_launch17_obsres2mm_servo_v5_changes_only_measured_observation_fields() 
         assert cfg.arm_servo_target_velocity_scale == pytest.approx(1.0)
         assert cfg.arm_servo_target_acceleration_scale == pytest.approx(0.8)
 
+
     launch17, final = v5[-2:]
     assert launch17.gate_mode == "strict"
     assert launch17.advance_gate_mode == "collapse"
@@ -235,6 +238,242 @@ def test_launch17_obsres2mm_servo_v5_changes_only_measured_observation_fields() 
     assert final.target_mean_len_frac == pytest.approx(0.95)
     assert final.target_episode_truncation_rate == pytest.approx(0.86)
 
+
+def test_sport_second_order_actuator_dr_follows_actuator_stage_gate() -> None:
+    pytest.importorskip("jax")
+    pytest.importorskip("mujoco")
+    from train_juggle_mjx_curriculum import build_curriculum
+
+    stages = build_curriculum(
+        gate_preset="v7_strict",
+        curriculum_profile="goal_d455_autolaunch_sport_actuator_obsres2mm_nocomp_v1",
+        delay_ablation_preset="sport_actuator_replay_dr",
+        actuator_compensation_mode="none",
+        arm_servo_target_tracking_planner=False,
+        asymmetric_critic=True,
+        critic_command_history_steps=12,
+    )
+
+    assert [stage.name for stage in stages[:6]] == [
+        "launch00_acquisition",
+        "launch01_local_workspace",
+        "launch02_workspace",
+        "launch03_ball_dynamics_mild",
+        "launch04_contact_dynamics_mild",
+        "launch05_actuator_pd_mild",
+    ]
+    assert all(
+        not stage.cfg.dr_randomize_second_order_actuator for stage in stages[:5]
+    )
+    assert stages[5].cfg.dr_randomize_actuator
+    assert stages[5].cfg.dr_randomize_second_order_actuator
+    assert all(
+        stage.cfg.dr_randomize_second_order_actuator
+        == stage.cfg.dr_randomize_actuator
+        for stage in stages
+    )
+
+
+def test_sport_successref_profile_builds_hit_ladder_before_reference_dr_tail() -> None:
+    pytest.importorskip("jax")
+    pytest.importorskip("mujoco")
+    from train_juggle_mjx_curriculum import GOAL_D455_PROFILES, build_curriculum
+
+    assert "goal_d455_sport_taskspace_successref_obsres2mm_nocomp_v1" in GOAL_D455_PROFILES
+
+    sport = build_curriculum(
+        gate_preset="v7_strict",
+        curriculum_profile="goal_d455_sport_taskspace_successref_obsres2mm_nocomp_v1",
+        delay_ablation_preset="sport_actuator_replay_dr",
+        actuator_compensation_mode="none",
+        arm_servo_target_tracking_planner=False,
+        asymmetric_critic=True,
+        critic_command_history_steps=12,
+    )
+
+    assert len(sport) == 25
+    assert [stage.name for stage in sport[:7]] == [
+        "sport00_first_hit_acquisition",
+        "sport01_two_hit_acquisition",
+        "sport02_three_hit_acquisition",
+        "sport03_four_hit_recovery",
+        "sport04_centered_six_hit",
+        "sport05_nominal_seven_hit",
+        "sport06_nominal_nine_hit",
+    ]
+    assert [stage.target_mean_hits for stage in sport[:7]] == pytest.approx(
+        [0.95, 1.80, 2.65, 3.40, 5.0, 7.0, 8.0]
+    )
+    assert [stage.target_mean_hits_ge3 for stage in sport[2:7]] == pytest.approx(
+        [3.0, 3.8, 5.6, 7.6, 8.3]
+    )
+    assert [stage.target_mean_hits_ge3 for stage in sport[2:]] == sorted(
+        stage.target_mean_hits_ge3 for stage in sport[2:]
+    )
+    assert [stage.target_mean_hits for stage in sport] == sorted(
+        stage.target_mean_hits for stage in sport
+    )
+    assert [stage.target_episode_truncation_rate for stage in sport[3:]] == sorted(
+        stage.target_episode_truncation_rate for stage in sport[3:]
+    )
+
+    # Acquisition is unconstrained by final-task centre-return penalties.
+    for stage in sport[:3]:
+        assert stage.cfg.post_hit_ball_vxy_penalty_weight == pytest.approx(0.0)
+        assert stage.cfg.hit_vxy_penalty_weight == pytest.approx(0.0)
+        assert stage.cfg.hit_next_contact_anchor_penalty_weight == pytest.approx(0.0)
+    assert [stage.cfg.hit_reward_combo for stage in sport[:4]] == pytest.approx(
+        [0.0, 0.03, 0.06, 0.08]
+    )
+    assert sport[3].cfg.hit_vxy_penalty_weight == pytest.approx(0.20)
+    assert sport[6].cfg.hit_vxy_penalty_weight == pytest.approx(0.90)
+
+    # Ball and contact DR remain separated from actuator DR.  The two
+    # inherited bridge stages follow the seven-stage nominal hit ladder.
+    assert sport[7].name == "launch03_ball_dynamics_mild"
+    assert sport[8].name == "launch04_contact_dynamics_mild"
+    assert sport[9].name == "launch05_actuator_pd_mild"
+    assert all(not stage.cfg.dr_randomize_second_order_actuator for stage in sport[:9])
+    assert sport[9].cfg.dr_randomize_actuator
+    assert sport[9].cfg.dr_randomize_second_order_actuator
+
+    for stage in sport:
+        assert stage.cfg.right_arm_pd_profile == "sport_taskspace_fit_v1"
+        assert stage.cfg.actuator_compensation_mode == "none"
+        assert not stage.cfg.arm_servo_target_tracking_planner
+
+    final = sport[-1]
+    assert final.name == "launch19_final_measured_obsres2mm_sport_nocomp_consolidation"
+    assert final.target_mean_hits == pytest.approx(13.0)
+    assert final.target_mean_hits_ge3 == pytest.approx(13.5)
+    assert final.target_mean_len_frac == pytest.approx(0.95)
+    assert final.target_episode_truncation_rate == pytest.approx(0.86)
+    assert final.cfg.ball_obs_pos_noise_std == pytest.approx(0.002)
+    assert final.cfg.ball_obs_vel_noise_std == pytest.approx(0.07)
+    assert final.cfg.dr_ball_obs_pos_bias_base_m == pytest.approx((0.002, 0.002, 0.002))
+    assert final.cfg.dr_ball_obs_rot_bias_deg == pytest.approx((0.0, 0.0, 0.0))
+    assert final.cfg.dr_ball_obs_vel_bias_base_m_s == pytest.approx((0.0, 0.0, 0.0))
+    assert final.cfg.dr_ball_obs_scale_range == pytest.approx((1.0, 1.0))
+    assert final.cfg.ball_obs_dropout_prob == pytest.approx(0.0)
+
+
+def test_sport_direct_profile_is_exact_reference_course_with_actuator_adaptation() -> None:
+    pytest.importorskip("jax")
+    pytest.importorskip("mujoco")
+    from train_juggle_mjx_curriculum import GOAL_D455_PROFILES, build_curriculum
+
+    profile = "goal_d455_sport_taskspace_obsres2mm_nocomp_direct_v1"
+    removed_profiles = {
+        "goal_d455_sport_taskspace_successref_obsres2mm_nocomp_v2",
+        "goal_d455_sport_taskspace_successref_count_ablation_v1",
+        "goal_d455_sport_taskspace_successref_recover_ablation_v1",
+        "goal_d455_sport_taskspace_successref_combined_ablation_v1",
+        "goal_d455_sport_taskspace_successref_indexed_recovery_ablation_v1",
+        "goal_d455_sport_taskspace_successref_preparatory_ablation_v1",
+        "goal_d455_sport_taskspace_successref_contact_velocity_ablation_v1",
+        "goal_d455_sport_taskspace_successref_contact_quality_ablation_v1",
+        "goal_d455_sport_taskspace_successref_posture003_ablation_v1",
+        "goal_d455_sport_taskspace_successref_posture010_ablation_v1",
+        "goal_d455_sport_taskspace_successref_posture100_ablation_v1",
+    }
+    assert profile in GOAL_D455_PROFILES
+    assert removed_profiles.isdisjoint(GOAL_D455_PROFILES)
+
+    stages = build_curriculum(
+        gate_preset="v7_strict",
+        curriculum_profile=profile,
+        delay_ablation_preset="sport_actuator_replay_dr",
+        actuator_compensation_mode="none",
+        arm_servo_target_tracking_planner=False,
+        asymmetric_critic=True,
+        critic_command_history_steps=12,
+    )
+
+    assert len(stages) == 21
+    assert [stage.name for stage in stages[:6]] == [
+        "launch00_acquisition",
+        "launch01_local_workspace",
+        "launch02_workspace",
+        "launch03_ball_dynamics_mild",
+        "launch04_contact_dynamics_mild",
+        "launch05_actuator_pd_mild",
+    ]
+    assert all(not stage.name.startswith("sport") for stage in stages)
+    assert [stage.target_mean_hits for stage in stages[:5]] == pytest.approx(
+        [1.0, 2.0, 3.2, 4.5, 5.8]
+    )
+    assert [stage.target_episode_truncation_rate for stage in stages] == pytest.approx(
+        [
+            0.02, 0.05, 0.10, 0.16, 0.23, 0.31, 0.40, 0.48, 0.54,
+            0.59, 0.64, 0.68, 0.72, 0.75, 0.78, 0.50, 0.42, 0.75,
+            0.75, 0.75, 0.86,
+        ]
+    )
+
+    assert all(not stage.cfg.dr_randomize_actuator for stage in stages[:5])
+    assert all(not stage.cfg.dr_randomize_second_order_actuator for stage in stages[:5])
+    assert stages[5].cfg.dr_randomize_actuator
+    assert stages[5].cfg.dr_randomize_second_order_actuator
+    assert all(
+        stage.cfg.dr_randomize_second_order_actuator
+        == stage.cfg.dr_randomize_actuator
+        for stage in stages
+    )
+    assert stages[0].cfg.hit_height_penalty_weight == pytest.approx(0.0)
+    assert all(stage.cfg.hit_height_penalty_weight >= 3.0 for stage in stages[1:])
+
+    assert stages[-1].target_mean_hits_ge3 == pytest.approx(13.5)
+    for stage in stages:
+        assert stage.cfg.posture_weight >= 0.02
+        assert stage.cfg.arm_posture_penalty_weight >= 0.10
+        assert stage.cfg.arm_command_posture_penalty_weight >= 0.06
+        assert stage.cfg.arm_posture_soft_limit_penalty_weight >= 0.80
+        assert stage.cfg.arm_velocity_usage_penalty_weight >= 0.04
+        assert stage.cfg.arm_acceleration_usage_penalty_weight >= 0.015
+        assert stage.cfg.arm_vel_limit_penalty_weight >= 0.06
+        assert stage.cfg.arm_acc_limit_penalty_weight >= 0.08
+        assert stage.cfg.arm_limiter_penalty_weight >= 0.05
+        assert stage.cfg.enable_anti_windup
+        assert stage.cfg.anti_windup_error_threshold == pytest.approx(0.25)
+        assert stage.cfg.anti_windup_min_scale == pytest.approx(0.05)
+        assert stage.cfg.arm_vel_limit_deg_s == pytest.approx(
+            (210.0, 210.0, 240.0, 240.0, 300.0, 300.0, 300.0)
+        )
+        assert stage.cfg.arm_acc_limit_deg_s2 == pytest.approx(
+            (1300.0, 1300.0, 1800.0, 3000.0, 3000.0, 3000.0, 3000.0)
+        )
+        assert stage.cfg.action_delta_penalty_weight >= 0.0012
+        assert stage.cfg.delay_action_jerk_penalty_weight >= 3.0e-7
+        assert stage.cfg.actuator_cmd_model == "second_order"
+        assert stage.cfg.actuator_cmd_delay_ms_per_joint == pytest.approx(
+            (45.0, 50.0, 45.0, 40.0, 35.0, 45.0, 55.0)
+        )
+        assert stage.cfg.actuator_compensation_mode == "none"
+        assert not stage.cfg.arm_servo_target_tracking_planner
+
+    from train_juggle_mjx_curriculum import stage_best_score
+
+    common_score_row = {
+        "convergence/recent_mean_hits": 4.0,
+        "convergence/recent_mean_len_frac": 0.4,
+        "convergence/recent_mean_return": 8.0,
+        "arm_posture_soft_exceed_fraction": 0.0,
+        "arm_command_posture_soft_exceed_fraction": 0.0,
+        "arm_qvel_limit_exceed_fraction": 0.0,
+        "arm_qacc_limit_exceed_fraction": 0.0,
+        "arm_posture_error_max_rad": 0.25,
+        "arm_command_posture_error_max_rad": 0.20,
+    }
+    assert stage_best_score(common_score_row, stages[0]) is not None
+    assert stage_best_score(
+        {**common_score_row, "arm_posture_soft_exceed_fraction": 0.03},
+        stages[0],
+    ) is None
+
+    final = stages[-1]
+    assert final.name == "launch19_final_measured_obsres2mm_sport_nocomp_consolidation"
+    assert final.cfg.ball_obs_pos_noise_std == pytest.approx(0.002)
+    assert final.cfg.dr_ball_obs_pos_bias_base_m == pytest.approx((0.002, 0.002, 0.002))
 
 def test_w020_countcredit_changes_only_terminal_credit_on_w019_v2() -> None:
     baseline = _stages(
@@ -489,6 +728,38 @@ def test_stage_best_score_penalizes_cadence_outside_gate_band() -> None:
     assert in_band is not None and too_slow is not None and too_fast is not None
     assert in_band > too_slow
     assert in_band > too_fast
+
+
+def test_sport_actuator_learning_ablation_presets_isolate_delay_and_overshoot() -> None:
+    pytest.importorskip("jax")
+    pytest.importorskip("mujoco")
+    from train_juggle_mjx_curriculum import _delay_conditioned_control_kwargs
+
+    ideal = _delay_conditioned_control_kwargs("sport_actuator_ablation_ideal")
+    delay = _delay_conditioned_control_kwargs(
+        "sport_actuator_ablation_delay_only"
+    )
+    overshoot = _delay_conditioned_control_kwargs(
+        "sport_actuator_ablation_overshoot_only"
+    )
+    full = _delay_conditioned_control_kwargs("sport_actuator_replay_fit")
+
+    assert all(cfg["right_arm_pd_profile"] == "sport_taskspace_fit_v1" for cfg in (ideal, delay, overshoot, full))
+    assert all(cfg["include_command_state"] for cfg in (ideal, delay, overshoot, full))
+    assert all(cfg["include_active_command_error"] for cfg in (ideal, delay, overshoot, full))
+    assert all(cfg["include_phase_features"] for cfg in (ideal, delay, overshoot, full))
+
+    assert not ideal["actuator_cmd_filter"]
+    assert ideal["delay_min_ms"] == pytest.approx(0.0)
+    assert not delay["actuator_cmd_filter"]
+    assert delay["delay_min_ms"] == pytest.approx(45.0)
+    assert overshoot["actuator_cmd_filter"]
+    assert overshoot["actuator_cmd_model"] == "second_order"
+    assert overshoot["actuator_cmd_delay_ms_per_joint"] == pytest.approx((0.0,) * 7)
+    assert full["actuator_cmd_filter"]
+    assert full["actuator_cmd_delay_ms_per_joint"] == pytest.approx(
+        (45.0, 50.0, 45.0, 40.0, 35.0, 45.0, 55.0)
+    )
 
 
 def test_actuator_final_survival_changes_only_launch19_recoverability() -> None:
@@ -2187,3 +2458,87 @@ def test_intercept_nomissing_survival_contract() -> None:
         "target_episode_truncation_rate",
     ):
         assert getattr(launch17, field_name) == getattr(source, field_name)
+
+
+def test_sport_direct_consolidates_before_nominal_task_progression() -> None:
+    pytest.importorskip("jax")
+    pytest.importorskip("mujoco")
+    from train_juggle_mjx_curriculum import build_curriculum
+
+    common = dict(
+        curriculum_profile="goal_d455_sport_taskspace_obsres2mm_nocomp_direct_v1",
+        gate_preset="v7_strict",
+        actuator_compensation_mode="none",
+        arm_servo_target_tracking_planner=False,
+        asymmetric_critic=True,
+        critic_command_history_steps=12,
+    )
+    nominal = build_curriculum(
+        delay_ablation_preset="sport_actuator_replay_dr", **common
+    )
+    homotopy = build_curriculum(
+        delay_ablation_preset="sport_actuator_replay_homotopy_dr", **common
+    )
+
+    assert len(nominal) == len(homotopy) == 21
+    for stages in (nominal, homotopy):
+        launch00 = stages[0]
+        assert launch00.min_updates == 30
+        assert launch00.target_mean_hits == pytest.approx(1.0)
+        assert launch00.target_mean_len_frac == pytest.approx(0.10)
+        assert launch00.target_hit3_rate is None
+        assert launch00.target_mean_hits_ge3 is None
+        assert launch00.target_episode_truncation_rate == pytest.approx(0.02)
+        assert launch00.cfg.actuator_compensation_mode == "none"
+        assert not launch00.cfg.arm_servo_target_tracking_planner
+        assert not launch00.cfg.enable_anti_windup
+        assert not launch00.cfg.dr_randomize_second_order_actuator
+
+    assert nominal[0].cfg.actuator_cmd_damping_ratio[0] == pytest.approx(0.391768)
+    assert nominal[0].cfg.actuator_cmd_delay_ms_per_joint == (
+        45.0, 50.0, 45.0, 40.0, 35.0, 45.0, 55.0
+    )
+    assert homotopy[0].cfg.actuator_cmd_damping_ratio == pytest.approx((0.8,) * 7)
+    assert homotopy[1].cfg.actuator_cmd_damping_ratio == pytest.approx((0.55,) * 7)
+    assert homotopy[2].cfg.actuator_cmd_damping_ratio == pytest.approx(
+        nominal[2].cfg.actuator_cmd_damping_ratio
+    )
+    assert homotopy[2].cfg.actuator_cmd_delay_ms_per_joint == pytest.approx(
+        nominal[2].cfg.actuator_cmd_delay_ms_per_joint
+    )
+
+
+def test_taskspace_phase_teacher_aligns_impact_and_dense_local_xz_objectives() -> None:
+    pytest.importorskip("jax")
+    pytest.importorskip("mujoco")
+    from train_juggle_mjx_curriculum import (
+        apply_phase_teacher_reference,
+        build_curriculum,
+    )
+
+    stages = build_curriculum(
+        gate_preset="v7_strict",
+        curriculum_profile="goal_d455_sport_taskspace_obsres2mm_nocomp_direct_v1",
+        delay_ablation_preset="sport_actuator_replay_homotopy_dr",
+        actuator_compensation_mode="none",
+        arm_servo_target_tracking_planner=False,
+        asymmetric_critic=True,
+        critic_command_history_steps=12,
+    )
+    guided = apply_phase_teacher_reference(
+        stages,
+        RL_SIM_DIR / "references" / "gpu0_obsres2mm_servo_phase_teacher_v1.npz",
+        1.0,
+        "taskspace_only",
+    )
+
+    assert guided[0].cfg.racket_stability_angular_speed_mode == "local_xz"
+    assert guided[0].cfg.racket_stability_angular_speed_penalty_weight >= 0.12
+    for stage in guided[1:]:
+        assert stage.cfg.racket_stability_angular_speed_mode == "local_xz"
+        assert stage.cfg.racket_stability_angular_speed_penalty_weight >= 0.50
+        assert stage.cfg.racket_stability_angular_speed_soft_limit_rad_s == pytest.approx(0.50)
+        assert stage.cfg.racket_stability_angular_speed_scale_rad_s <= 0.70
+        assert stage.cfg.hit_racket_angular_speed_penalty_weight >= 1.00
+        assert stage.cfg.hit_racket_angular_speed_soft_limit_rad_s <= 0.70
+        assert stage.cfg.hit_racket_angular_speed_scale_rad_s <= 0.70

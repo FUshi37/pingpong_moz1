@@ -12,7 +12,10 @@ from typing import Iterable, NamedTuple
 
 import numpy as np
 
-from sim2real_bridger import BridgerStep, constrained_compensation_step_numpy
+try:
+    from .sim2real_bridger import BridgerStep, constrained_compensation_step_numpy
+except ImportError:  # Support direct execution from tools/rl_sim.
+    from sim2real_bridger import BridgerStep, constrained_compensation_step_numpy
 
 
 DEFAULT_DELAY_BIN_EDGES_MS = (0.0, 25.0, 50.0, 75.0, 100.0, 125.0, 150.0)

@@ -27,6 +27,305 @@ class BridgerStep(NamedTuple):
     interval_high: np.ndarray
 
 
+class CorrectionGovernorStep(NamedTuple):
+    q: np.ndarray
+    qvel: np.ndarray
+    qacc: np.ndarray
+    correction_q: np.ndarray
+    correction_qvel: np.ndarray
+
+
+def policy_relative_compensation_step_numpy(
+    raw_compensated_q: np.ndarray,
+    nominal_q: np.ndarray,
+    nominal_qvel: np.ndarray,
+    nominal_qacc: np.ndarray,
+    previous_nominal_q: np.ndarray,
+    previous_nominal_qvel: np.ndarray,
+    previous_sent_q: np.ndarray,
+    previous_sent_qvel: np.ndarray,
+    pos_low: np.ndarray,
+    pos_high: np.ndarray,
+    vel_limit: np.ndarray,
+    acc_limit: np.ndarray,
+    *,
+    dt: float,
+    natural_frequency_hz: float = 12.0,
+) -> CorrectionGovernorStep:
+    """Govern only inverse residual using explicit policy q/dq/ddq state."""
+    arrays = np.broadcast_arrays(
+        *[
+            np.asarray(value, dtype=np.float64)
+            for value in (
+                raw_compensated_q,
+                nominal_q,
+                nominal_qvel,
+                nominal_qacc,
+                previous_nominal_q,
+                previous_nominal_qvel,
+                previous_sent_q,
+                previous_sent_qvel,
+                pos_low,
+                pos_high,
+                vel_limit,
+                acc_limit,
+            )
+        ]
+    )
+    raw, nominal, nominal_vel, nominal_acc, prev_nominal, prev_nominal_vel, prev_sent, prev_sent_vel, low, high, vmax, amax = arrays
+    dt_value = float(dt)
+    if dt_value <= 0.0 or not np.isfinite(dt_value):
+        raise ValueError("dt must be positive and finite")
+    previous_delta = prev_sent - prev_nominal
+    previous_delta_vel = prev_sent_vel - prev_nominal_vel
+    target_delta = raw - nominal
+    omega = 2.0 * np.pi * float(natural_frequency_hz)
+    desired_delta_acc = omega * omega * (target_delta - previous_delta) - 2.0 * omega * previous_delta_vel
+    lower_delta_acc = np.maximum.reduce(
+        [
+            -amax - nominal_acc,
+            (-vmax - nominal_vel - previous_delta_vel) / dt_value,
+            (low - nominal - previous_delta - previous_delta_vel * dt_value) / (dt_value * dt_value),
+        ]
+    )
+    upper_delta_acc = np.minimum.reduce(
+        [
+            amax - nominal_acc,
+            (vmax - nominal_vel - previous_delta_vel) / dt_value,
+            (high - nominal - previous_delta - previous_delta_vel * dt_value) / (dt_value * dt_value),
+        ]
+    )
+    midpoint = 0.5 * (lower_delta_acc + upper_delta_acc)
+    active_low = np.minimum(lower_delta_acc, midpoint)
+    active_high = np.maximum(upper_delta_acc, midpoint)
+    delta_acc = np.clip(desired_delta_acc, active_low, active_high)
+    delta_vel = previous_delta_vel + delta_acc * dt_value
+    delta = previous_delta + delta_vel * dt_value
+    sent_q = nominal + delta
+    sent_vel = nominal_vel + delta_vel
+    sent_acc = nominal_acc + delta_acc
+    return CorrectionGovernorStep(sent_q, sent_vel, sent_acc, delta, delta_vel)
+
+
+def policy_relative_compensation_step_jax(
+    raw_compensated_q,
+    nominal_q,
+    nominal_qvel,
+    nominal_qacc,
+    previous_nominal_q,
+    previous_nominal_qvel,
+    previous_sent_q,
+    previous_sent_qvel,
+    pos_low,
+    pos_high,
+    vel_limit,
+    acc_limit,
+    *,
+    dt: float,
+    natural_frequency_hz: float = 12.0,
+):
+    import jax.numpy as jnp
+
+    raw = jnp.asarray(raw_compensated_q)
+    nominal = jnp.asarray(nominal_q, dtype=raw.dtype)
+    nominal_vel = jnp.asarray(nominal_qvel, dtype=raw.dtype)
+    nominal_acc = jnp.asarray(nominal_qacc, dtype=raw.dtype)
+    prev_nominal = jnp.asarray(previous_nominal_q, dtype=raw.dtype)
+    prev_nominal_vel = jnp.asarray(previous_nominal_qvel, dtype=raw.dtype)
+    prev_sent = jnp.asarray(previous_sent_q, dtype=raw.dtype)
+    prev_sent_vel = jnp.asarray(previous_sent_qvel, dtype=raw.dtype)
+    low = jnp.asarray(pos_low, dtype=raw.dtype)
+    high = jnp.asarray(pos_high, dtype=raw.dtype)
+    vmax = jnp.asarray(vel_limit, dtype=raw.dtype)
+    amax = jnp.asarray(acc_limit, dtype=raw.dtype)
+    dt_value = jnp.asarray(float(dt), dtype=raw.dtype)
+    previous_delta = prev_sent - prev_nominal
+    previous_delta_vel = prev_sent_vel - prev_nominal_vel
+    target_delta = raw - nominal
+    omega = jnp.asarray(2.0 * np.pi * float(natural_frequency_hz), dtype=raw.dtype)
+    desired_delta_acc = omega * omega * (target_delta - previous_delta) - 2.0 * omega * previous_delta_vel
+    lower_delta_acc = jnp.maximum(
+        jnp.maximum(
+            -amax - nominal_acc,
+            (-vmax - nominal_vel - previous_delta_vel) / dt_value,
+        ),
+        (low - nominal - previous_delta - previous_delta_vel * dt_value) / (dt_value * dt_value),
+    )
+    upper_delta_acc = jnp.minimum(
+        jnp.minimum(
+            amax - nominal_acc,
+            (vmax - nominal_vel - previous_delta_vel) / dt_value,
+        ),
+        (high - nominal - previous_delta - previous_delta_vel * dt_value) / (dt_value * dt_value),
+    )
+    midpoint = 0.5 * (lower_delta_acc + upper_delta_acc)
+    active_low = jnp.minimum(lower_delta_acc, midpoint)
+    active_high = jnp.maximum(upper_delta_acc, midpoint)
+    delta_acc = jnp.clip(desired_delta_acc, active_low, active_high)
+    delta_vel = previous_delta_vel + delta_acc * dt_value
+    delta = previous_delta + delta_vel * dt_value
+    return CorrectionGovernorStep(
+        nominal + delta,
+        nominal_vel + delta_vel,
+        nominal_acc + delta_acc,
+        delta,
+        delta_vel,
+    )
+
+
+def correction_relative_governor_step_numpy(
+    raw_compensated_q: np.ndarray,
+    nominal_q: np.ndarray,
+    previous_nominal_q: np.ndarray,
+    previous_nominal_qvel: np.ndarray,
+    previous_sent_q: np.ndarray,
+    previous_sent_qvel: np.ndarray,
+    pos_low: np.ndarray,
+    pos_high: np.ndarray,
+    vel_limit: np.ndarray,
+    acc_limit: np.ndarray,
+    *,
+    dt: float,
+    natural_frequency_hz: float = 4.0,
+) -> CorrectionGovernorStep:
+    """Advance only the compensation residual inside total-command limits.
+
+    The nominal q integrator keeps ownership of the task trajectory.  This
+    governor consumes the exact remaining q/dq/ddq headroom, so compensation
+    cannot reopen a high-bandwidth path after the nominal action limiter.
+    """
+    values = np.broadcast_arrays(
+        *[
+            np.asarray(value, dtype=np.float64)
+            for value in (
+                raw_compensated_q,
+                nominal_q,
+                previous_nominal_q,
+                previous_nominal_qvel,
+                previous_sent_q,
+                previous_sent_qvel,
+                pos_low,
+                pos_high,
+                vel_limit,
+                acc_limit,
+            )
+        ]
+    )
+    raw, nominal, prev_nominal, prev_nominal_vel, prev_sent, prev_sent_vel, low, high, vmax, amax = values
+    dt_value = float(dt)
+    if not np.isfinite(dt_value) or dt_value <= 0.0:
+        raise ValueError("dt must be positive and finite")
+    if any(np.any(~np.isfinite(value)) for value in values):
+        raise ValueError("correction governor inputs must be finite")
+    nominal_vel = (nominal - prev_nominal) / dt_value
+    nominal_acc = (nominal_vel - prev_nominal_vel) / dt_value
+    previous_delta = prev_sent - prev_nominal
+    previous_delta_vel = prev_sent_vel - prev_nominal_vel
+    target_delta = raw - nominal
+    omega = 2.0 * np.pi * float(natural_frequency_hz)
+    desired_delta_acc = omega * omega * (target_delta - previous_delta) - 2.0 * omega * previous_delta_vel
+    desired_sent_acc = nominal_acc + desired_delta_acc
+    lower_acc = np.maximum.reduce(
+        [
+            -amax,
+            (-vmax - prev_sent_vel) / dt_value,
+            (low - prev_sent - prev_sent_vel * dt_value) / (dt_value * dt_value),
+        ]
+    )
+    upper_acc = np.minimum.reduce(
+        [
+            amax,
+            (vmax - prev_sent_vel) / dt_value,
+            (high - prev_sent - prev_sent_vel * dt_value) / (dt_value * dt_value),
+        ]
+    )
+    # The nominal action path is normally feasible, in which case this is
+    # exactly a projection of the correction into its remaining headroom.  A
+    # replay/imported nominal command can itself be infeasible; project the
+    # *total* sent command so compensation can never inherit that violation.
+    feasible = lower_acc <= upper_acc
+    emergency_brake = np.clip(-prev_sent_vel / dt_value, -amax, amax)
+    sent_acc = np.where(
+        feasible,
+        np.clip(desired_sent_acc, lower_acc, upper_acc),
+        emergency_brake,
+    )
+    sent_vel = prev_sent_vel + sent_acc * dt_value
+    sent_q = prev_sent + sent_vel * dt_value
+    delta = sent_q - nominal
+    delta_vel = sent_vel - nominal_vel
+    return CorrectionGovernorStep(sent_q, sent_vel, sent_acc, delta, delta_vel)
+
+
+def correction_relative_governor_step_jax(
+    raw_compensated_q,
+    nominal_q,
+    previous_nominal_q,
+    previous_nominal_qvel,
+    previous_sent_q,
+    previous_sent_qvel,
+    pos_low,
+    pos_high,
+    vel_limit,
+    acc_limit,
+    *,
+    dt: float,
+    natural_frequency_hz: float = 4.0,
+):
+    import jax.numpy as jnp
+
+    raw = jnp.asarray(raw_compensated_q)
+    nominal = jnp.asarray(nominal_q, dtype=raw.dtype)
+    prev_nominal = jnp.asarray(previous_nominal_q, dtype=raw.dtype)
+    prev_nominal_vel = jnp.asarray(previous_nominal_qvel, dtype=raw.dtype)
+    prev_sent = jnp.asarray(previous_sent_q, dtype=raw.dtype)
+    prev_sent_vel = jnp.asarray(previous_sent_qvel, dtype=raw.dtype)
+    low = jnp.asarray(pos_low, dtype=raw.dtype)
+    high = jnp.asarray(pos_high, dtype=raw.dtype)
+    vmax = jnp.asarray(vel_limit, dtype=raw.dtype)
+    amax = jnp.asarray(acc_limit, dtype=raw.dtype)
+    dt_value = jnp.asarray(float(dt), dtype=raw.dtype)
+    nominal_vel = (nominal - prev_nominal) / dt_value
+    nominal_acc = (nominal_vel - prev_nominal_vel) / dt_value
+    previous_delta = prev_sent - prev_nominal
+    previous_delta_vel = prev_sent_vel - prev_nominal_vel
+    target_delta = raw - nominal
+    omega = jnp.asarray(2.0 * np.pi * float(natural_frequency_hz), dtype=raw.dtype)
+    desired_delta_acc = omega * omega * (target_delta - previous_delta) - 2.0 * omega * previous_delta_vel
+    desired_sent_acc = nominal_acc + desired_delta_acc
+    lower_acc = jnp.maximum(
+        jnp.maximum(
+            -amax,
+            (-vmax - prev_sent_vel) / dt_value,
+        ),
+        (low - prev_sent - prev_sent_vel * dt_value) / (dt_value * dt_value),
+    )
+    upper_acc = jnp.minimum(
+        jnp.minimum(
+            amax,
+            (vmax - prev_sent_vel) / dt_value,
+        ),
+        (high - prev_sent - prev_sent_vel * dt_value) / (dt_value * dt_value),
+    )
+    emergency_brake = jnp.clip(-prev_sent_vel / dt_value, -amax, amax)
+    sent_acc = jnp.where(
+        lower_acc <= upper_acc,
+        jnp.clip(desired_sent_acc, lower_acc, upper_acc),
+        emergency_brake,
+    )
+    sent_vel = prev_sent_vel + sent_acc * dt_value
+    sent_q = prev_sent + sent_vel * dt_value
+    delta = sent_q - nominal
+    delta_vel = sent_vel - nominal_vel
+    return CorrectionGovernorStep(
+        sent_q,
+        sent_vel,
+        sent_acc,
+        delta,
+        delta_vel,
+    )
+
+
 def _stopping_velocity_limit_numpy(
     distance: np.ndarray,
     acc_limit: np.ndarray,
