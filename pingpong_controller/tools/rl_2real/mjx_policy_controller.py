@@ -1094,8 +1094,23 @@ class MJXPolicyController:
         self.last_q_ref_active = self.arm_q_ref_active.copy()
         self.last_q_actuator_ref_latest = self.arm_actuator_q_ref_latest.copy()
         self.last_q_actuator_ref_active = self.arm_actuator_q_ref_active.copy()
-        self.last_cmd_q = self.arm_actuator_q_ref_active.copy()
-        return self.arm_actuator_q_ref_active.copy()
+        # The physical drive already owns the identified command delay and
+        # actuator response. Keep delayed history for the checkpoint's
+        # observation, but do not apply the simulated delay a second time to
+        # a direct (no-compensation) hardware command.
+        direct_physical_actuator = self.actuator_compensation_mode in {
+            "none",
+            "off",
+            "false",
+            "0",
+        }
+        deployment_q = (
+            self.arm_actuator_q_ref_latest
+            if direct_physical_actuator
+            else self.arm_actuator_q_ref_active
+        )
+        self.last_cmd_q = deployment_q.copy()
+        return deployment_q.copy()
 
     def latest_command_state(self) -> dict[str, np.ndarray]:
         return {
