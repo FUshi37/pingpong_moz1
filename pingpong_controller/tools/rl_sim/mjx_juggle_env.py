@@ -17,6 +17,8 @@ import xml.etree.ElementTree as ET
 import jax
 import jax.numpy as jnp
 import mujoco
+import math
+
 import numpy as np
 from mujoco import mjx
 
@@ -62,6 +64,203 @@ D455_REAL_VIEW_Y_BOUNDS_M = (-0.50, -0.25)
 D455_REAL_VIEW_Z_BOUNDS_M = (1.00, 1.47)
 D455_REAL_VIEW_Z_IDEAL_M = (1.02, 1.42)
 D455_REAL_VIEW_Y_TARGET_M = -0.35
+
+
+def bounded_base_local_y_velocity_target_jax(
+    ball_view_y: jax.Array,
+    target_y: float,
+    gain_s_inv: float,
+    max_speed_m_s: float,
+    deadband_m: float,
+) -> jax.Array:
+    """Return a bounded local-Y velocity that moves toward ``target_y``.
+
+    The deadband deliberately leaves an already-centered ball with a zero
+    lateral target.  This is a shaping target, not a safety limit: callers
+    must continue to evaluate actual ball velocity for safety gates.
+    """
+
+    error = float(target_y) - ball_view_y
+    outside_deadband = jnp.sign(error) * jnp.maximum(
+        jnp.abs(error) - float(deadband_m), 0.0
+    )
+    return jnp.clip(
+        float(gain_s_inv) * outside_deadband,
+        -float(max_speed_m_s),
+        float(max_speed_m_s),
+    )
+
+
+def bounded_apex_view_y_progress_jax(
+    ball_view_y: jax.Array,
+    apex_view_y: jax.Array,
+    target_y: float,
+    sigma_m: float,
+    deadband_m: float,
+) -> jax.Array:
+    """Score signed improvement from contact local-Y to predicted apex local-Y.
+
+    Positive values mean the outgoing trajectory moves toward the desired
+    view center; negative values mean it moves farther away.  The bounded
+    score prevents an off-center contact from buying unlimited lateral motion.
+    """
+
+    contact_excess = jnp.maximum(
+        jnp.abs(ball_view_y - float(target_y)) - float(deadband_m), 0.0
+    )
+    apex_excess = jnp.maximum(
+        jnp.abs(apex_view_y - float(target_y)) - float(deadband_m), 0.0
+    )
+    return jnp.clip(
+        (contact_excess - apex_excess) / max(1e-6, float(sigma_m)),
+        -1.0,
+        1.0,
+    )
+
+
+def local_y_return_alignment_jax(
+    target_velocity: jax.Array,
+    observed_velocity: jax.Array,
+) -> jax.Array:
+    """Whether a measured local-Y velocity follows a nonzero requested return."""
+
+    return (jnp.abs(target_velocity) > 1.0e-6) & (
+        target_velocity * observed_velocity > 0.0
+    )
+
+
+def bounded_local_y_return_outcome_score_jax(
+    target_velocity: jax.Array,
+    observed_velocity: jax.Array,
+    sigma_m_s: float,
+) -> jax.Array:
+    """Score the *measured* local-Y result of a requested return strike.
+
+    The score is +1 at the bounded velocity target and smoothly reaches -1
+    for a strongly wrong-direction or excessive-speed result.  A centered
+    ball has no lateral target and receives zero credit, so this term cannot
+    manufacture a lateral motion requirement in ordinary juggling states.
+    """
+
+    normalized_error = (observed_velocity - target_velocity) / max(
+        1.0e-6, float(sigma_m_s)
+    )
+    matched_target_score = 2.0 * jnp.exp(-0.5 * normalized_error * normalized_error) - 1.0
+    return jnp.where(jnp.abs(target_velocity) > 1.0e-6, matched_target_score, 0.0)
+
+
+def apply_quadratic_ball_drag_jax(
+    linear_velocity_m_s: jax.Array,
+    drag_coefficient_m_inv: float,
+    dt_s: float,
+) -> jax.Array:
+    """Apply one stable split step of ``dv/dt=-k||v||v``.
+
+    The closed-form speed update keeps direction fixed over the substep and
+    cannot flip velocity when the product ``k*||v||*dt`` is large.  A zero
+    coefficient is exactly identity, preserving every historical profile.
+    """
+
+    coefficient = max(0.0, float(drag_coefficient_m_inv))
+    if coefficient <= 0.0:
+        return linear_velocity_m_s
+    speed = jnp.linalg.norm(linear_velocity_m_s, axis=-1, keepdims=True)
+    return linear_velocity_m_s / (
+        1.0 + coefficient * speed * max(0.0, float(dt_s))
+    )
+
+
+def adaptive_reflected_velocity_target_jax(
+    contact_position_m: jax.Array,
+    target_position_xy_m: jax.Array,
+    target_apex_z_m: jax.Array,
+    gravity_m_s2: float,
+    drag_coefficient_m_inv: float,
+    adaptive_center_coefficient_m_inv: float,
+) -> jax.Array:
+    """Paper-derived adaptive desired outgoing velocity at a contact.
+
+    This implements Eqs. (11)--(18) of Xu et al.: a quadratic-drag
+    Center-Strategy direction is blended with the Vertical-Strategy using
+    ``lambda(x)=x*exp(c*x)``.  Near the anchor the target is vertical; farther
+    away it adds a smooth inward correction without making exact recentering
+    the sole objective.
+    """
+
+    gravity = max(1.0e-6, abs(float(gravity_m_s2)))
+    drag = max(0.0, float(drag_coefficient_m_inv))
+    center_c = max(0.0, float(adaptive_center_coefficient_m_inv))
+    apex_height = jnp.maximum(target_apex_z_m - contact_position_m[:, 2], 1.0e-4)
+    desired_vz = jnp.sqrt(2.0 * gravity * apex_height)
+    flight_time = 2.0 * desired_vz / gravity
+
+    displacement_xy = target_position_xy_m - contact_position_m[:, :2]
+    distance_xy = jnp.linalg.norm(displacement_xy, axis=-1)
+    if drag > 0.0:
+        center_vxy = (
+            jnp.sign(displacement_xy)
+            * jnp.expm1(drag * jnp.abs(displacement_xy))
+            / (drag * jnp.maximum(flight_time[:, None], 1.0e-6))
+        )
+    else:
+        center_vxy = displacement_xy / jnp.maximum(flight_time[:, None], 1.0e-6)
+
+    vertical = jnp.concatenate(
+        [jnp.zeros_like(center_vxy), desired_vz[:, None]], axis=-1
+    )
+    center = jnp.concatenate([center_vxy, desired_vz[:, None]], axis=-1)
+    vertical_dir = vertical / jnp.maximum(
+        jnp.linalg.norm(vertical, axis=-1, keepdims=True), 1.0e-6
+    )
+    center_dir = center / jnp.maximum(
+        jnp.linalg.norm(center, axis=-1, keepdims=True), 1.0e-6
+    )
+    adaptive_weight = distance_xy * jnp.exp(center_c * distance_xy)
+    blended = vertical_dir + adaptive_weight[:, None] * center_dir
+    blended_dir = blended / jnp.maximum(
+        jnp.linalg.norm(blended, axis=-1, keepdims=True), 1.0e-6
+    )
+    scale = desired_vz / jnp.maximum(blended_dir[:, 2], 1.0e-6)
+    return blended_dir * scale[:, None]
+
+
+def compose_hit_bonus_jax(
+    hit_motion_quality_score: jax.Array,
+    hit_quality: jax.Array,
+    hit_count_credit: jax.Array,
+    *,
+    hit_reward_base: float,
+    combo_quality_independent: bool,
+    combo_motion_quality_independent: bool,
+) -> jax.Array:
+    """Compose contact-quality credit and survival/count credit.
+
+    Historically ``hit_motion_quality_score`` multiplies the complete hit
+    bonus, including the count-dependent combo term.  That makes a later hit
+    carry a larger ball-motion gradient solely because it occurs later in the
+    same rollout.  RMS, by contrast, gives every contact one sample and its
+    bad tail in the warm-start policy is concentrated in hits 1--3.
+
+    The optional split keeps the base contact credit motion-quality gated but
+    makes combo credit a pure survival signal.  The older
+    ``combo_quality_independent`` switch still controls whether contact
+    centre/flatness quality applies to that survival signal.  Both switches
+    default to false, preserving all historical profiles exactly.
+    """
+
+    base_credit = (
+        hit_motion_quality_score * float(hit_reward_base) * hit_quality
+    )
+    combo_contact_quality = jnp.where(
+        bool(combo_quality_independent), 1.0, hit_quality
+    )
+    combo_credit = hit_count_credit * combo_contact_quality
+    return jnp.where(
+        bool(combo_motion_quality_independent),
+        base_credit + combo_credit,
+        base_credit + hit_motion_quality_score * combo_credit,
+    )
+
 
 LEGACY_STAGE4G_RIGHT_ARM_PD: dict[str, tuple[float, float]] = {
     "RightArm-0": (32000.0, 2000.0),
@@ -309,6 +508,16 @@ def _apply_right_arm_pd_profile(xml_path: Path, profile: str) -> Path:
 @dataclass(frozen=True)
 class MjxJuggleConfig:
     horizon_sec: float = 6.0
+    # All envs reset together at training start, so the surviving cohort stays
+    # phase-locked and every rollout's hit-ordinal composition oscillates with
+    # period ``max_steps / n_steps`` updates.  Measured on v44_r5 (1200-step
+    # episodes, 256-step rollouts -> 4.6875 updates/episode) the hit4+ event
+    # share swung 0.49 <-> 0.91 and rms_recurrent_hit_racket_vxy swung
+    # 0.191 <-> 0.129 with no policy change, which is enough to move a
+    # convergence window across a graduation threshold.  Staggering the first
+    # episode length per env spreads those phases permanently; later episodes
+    # keep the full horizon, so steady-state episode statistics are unchanged.
+    episode_phase_stagger_min_frac: float = 0.0
     frame_skip: int = 5
     right_arm_pd_profile: str = "xml"
     action_scale_arm_rad: float = 0.03
@@ -331,6 +540,12 @@ class MjxJuggleConfig:
     falling_reset_apex_height_range_m: tuple[float, float] = (0.20, 0.32)
     falling_reset_vxy_max: float = 0.0
     falling_reset_contact_xy_jitter: float = 0.0
+    # Signed base-local-Y displacement of the falling ball's planned contact
+    # point relative to the racket anchor.  Unlike target-anchor randomization
+    # this moves only the ball, so a curriculum can teach an inward return
+    # strike without redefining the desired racket pose.  Defaults preserve
+    # the centered historical falling reset exactly.
+    falling_reset_contact_local_y_offset_range_m: tuple[float, float] = (0.0, 0.0)
     falling_reset_contact_rel_height: float = -1.0
     falling_reset_min_downward_speed: float = 0.12
     racket_launch_surface_gap_range_m: tuple[float, float] = (0.005, 0.010)
@@ -338,13 +553,115 @@ class MjxJuggleConfig:
     racket_launch_vxy_max: float = 0.003
     racket_launch_vnormal_max: float = 0.003
     racket_launch_edge_margin: float = 0.005
+    # Optional real-deployment release-gate model. ``racket_relative`` keeps
+    # the launch ball centered over the moving racket (the historical V6
+    # interpretation). ``world_fixed`` instead keeps the ball at its reset
+    # world pose with zero velocity while the racket moves underneath it,
+    # matching the 200--250 ms manual-hold startup measured in record_new2.
+    # The default preserves every historical checkpoint exactly.
+    racket_launch_hold_time_s: float = 0.0
+    racket_launch_hold_time_range_s: tuple[float, float] | None = None
+    racket_launch_hold_mode: str = "racket_relative"
+    # Deployment-matched release gating.  ``policy`` preserves the historical
+    # behavior in which policy commands accumulate while a human/mechanism is
+    # still holding the ball.  ``hold_command`` executes a neutral action and
+    # records that executed neutral action in feedback/history until release;
+    # the unchanged policy takes control on the first free-flight step.  This
+    # makes the release time an external control phase instead of an
+    # unobserved random deadline the juggling actor must anticipate.
+    racket_launch_pre_release_control_mode: str = "policy"
     ball_obs_rate_hz: float = 50.0
     ball_obs_fractional_rate: bool = False
     ball_obs_pos_noise_std: float = 0.003
     ball_obs_vel_noise_std: float = 0.03
+    # Optional causal observer used before the unchanged 67-D actor.  The
+    # camera velocity estimate is held across the 200-Hz control ticks on the
+    # robot, so this must update on a new valid camera sample only (never once
+    # per control tick).  ``ema_xy`` applies a physical-time EMA; while
+    # ``innovation_clip_xy`` passes ordinary lateral changes through and
+    # limits only a large one-frame innovation. ``alpha_beta_xy`` jointly
+    # predicts/corrects lateral position and velocity from fresh timestamped
+    # samples, so the actor never receives mutually inconsistent XY state.
+    # ``confidence_gate_xy`` retains the checkpoint's innovation clip exactly
+    # on ordinary samples and adds a bounded position-consistency correction
+    # only after the disagreement direction persists across fresh frames.
+    # ``prospective_signal_xy`` is a signal-only successor: actor input remains
+    # exactly the checkpoint innovation clip, while a past-only position model
+    # competes against the preceding clipped-velocity prediction on the next
+    # fresh sample.  It can propose a future correction for oracle scoring but
+    # never applies that proposal to the actor.
+    # All modes preserve raw vertical velocity for bounce phase timing.
+    # Defaults keep legacy checkpoints bitwise compatible at the policy input.
+    ball_obs_velocity_observer_mode: str = "raw"
+    ball_obs_velocity_observer_tau_ms: float = 0.0
+    ball_obs_velocity_observer_max_innovation_m_s: float = 0.0
+    ball_obs_joint_observer_alpha: float = 0.55
+    ball_obs_joint_observer_beta: float = 0.08
+    ball_obs_joint_observer_raw_velocity_gain: float = 0.25
+    ball_obs_consistency_gate_threshold_m_s: float = 0.12
+    ball_obs_consistency_gate_direction_cosine: float = 0.50
+    ball_obs_consistency_gate_min_samples: int = 2
+    ball_obs_consistency_gate_correction_gain: float = 0.50
+    ball_obs_consistency_gate_max_correction_m_s: float = 0.18
+    ball_obs_consistency_gate_contact_guard_s: float = 0.06
+    ball_obs_prospective_window_samples: int = 6
+    ball_obs_prospective_prediction_margin_m: float = 0.004
+    ball_obs_prospective_velocity_disagreement_m_s: float = 0.12
+    ball_obs_prospective_candidate_gain: float = 0.25
+    ball_obs_prospective_max_correction_m_s: float = 0.03
+    ball_obs_prospective_max_sample_gap_s: float = 0.08
+    ball_obs_prospective_contact_guard_s: float = 0.06
+    # Real ball-velocity estimator error model (record_new2, 13 sessions).
+    # Replaying real ball trajectories through the deployed policy reproduces
+    # the hardware circling in sim (racket loop area 0.075 m^2); zeroing only
+    # the lateral ball-velocity obs cuts it to 37%, freezing lateral position
+    # to 19%, both to 3%.  The lateral velocity the policy sees on hardware is
+    # dominated by estimator error: std 0.20-0.27 m/s vs the 0.03-0.11 white
+    # noise trained here, with hit-synchronised spikes (|dv_xy| median 0.39,
+    # p90 1.39 right after the hit -- exactly when the recenter decision is
+    # made) and temporal correlation (vy autocorr 0.47 @1 obs frame).  White
+    # low-amplitude noise teaches the policy to trust this channel; these
+    # fields model the real error so it learns not to chase it.  Defaults off.
+    ball_obs_vel_xy_noise_std: float = 0.0
+    ball_obs_vel_xy_noise_rho: float = 0.6
+    ball_obs_posthit_vel_xy_noise_std: float = 0.0
+    ball_obs_posthit_vel_noise_frames: int = 3
+    # Optional nonzero entry point for an estimator-noise curriculum.  This
+    # lets a later curriculum stage begin at the robust level achieved by the
+    # preceding stage instead of silently returning to a clean observation and
+    # then replaying a larger clean->noisy jump.  It scales both the ordinary
+    # and post-hit lateral-velocity estimator perturbations.
+    ball_obs_vel_xy_noise_min_scale: float = 0.0
+    ball_obs_vel_xy_noise_warmup_env_steps: int = 0
+    ball_obs_vel_xy_noise_ramp_env_steps: int = 1
     total_training_steps: int = 10_000_000
     ball_obs_noise_warmup_ratio: float = 0.10
     ball_obs_noise_ramp_ratio: float = 0.20
+    # Proprioceptive observation noise DR.  record_new2 sim-mirror analysis
+    # measured the real robot's dominant obs gap on the *velocity* channels
+    # (arm dq diff_rms ~0.55 rad/s, racket vel ~0.23 m/s) while position
+    # channels matched to ~0.05.  Training with a near-noiseless dq channel
+    # teaches the policy a high gain on dq high-frequency content; on hardware
+    # that gain turns joint vibration into commanded lateral racket motion
+    # (measured 2.5x racket-vxy amplification), which is the circling loop.
+    # Noise is AR(1)-correlated because real vibration is correlated - white
+    # noise would simply be averaged out and teach no robustness.
+    proprio_dq_obs_noise_std: float = 0.0
+    proprio_racket_vel_obs_noise_std: float = 0.0
+    proprio_obs_noise_rho: float = 0.9
+    # Ramp is expressed in absolute per-env steps, NOT as a ratio of
+    # total_training_steps.  state.total_env_steps counts steps for a single env
+    # (+1 per step, preserved across resets), so it only reaches ~60k over a long
+    # fine-tune while total_training_steps is a global 1e7 - the ball-noise ratio
+    # form is not comparable here and would either saturate instantly (ratio 0)
+    # or never engage (ratio 0.1).
+    proprio_obs_noise_warmup_env_steps: int = 0
+    proprio_obs_noise_ramp_env_steps: int = 1
+    # Intermittently reuse the previous 200 Hz joint-state sample while keeping
+    # the current ball sample, action feedback, and command state.  This models
+    # hardware joint sample holds without incorrectly delaying the 60/90 Hz
+    # camera stream or the whole actor observation.
+    proprio_obs_one_step_stale_probability: float = 0.0
     target_height: float = 0.34
     # Optional camera-calibrated absolute apex target used only by training
     # rewards.  Prediction remains causal (current position/velocity/gravity).
@@ -413,6 +730,11 @@ class MjxJuggleConfig:
     pre_hit_intercept_penalty_time_max: float = 0.85
     non_racket_ball_contact_penalty_weight: float = 1.5
     failed_hit_penalty_weight: float = 1.0
+    # Optional base credit for a separated upward launch that clears a
+    # survival-height floor but remains below the stricter quality-hit floor.
+    # Keep it much smaller than hit_reward_base so training still prefers the
+    # target-height orbit over exploiting faster low bounces.
+    low_survival_hit_reward_weight: float = 0.0
     sticky_contact_penalty_growth: float = 0.6
     hit_reward_base: float = 2.5
     hit_reward_combo: float = 1.2
@@ -429,6 +751,9 @@ class MjxJuggleConfig:
     ball_base_x_soft_limit: float = 0.20
     ball_base_vxy_penalty_weight: float = 0.0
     ball_vxy_penalty_weight: float = 0.40
+    # Normalize dense horizontal ball speed before squaring.  The historical
+    # value 1 m/s keeps all existing profiles numerically unchanged.
+    ball_vxy_penalty_scale_m_s: float = 1.0
     apex_soft_limit_margin: float = 0.04
     apex_soft_penalty_weight: float = 5.0
     ball_xy_soft_limit_radius: float = 0.14
@@ -489,6 +814,14 @@ class MjxJuggleConfig:
     hit_racket_angular_speed_penalty_weight: float = 0.0
     hit_racket_angular_speed_soft_limit_rad_s: float = 1.5
     hit_racket_angular_speed_scale_rad_s: float = 1.5
+    # Positive counterpart to the event loss.  A plateaued policy can make a
+    # sparse penalty numerically small relative to the hit/combo reward and
+    # receive no clear signal for which successful contacts are preferable.
+    # Reward every confirmed hit that is already near the target, with a
+    # smooth Gaussian falloff only above that target.  Disabled by default.
+    hit_racket_angular_speed_reward_weight: float = 0.0
+    hit_racket_angular_speed_reward_target_rad_s: float = 1.5
+    hit_racket_angular_speed_reward_sigma_rad_s: float = 0.5
     # Discourage a large active retreat immediately after a counted hit.  The
     # penalty is soft, finite-window, and anchor-relative; it is not a planner
     # or a hard task-space constraint.
@@ -518,6 +851,39 @@ class MjxJuggleConfig:
     termination_miss_penalty_per_hit: float = 0.8
     termination_miss_penalty_requires_hit: bool = True
     termination_no_hit_miss_early_penalty: float = 0.0
+    # Contact-event safety constraint.  A positive threshold ends an episode
+    # immediately after a counted hit whose physical racket XY speed exceeds
+    # the limit.  This prevents one bad early hit from being diluted by many
+    # later low-speed hits in an episode-mean reward.
+    hit_racket_vxy_constraint_threshold_m_s: float = 0.0
+    hit_racket_vxy_constraint_min_previous_hits: int = 0
+    hit_racket_vxy_constraint_penalty: float = 0.0
+    # ``site_center`` preserves historical checkpoints. ``contact_point``
+    # adds omega x r at the ball's projected physical contact location, which
+    # is the surface velocity that transfers tangential momentum to the ball.
+    hit_racket_vxy_measurement_mode: str = "site_center"
+    # Equivalent event constraint on outgoing ball horizontal speed.  This is
+    # a training-time feasibility boundary, not a deployment-time limiter.
+    # It prevents a low-racket-speed but tangential contact from creating the
+    # next lateral chase and collecting long-horizon survival credit.
+    hit_vxy_constraint_threshold_m_s: float = 0.0
+    hit_vxy_constraint_min_previous_hits: int = 0
+    hit_vxy_constraint_penalty: float = 0.0
+    hit_racket_up_cos_constraint_min: float = 0.0
+    hit_racket_up_cos_constraint_penalty: float = 0.0
+    # Optional low-latency copies of physical-contact motion penalties.  The
+    # historical sparse terms are delivered only after an upward hit is
+    # confirmed several control frames later.  A positive multiplier applies
+    # the same cached physical-edge quantity immediately on the contact edge,
+    # improving credit assignment without changing deployment dynamics.
+    contact_edge_pose_penalty_multiplier: float = 0.0
+    contact_edge_racket_vxy_penalty_multiplier: float = 0.0
+    # Optional curriculum-only success boundary.  A positive value ends the
+    # episode immediately after this many counted, confirmed hits.  Unlike a
+    # miss or constraint violation this carries no termination penalty.  It is
+    # useful for isolating first-contact credit assignment before recurrent
+    # juggling is restored in the next stage.
+    terminate_after_confirmed_hits: int = 0
     hit_rearm_no_contact_steps: int = 2
     hit_rearm_distance: float = 0.035
     stick_contact_penalty_weight: float = 0.60
@@ -527,6 +893,11 @@ class MjxJuggleConfig:
     hit_confirm_rel_height: float = 0.06
     hit_confirm_abs_height: float = 1.00
     hit_confirm_max_steps: int = 70
+    # Keep survival/event accounting separate from the stricter task-quality
+    # confirmation.  These fractions are relative to ``target_height`` and do
+    # not change reward or hit_count unless a profile explicitly does so.
+    hit_survival_apex_fraction: float = 0.50
+    hit_quality_apex_fraction: float = 0.70
     hit_confirm_use_spawn_cube_band: bool = False
     hit_confirm_spawn_band_margin: float = 0.0
     hit_center_local_sigma: float = 0.035
@@ -562,20 +933,215 @@ class MjxJuggleConfig:
         12.0, 12.0, 15.0, 18.0, 15.0, 15.0, 20.0
     )
     hit_cycle_min_previous_hits: int = 2
+    # Task-space cycle guards.  Joint closure alone cannot distinguish a
+    # compact vertical stroke from a racket that travels around a horizontal
+    # circle and returns to a similar joint pose.  Accumulate the actual
+    # racket XY curve between counted hits and penalize its detour and enclosed
+    # area only when a cycle closes.
+    hit_cycle_racket_xy_path_penalty_weight: float = 0.0
+    hit_cycle_racket_xy_path_deadband_m: float = 0.015
+    hit_cycle_racket_xy_path_scale_m: float = 0.040
+    hit_cycle_racket_xy_path_linear_tail: bool = False
+    hit_cycle_racket_xy_area_penalty_weight: float = 0.0
+    hit_cycle_racket_xy_area_deadband_m2: float = 0.00020
+    hit_cycle_racket_xy_area_scale_m2: float = 0.00100
+    hit_cycle_racket_xy_area_linear_tail: bool = False
+    # Dense credit assignment for suppressing horizontal motion throughout
+    # the flight phase, rather than waiting until the next impact.
+    racket_cycle_vxy_penalty_weight: float = 0.0
+    racket_cycle_vxy_soft_limit_m_s: float = 0.05
+    racket_cycle_vxy_penalty_scale_m_s: float = 0.15
+    racket_cycle_vxy_linear_tail: bool = False
+    early_cycle_penalty_hit_count: int = 0
+    early_cycle_penalty_multiplier: float = 1.0
+    # Dedicated on-policy stabilization phase.  Unlike an observation-only
+    # counterfactual, this pins the physical ball in world coordinates while
+    # retaining the complete delayed actuator / inverse-MPC plant.  It is
+    # disabled in every historical profile.
+    stationary_ball_training: bool = False
+    stationary_reward_only: bool = False
+    stationary_racket_alignment_reward_weight: float = 0.0
+    stationary_racket_xy_penalty_weight: float = 0.0
+    stationary_racket_xy_deadband_m: float = 0.005
+    stationary_racket_xy_scale_m: float = 0.030
+    stationary_racket_z_penalty_weight: float = 0.0
+    stationary_racket_z_deadband_m: float = 0.005
+    stationary_racket_z_scale_m: float = 0.030
+    stationary_racket_vxy_penalty_weight: float = 0.0
+    stationary_racket_vxy_soft_limit_m_s: float = 0.02
+    stationary_racket_vxy_scale_m_s: float = 0.08
+    stationary_racket_vz_penalty_weight: float = 0.0
+    stationary_racket_vz_soft_limit_m_s: float = 0.02
+    stationary_racket_vz_scale_m_s: float = 0.10
+    # A contact-event penalty is physically precise but supplies only one
+    # learning signal per bounce.  During the final descending approach,
+    # progressively ask an already aligned racket to brake its horizontal
+    # motion.  The alignment gate preserves the ability to chase the ball;
+    # the time ramp makes the constraint strongest at impact.
+    approach_racket_vxy_penalty_weight: float = 0.0
+    approach_racket_vxy_time_window_s: float = 0.12
+    approach_racket_vxy_alignment_sigma_m: float = 0.08
+    approach_racket_vxy_soft_limit_m_s: float = 0.04
+    approach_racket_vxy_penalty_scale_m_s: float = 0.08
+    approach_racket_vxy_linear_tail: bool = False
+    # Continuous causal precursors for a flat, non-sweeping impact.  Sparse
+    # contact constraints arrive after the delayed actuator command that
+    # caused the pose, so optional approach-window copies provide bounded
+    # per-step credit while the falling ball is close and aligned.
+    approach_racket_flatness_penalty_weight: float = 0.0
+    approach_racket_tilt_speed_penalty_weight: float = 0.0
+    early_approach_penalty_hit_count: int = 0
+    early_approach_penalty_multiplier: float = 1.0
+    first_hit_stationary_penalty_weight: float = 0.0
+    first_hit_stationary_alignment_sigma_m: float = 0.05
+    first_hit_stationary_max_rel_height_m: float = 0.16
+    first_hit_stationary_soft_limit_m_s: float = 0.03
+    first_hit_stationary_penalty_scale_m_s: float = 0.07
+    first_hit_stationary_linear_tail: bool = False
+    # The legacy Gaussian racket-anchor term loses essentially all gradient
+    # once the racket is several sigmas from its reset anchor.  A delayed
+    # actuator policy can therefore spend the first several hits drifting
+    # toward a distant limit cycle while paying an almost constant cost.
+    # This optional early-phase barrier keeps a usable gradient on that reset
+    # transient without constraining later chase/recovery motion.
+    early_racket_xy_anchor_penalty_weight: float = 0.0
+    early_racket_xy_anchor_hit_count: int = 0
+    early_racket_xy_anchor_deadband_m: float = 0.02
+    early_racket_xy_anchor_scale_m: float = 0.05
     hit_height_center: float = 0.52
     hit_height_tolerance: float = 0.06
     hit_height_penalty_weight: float = 10.0
     hit_vxy_soft_limit_m_s: float = 0.35
     hit_vxy_penalty_weight: float = 0.0
+    # Normalize the velocity excess before squaring it.  The historical
+    # default of 1 m/s is numerically identical to the old reward.  Repair
+    # profiles can use a task-scale value (for example 0.05 m/s), avoiding a
+    # vanishing O(1e-2) event penalty for deployment-relevant errors.
+    hit_vxy_penalty_scale_m_s: float = 1.0
+    hit_vxy_apply_from_first_hit: bool = False
+    # When True, outgoing-ball vxy shaping applies only to the first counted
+    # hit.  Use with recurrent-only racket shaping so ball and racket terms do
+    # not compete on the same contact index.
+    hit_vxy_first_hit_only: bool = False
+    # A bounded-gradient option for contact-DR outliers.  Existing profiles
+    # retain the historical squared loss.
+    hit_vxy_penalty_loss: str = "squared"
+    # Bounded positive credit for satisfying an approximately zero outgoing
+    # horizontal-speed constraint.  Unlike an ever-larger one-sided penalty,
+    # this keeps a strong, well-scaled distinction between a deployment-safe
+    # hit and the common 0.1--0.2 m/s local optimum without exploding on DR
+    # outliers.  Disabled by default for backward compatibility.
+    hit_vxy_zero_reward_weight: float = 0.0
+    hit_vxy_zero_reward_sigma_m_s: float = 0.05
+    # Optional base-local-Y target used *only* by the hit-vxy shaping terms.
+    # It supplies a bounded, deadbanded return-to-view velocity when the ball
+    # is near a D455 Y boundary.  Safety metrics and hard/gating constraints
+    # retain the true outgoing vxy, so enabling this cannot hide a lateral
+    # cut from the deployment-quality checks.
+    hit_vxy_local_y_target_gain_s_inv: float = 0.0
+    hit_vxy_local_y_target_max_m_s: float = 0.0
+    hit_vxy_local_y_target_deadband_m: float = 0.0
+    # Optional gate on all positive hit-quality credit using the outgoing
+    # ball horizontal speed.  This closes the loophole where a nearly
+    # stationary racket can still launch the ball sideways and force a large
+    # lateral chase on the following hit.
+    hit_vxy_quality_gate_sigma_m_s: float = 0.0
+    hit_vxy_quality_gate_floor: float = 0.0
+    # Joint contact-pose quality gate for sparse positive hit credit.  The
+    # flatness component uses the physical contact-edge pose; the angular
+    # component suppresses credit for a racket sweeping through that pose.
+    hit_pose_quality_gate_floor: float = 0.0
+    hit_angular_speed_quality_gate_sigma_rad_s: float = 0.0
+    # Extra emphasis on the launch/transient hits that seed the subsequent
+    # lateral chase.  A value of one preserves historical behavior.
+    early_hit_vxy_penalty_hit_count: int = 0
+    early_hit_vxy_penalty_multiplier: float = 1.0
+    early_hit_vxy_zero_reward_multiplier: float = 1.0
+    # One-sided deployment height barrier at counted contact.  Unlike
+    # ``hit_height_center`` (a predicted-apex target relative to the episode
+    # racket anchor), this is an absolute XML/world-z limit and therefore can
+    # directly enforce a measured robot workspace requirement.
+    hit_contact_z_soft_limit_m: float = 10.0
+    hit_contact_z_penalty_weight: float = 0.0
     # With a delayed position actuator, outgoing ball vxy is often caused by
     # lateral racket chase speed at impact.  Penalizing that controllable
     # precursor is disabled by default and shares the recoverability gate.
     hit_racket_vxy_soft_limit_m_s: float = 0.35
     hit_racket_vxy_penalty_weight: float = 0.0
+    hit_racket_vxy_penalty_scale_m_s: float = 1.0
+    hit_racket_vxy_apply_from_first_hit: bool = False
+    # Hits right after the spawn are a recentering transient: the ball is
+    # intercepted off-center and lateral racket velocity is what brings it back
+    # to the cycle center.  Measured on the v44_r5 policy, contact offset decays
+    # 0.088 -> 0.064 -> 0.044 -> 0.032 m over hits 1..6 while the outgoing ball
+    # direction points at the center with cos 0.62 at hit 2.  Applying the
+    # steady-state lateral limit to those hits therefore penalizes required task
+    # motion and leaves no feasible descent direction.  Hits below
+    # ``hit_racket_vxy_steady_min_count`` use the recovery soft limit instead;
+    # a non-positive recovery limit falls back to the steady limit.
+    hit_racket_vxy_steady_min_count: int = 0
+    hit_racket_vxy_recovery_soft_limit_m_s: float = 0.0
+    # Optional soft feasibility gate on positive contact rewards.  A policy
+    # should not be able to offset an unsafe lateral impact by collecting the
+    # quality-independent hit-combo bonus.  The floor preserves sparse task
+    # credit while the Gaussian factor makes low-vxy contacts substantially
+    # more valuable than equally successful sweeping contacts.
+    hit_racket_vxy_quality_gate_sigma_m_s: float = 0.0
+    hit_racket_vxy_quality_gate_floor: float = 0.0
     hit_apex_view_center_penalty_weight: float = 0.0
     hit_apex_view_center_sigma_m: float = 0.12
+    # Event-level signed credit for a predicted apex that moves local-Y toward
+    # the D455 center.  The optional success-only racket allowance applies
+    # only after a demonstrated inward correction.  The separate error-gated
+    # allowance opens a bounded exploratory path whenever the ball is already
+    # off centre, avoiding a circular "correct first, then get permission"
+    # objective.  Both affect only soft shaping; true velocity metrics and
+    # safety gates stay unchanged.
+    hit_apex_view_y_progress_reward_weight: float = 0.0
+    hit_apex_view_y_progress_sigma_m: float = 0.04
+    hit_apex_view_y_progress_deadband_m: float = 0.0
+    hit_apex_view_y_progress_racket_vxy_allowance_m_s: float = 0.0
+    hit_apex_view_y_error_racket_vxy_allowance_m_s: float = 0.0
+    hit_apex_view_y_directional_racket_vxy_allowance_m_s: float = 0.0
+    # V65 gates the same temporary soft contact-speed capacity on the
+    # *observed outgoing ball* local-Y direction at the confirmed hit, rather
+    # than inferring that direction from the racket surface velocity.  This is
+    # a shaping-only credit; actual ball/racket speed metrics and gates remain
+    # unchanged.
+    hit_local_y_return_outcome_racket_vxy_allowance_m_s: float = 0.0
+    # Direct bounded credit for the measured post-contact local-Y ball
+    # velocity.  Unlike predicted-apex progress this is the physical outcome
+    # of the causal strike.  The score is centered on the existing bounded
+    # local-Y velocity target, while true vxy/RMS diagnostics and gates stay
+    # unchanged.
+    hit_local_y_return_outcome_reward_weight: float = 0.0
+    hit_local_y_return_outcome_sigma_m_s: float = 0.06
+    # Horizontal drag coefficient used only by the post-contact landing
+    # predictor.  A zero value preserves the historical ballistic predictor.
+    # Positive values use the decoupled quadratic-drag closed form from the
+    # reflected-velocity model (units: 1 / m).
+    hit_next_contact_drag_coefficient_m_inv: float = 0.0
     hit_next_contact_anchor_penalty_weight: float = 0.0
     hit_next_contact_anchor_sigma_m: float = 0.10
+    # Optional physical flight drag.  Unlike the landing predictor above,
+    # this coefficient is applied to the simulated ball at every MuJoCo
+    # substep using the paper's full 3-D quadratic drag law.
+    ball_flight_drag_coefficient_m_inv: float = 0.0
+    # Paper Eqs. (11)--(18): event-level desired reflected velocity.  These
+    # terms are disabled by default and therefore leave legacy rewards exact.
+    hit_adaptive_reflected_velocity_penalty_weight: float = 0.0
+    hit_adaptive_reflected_velocity_xy_sigma_m_s: float = 0.10
+    hit_adaptive_reflected_velocity_z_sigma_m_s: float = 0.25
+    hit_adaptive_reflected_velocity_center_coefficient_m_inv: float = 5.0
+    # Event-posterior stability objective.  At confirmed hit k>=2, the
+    # contact location is the realized outcome of hit k-1.  Penalizing that
+    # measured location and rewarding a reduction relative to hit k-1 avoids
+    # treating a model-predicted landing point as ground truth.  Both terms
+    # are disabled by default to preserve existing profiles.
+    hit_posterior_contact_anchor_penalty_weight: float = 0.0
+    hit_posterior_contact_anchor_sigma_m: float = 0.10
+    hit_contact_anchor_contraction_reward_weight: float = 0.0
+    hit_contact_anchor_contraction_sigma_m: float = 0.05
     first_hit_apex_reward_weight: float = 0.0
     first_hit_apex_sigma: float = 0.055
     low_hit_apex_margin: float = 0.06
@@ -842,6 +1408,19 @@ class MjxJuggleConfig:
     hit_cadence_sigma: float = 0.18
     hit_min_interval_penalty_weight: float = 0.0
     hit_min_interval: float = 0.40
+    # The cadence Gaussian becomes numerically negligible when a policy drifts
+    # into a very slow but otherwise safe orbit.  Keep a separate one-sided
+    # event loss so late recurrent contacts retain a useful corrective signal.
+    hit_max_interval_penalty_weight: float = 0.0
+    hit_max_interval: float = 0.65
+    hit_max_interval_penalty_scale: float = 0.18
+    # Dense counterpart of the event loss above.  Once a recurrent contact is
+    # overdue, charge every control step until the next hit.  This assigns the
+    # correction to the descending interception motion instead of only to the
+    # eventual late contact.
+    post_hit_overdue_penalty_weight: float = 0.0
+    post_hit_overdue_soft_limit_s: float = 0.65
+    post_hit_overdue_penalty_scale_s: float = 0.18
     hit_min_count_interval: float = 0.0
     fast_hit_penalty_weight: float = 0.0
     hit_reward_cap_mode: str = "off"
@@ -852,6 +1431,11 @@ class MjxJuggleConfig:
     # contact without also suppressing the count signal.  False keeps the
     # historical multiplicative reward exactly unchanged.
     hit_combo_quality_independent: bool = False
+    # Keep the count-dependent combo as a survival signal instead of making
+    # later contacts carry progressively larger motion-quality gradients.
+    # The base hit credit remains motion-quality gated.  False preserves the
+    # historical reward exactly.
+    hit_combo_motion_quality_independent: bool = False
     hit_reward_cap_target_interval: float = 0.65
     ball_obs_dropout_prob: float = 0.0
     ball_obs_dropout_max_steps: int = 1
@@ -893,6 +1477,25 @@ class MjxJuggleConfig:
     high_latency_prediction_include_obs_latency: bool = True
     high_latency_prediction_include_ball_age: bool = True
     high_latency_prediction_include_actuator_tau: bool = True
+    # Actor-only causal ablations for the deployment positive-feedback loop.
+    # The control stack still retains ``prev_action`` and its command buffers;
+    # these switches remove only the corresponding policy inputs.  Keeping
+    # the dimensions fixed makes old checkpoints directly warm-startable.
+    actor_mask_previous_action: bool = False
+    actor_mask_action_history: bool = False
+    actor_previous_action_scale: float = 1.0
+    # Optional actor-only per-episode domain randomization. The scalar above
+    # remains the fixed/deployment value when this is None. Sampling a narrow
+    # range keeps nominal successful trajectories in every PPO batch while
+    # exposing the actor to audited previous-action feedback uncertainty;
+    # control state, critic state, and observation dimensions are unchanged.
+    actor_previous_action_scale_range: tuple[float, float] | None = None
+    actor_action_history_scale: float = 1.0
+    # Remove only the per-joint temporal DC component from actor action
+    # feedback while retaining short-horizon innovations. This targets the
+    # audited low-frequency positive-feedback/circling loop without changing
+    # the control state, action buffers, critic features, or observation size.
+    actor_action_dc_rejection: float = 0.0
     enable_delay_conditioning: bool = False
     delay_min_ms: float = 0.0
     delay_max_ms: float = 150.0
@@ -909,6 +1512,14 @@ class MjxJuggleConfig:
     include_command_state: bool = False
     include_phase_features: bool = False
     include_active_command_error: bool = False
+    # Policy action semantics.  ``acceleration`` preserves the historical
+    # double-integrator action path.  ``velocity`` makes the normalized actor
+    # output a joint-velocity *target*; it is still slew/acceleration limited
+    # and integrated into the same position reference consumed by the fitted
+    # position-PD actuator model.  This keeps deployment q-only while making
+    # the RL action space match the requested joint-velocity controller.
+    action_command_mode: str = "acceleration"
+    action_velocity_scale: float = 1.0
     action_filter_tau_ms: float = 0.0
     action_jerk_limit: float = 0.0
     action_acc_limit: float = 1.0
@@ -929,11 +1540,240 @@ class MjxJuggleConfig:
     lost_ball_timeout_ms: float = 150.0
 
 
+def alpha_beta_joint_observer_xy(
+    previous_position_xy: jax.Array,
+    previous_velocity_xy: jax.Array,
+    sampled_position_xy: jax.Array,
+    sampled_velocity_xy: jax.Array,
+    elapsed_s: jax.Array,
+    has_previous_sample: jax.Array,
+    *,
+    alpha: float,
+    beta: float,
+    raw_velocity_gain: float,
+) -> tuple[jax.Array, jax.Array]:
+    """Fuse fresh lateral position/velocity into one internally consistent state."""
+
+    elapsed_s = jnp.maximum(jnp.asarray(elapsed_s, dtype=jnp.float32), 1e-6)
+    predicted_position_xy = previous_position_xy + (
+        previous_velocity_xy * elapsed_s[:, None]
+    )
+    position_residual_xy = sampled_position_xy - predicted_position_xy
+    corrected_position_xy = predicted_position_xy + (
+        jnp.asarray(alpha, dtype=jnp.float32) * position_residual_xy
+    )
+    position_corrected_velocity_xy = previous_velocity_xy + (
+        jnp.asarray(beta, dtype=jnp.float32)
+        * position_residual_xy
+        / elapsed_s[:, None]
+    )
+    corrected_velocity_xy = position_corrected_velocity_xy + (
+        jnp.asarray(raw_velocity_gain, dtype=jnp.float32)
+        * (sampled_velocity_xy - position_corrected_velocity_xy)
+    )
+    accepted_position_xy = jnp.where(
+        has_previous_sample[:, None],
+        corrected_position_xy,
+        sampled_position_xy,
+    )
+    accepted_velocity_xy = jnp.where(
+        has_previous_sample[:, None],
+        corrected_velocity_xy,
+        sampled_velocity_xy,
+    )
+    return accepted_position_xy, accepted_velocity_xy
+
+
+def confidence_gated_consistency_velocity_xy(
+    previous_position_xy: jax.Array,
+    sampled_position_xy: jax.Array,
+    clipped_velocity_xy: jax.Array,
+    elapsed_s: jax.Array,
+    has_previous_sample: jax.Array,
+    previous_innovation_xy: jax.Array,
+    previous_streak: jax.Array,
+    contact_guard_active: jax.Array,
+    *,
+    threshold_m_s: float,
+    direction_cosine: float,
+    min_samples: int,
+    correction_gain: float,
+    max_correction_m_s: float,
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
+    """Correct persistent XY inconsistency while passing ordinary samples through.
+
+    The velocity input is the output of the checkpoint's existing innovation
+    clip. Position-derived velocity is intentionally used only as bounded
+    counter-evidence: one noisy finite difference never changes actor input,
+    and a physical contact transition is explicitly guarded.
+    """
+
+    elapsed_s = jnp.maximum(jnp.asarray(elapsed_s, dtype=jnp.float32), 1e-6)
+    position_velocity_xy = (
+        sampled_position_xy - previous_position_xy
+    ) / elapsed_s[:, None]
+    innovation_xy = clipped_velocity_xy - position_velocity_xy
+    innovation_norm = jnp.linalg.norm(innovation_xy, axis=-1)
+    previous_norm = jnp.linalg.norm(previous_innovation_xy, axis=-1)
+    cosine = jnp.sum(innovation_xy * previous_innovation_xy, axis=-1) / jnp.maximum(
+        innovation_norm * previous_norm,
+        1e-8,
+    )
+    over_threshold = (
+        has_previous_sample
+        & (innovation_norm > float(threshold_m_s))
+        & (~contact_guard_active)
+    )
+    coherent = (
+        over_threshold
+        & (previous_norm > float(threshold_m_s))
+        & (cosine >= float(direction_cosine))
+    )
+    streak = jnp.where(
+        coherent,
+        previous_streak + 1,
+        jnp.where(over_threshold, 1, 0),
+    ).astype(jnp.int32)
+    gate_active = streak >= int(min_samples)
+    bounded_scale = jnp.minimum(
+        1.0,
+        float(max_correction_m_s) / jnp.maximum(innovation_norm, 1e-8),
+    )
+    correction_xy = (
+        float(correction_gain) * bounded_scale[:, None] * innovation_xy
+    )
+    accepted_velocity_xy = jnp.where(
+        gate_active[:, None],
+        clipped_velocity_xy - correction_xy,
+        clipped_velocity_xy,
+    )
+    correction_norm = jnp.where(
+        gate_active,
+        jnp.linalg.norm(correction_xy, axis=-1),
+        0.0,
+    )
+    return (
+        accepted_velocity_xy,
+        innovation_xy,
+        streak,
+        gate_active,
+        correction_norm,
+    )
+
+
+def prospective_consistency_signal_xy(
+    position_history_xy: jax.Array,
+    time_history_s: jax.Array,
+    current_position_xy: jax.Array,
+    current_time_s: jax.Array,
+    prior_clipped_velocity_xy: jax.Array,
+    current_clipped_velocity_xy: jax.Array,
+    history_ready: jax.Array,
+    evidence_allowed: jax.Array,
+    *,
+    prediction_margin_m: float,
+    velocity_disagreement_m_s: float,
+    candidate_gain: float,
+    max_correction_m_s: float,
+    max_sample_gap_s: float,
+) -> tuple[
+    jax.Array,
+    jax.Array,
+    jax.Array,
+    jax.Array,
+    jax.Array,
+    jax.Array,
+    jax.Array,
+]:
+    """Score a past-only XY model on the next fresh sample without acting.
+
+    ``position_history_xy`` excludes ``current_position_xy``.  The current
+    sample therefore provides genuinely prospective evidence: it scores the
+    previous clipped-velocity prediction and the previous window model, but it
+    cannot make a noisy finite-difference target validate itself.
+    """
+
+    history_time_origin = time_history_s[:, -1]
+    relative_time = time_history_s - history_time_origin[:, None]
+    mean_time = jnp.mean(relative_time, axis=1)
+    centered_time = relative_time - mean_time[:, None]
+    denominator = jnp.sum(centered_time * centered_time, axis=1)
+    mean_position = jnp.mean(position_history_xy, axis=1)
+    model_velocity_xy = jnp.sum(
+        centered_time[:, :, None]
+        * (position_history_xy - mean_position[:, None, :]),
+        axis=1,
+    ) / jnp.maximum(denominator[:, None], 1e-8)
+    model_position_at_origin = mean_position - (
+        model_velocity_xy * mean_time[:, None]
+    )
+
+    elapsed_s = current_time_s - history_time_origin
+    raw_prediction_xy = position_history_xy[:, -1, :] + (
+        prior_clipped_velocity_xy * elapsed_s[:, None]
+    )
+    model_prediction_xy = model_position_at_origin + (
+        model_velocity_xy * elapsed_s[:, None]
+    )
+    raw_prediction_error_m = jnp.linalg.norm(
+        current_position_xy - raw_prediction_xy,
+        axis=-1,
+    )
+    model_prediction_error_m = jnp.linalg.norm(
+        current_position_xy - model_prediction_xy,
+        axis=-1,
+    )
+    model_advantage_m = raw_prediction_error_m - model_prediction_error_m
+    disagreement_xy = model_velocity_xy - current_clipped_velocity_xy
+    disagreement_m_s = jnp.linalg.norm(disagreement_xy, axis=-1)
+    fit_valid = denominator > 1e-8
+    timing_valid = (elapsed_s > 1e-6) & (
+        elapsed_s <= float(max_sample_gap_s)
+    )
+    proposal = (
+        history_ready
+        & evidence_allowed
+        & fit_valid
+        & timing_valid
+        & (model_advantage_m >= float(prediction_margin_m))
+        & (disagreement_m_s >= float(velocity_disagreement_m_s))
+    )
+
+    proposed_delta_xy = float(candidate_gain) * disagreement_xy
+    proposed_delta_norm = jnp.linalg.norm(proposed_delta_xy, axis=-1)
+    proposed_scale = jnp.minimum(
+        1.0,
+        float(max_correction_m_s) / jnp.maximum(proposed_delta_norm, 1e-8),
+    )
+    proposed_delta_xy = proposed_delta_xy * proposed_scale[:, None]
+    candidate_velocity_xy = current_clipped_velocity_xy + proposed_delta_xy
+    candidate_velocity_xy = jnp.where(
+        proposal[:, None],
+        candidate_velocity_xy,
+        current_clipped_velocity_xy,
+    )
+    correction_norm = jnp.where(
+        proposal,
+        jnp.linalg.norm(proposed_delta_xy, axis=-1),
+        0.0,
+    )
+    return (
+        candidate_velocity_xy,
+        model_velocity_xy,
+        proposal,
+        raw_prediction_error_m,
+        model_prediction_error_m,
+        model_advantage_m,
+        correction_norm,
+    )
+
+
 class EnvState(NamedTuple):
     model: object
     data: object
     rng: jax.Array
     step_count: jax.Array
+    episode_limit: jax.Array
     racket_anchor: jax.Array
     chest_target_offset: jax.Array
     reset_ball_pos: jax.Array
@@ -942,6 +1782,7 @@ class EnvState(NamedTuple):
     reset_disturbance_strength: jax.Array
     reset_ball_surface_gap: jax.Array
     reset_ball_racket_center_offset: jax.Array
+    racket_launch_hold_steps: jax.Array
     arm_cmd_q: jax.Array
     arm_cmd_qvel: jax.Array
     arm_q_ref_latest: jax.Array
@@ -970,6 +1811,9 @@ class EnvState(NamedTuple):
     arm_actuator_mode2_q: jax.Array
     arm_actuator_mode2_qvel: jax.Array
     prev_action: jax.Array
+    actor_previous_action_scale: jax.Array
+    # AR(1) state for proprioceptive obs noise DR: 7 arm dq + 3 racket vel.
+    proprio_noise_state: jax.Array
     prev_arm_qvel: jax.Array
     prev_ball_pos: jax.Array
     prev_racket_pos: jax.Array
@@ -986,6 +1830,9 @@ class EnvState(NamedTuple):
     hit_cycle_arm_q_max: jax.Array
     hit_cycle_action_sum: jax.Array
     hit_cycle_action_steps: jax.Array
+    last_counted_hit_racket_xy: jax.Array
+    hit_cycle_racket_xy_path_length: jax.Array
+    hit_cycle_racket_xy_area_twice: jax.Array
     action_buffer: jax.Array
     action_latency_steps: jax.Array
     command_buffer: jax.Array
@@ -1000,11 +1847,40 @@ class EnvState(NamedTuple):
     pending_hit_camera_in_lower_band: jax.Array
     pending_hit_camera_in_margin: jax.Array
     pending_hit_camera_v_frac: jax.Array
+    pending_hit_racket_vxy: jax.Array
+    pending_hit_racket_local_y_velocity: jax.Array
+    pending_hit_racket_up_cos: jax.Array
+    pending_hit_racket_angular_speed: jax.Array
+    pending_hit_racket_full_angular_speed: jax.Array
+    pending_hit_racket_local_y_angular_speed: jax.Array
+    pending_hit_racket_local_xz_angular_speed: jax.Array
+    pending_hit_contact_center_dist: jax.Array
+    pending_hit_racket_xy: jax.Array
+    pending_hit_cycle_racket_xy_path_length: jax.Array
+    pending_hit_cycle_racket_xy_area_twice: jax.Array
     obs_latency_steps: jax.Array
     obs_history: jax.Array
     action_history: jax.Array
     cached_ball_obs_pos: jax.Array
     cached_ball_obs_vel: jax.Array
+    # Causal lateral velocity observer state.  It advances only when a valid
+    # new camera sample is accepted, exactly like the real deployment helper.
+    ball_obs_velocity_observer_xy: jax.Array
+    ball_obs_velocity_observer_last_sample_step: jax.Array
+    ball_obs_velocity_observer_has_sample: jax.Array
+    ball_obs_consistency_innovation_xy: jax.Array
+    ball_obs_consistency_streak: jax.Array
+    # Signal-only prospective classifier state.  The six-slot buffer stores
+    # only accepted fresh measurements; V2A scores its past-only model on the
+    # next sample while leaving actor input unchanged.
+    ball_obs_prospective_position_history_xy: jax.Array
+    ball_obs_prospective_time_history_s: jax.Array
+    ball_obs_prospective_history_count: jax.Array
+    ball_obs_prospective_prior_clipped_velocity_xy: jax.Array
+    # AR(1) state (n,2) and post-hit spike frames-left (n,) for the ball
+    # lateral velocity estimator-error model; see ball_obs_vel_xy_noise_*.
+    ball_obs_velxy_noise_state: jax.Array
+    ball_obs_posthit_noise_left: jax.Array
     last_ball_obs_step: jax.Array
     ball_obs_valid_pos: jax.Array
     ball_obs_valid_vel: jax.Array
@@ -1174,6 +2050,14 @@ class MjxJuggleEnv:
         self.n_envs = int(n_envs)
         self.cfg = cfg
         cfg_values = getattr(cfg, "__dict__", {})
+        self.action_command_mode = str(cfg.action_command_mode).lower()
+        if self.action_command_mode not in {"acceleration", "velocity"}:
+            raise ValueError(
+                "action_command_mode must be 'acceleration' or 'velocity', "
+                f"got {self.action_command_mode!r}"
+            )
+        if float(cfg.action_velocity_scale) <= 0.0:
+            raise ValueError("action_velocity_scale must be positive")
         self.racket_stability_angular_speed_mode = str(
             cfg.racket_stability_angular_speed_mode
         )
@@ -1182,6 +2066,31 @@ class MjxJuggleEnv:
                 "racket_stability_angular_speed_mode must be 'full_norm' or "
                 f"'local_xz', got {self.racket_stability_angular_speed_mode!r}"
             )
+        self.hit_racket_vxy_measurement_mode = str(
+            cfg.hit_racket_vxy_measurement_mode
+        ).lower()
+        if self.hit_racket_vxy_measurement_mode not in {
+            "site_center",
+            "contact_point",
+        }:
+            raise ValueError(
+                "hit_racket_vxy_measurement_mode must be 'site_center' or "
+                f"'contact_point', got {self.hit_racket_vxy_measurement_mode!r}"
+            )
+        self.hit_vxy_penalty_loss = str(cfg.hit_vxy_penalty_loss).lower()
+        if self.hit_vxy_penalty_loss not in {"squared", "pseudo_huber"}:
+            raise ValueError(
+                "hit_vxy_penalty_loss must be 'squared' or 'pseudo_huber', "
+                f"got {self.hit_vxy_penalty_loss!r}"
+            )
+        if float(cfg.hit_vxy_zero_reward_sigma_m_s) <= 0.0:
+            raise ValueError("hit_vxy_zero_reward_sigma_m_s must be positive")
+        if float(cfg.hit_vxy_local_y_target_gain_s_inv) < 0.0:
+            raise ValueError("hit_vxy_local_y_target_gain_s_inv must be non-negative")
+        if float(cfg.hit_vxy_local_y_target_max_m_s) < 0.0:
+            raise ValueError("hit_vxy_local_y_target_max_m_s must be non-negative")
+        if float(cfg.hit_vxy_local_y_target_deadband_m) < 0.0:
+            raise ValueError("hit_vxy_local_y_target_deadband_m must be non-negative")
         self.vc_pose_mode = str(cfg_values.get("virtual_camera_pose_mode", "body_mount"))
         self.ball_obs_frame_pivot_mode = str(
             cfg_values.get("ball_obs_frame_pivot_mode", "legacy_base_origin")
@@ -1218,11 +2127,59 @@ class MjxJuggleEnv:
                 raise ValueError("racket-launch velocity limits must be non-negative")
             if float(cfg.racket_launch_edge_margin) < 0.0:
                 raise ValueError("racket_launch_edge_margin must be non-negative")
+            if float(cfg.racket_launch_hold_time_s) < 0.0:
+                raise ValueError("racket_launch_hold_time_s must be non-negative")
+            if cfg.racket_launch_hold_time_range_s is not None:
+                hold_lo, hold_hi = [
+                    float(value) for value in cfg.racket_launch_hold_time_range_s
+                ]
+                if min(hold_lo, hold_hi) < 0.0:
+                    raise ValueError(
+                        "racket_launch_hold_time_range_s must be non-negative"
+                    )
+            if str(cfg.racket_launch_hold_mode) not in {
+                "racket_relative",
+                "world_fixed",
+            }:
+                raise ValueError(
+                    "racket_launch_hold_mode must be 'racket_relative' or "
+                    "'world_fixed'"
+                )
+            if str(cfg.racket_launch_pre_release_control_mode) not in {
+                "policy",
+                "hold_command",
+            }:
+                raise ValueError(
+                    "racket_launch_pre_release_control_mode must be 'policy' "
+                    "or 'hold_command'"
+                )
         if bool(cfg.use_delay_bin_value_heads):
             raise NotImplementedError(
                 "use_delay_bin_value_heads is reserved for a future PPO critic "
                 "with per-delay-bin value heads; keep it False for now."
             )
+        if not 0.0 <= float(cfg.actor_previous_action_scale) <= 1.0:
+            raise ValueError("actor_previous_action_scale must be in [0, 1]")
+        if cfg.actor_previous_action_scale_range is not None:
+            previous_scale_range = tuple(cfg.actor_previous_action_scale_range)
+            if len(previous_scale_range) != 2:
+                raise ValueError(
+                    "actor_previous_action_scale_range must contain two values"
+                )
+            previous_scale_low, previous_scale_high = map(
+                float, previous_scale_range
+            )
+            if not (
+                0.0 <= previous_scale_low <= previous_scale_high <= 1.0
+            ):
+                raise ValueError(
+                    "actor_previous_action_scale_range must satisfy "
+                    "0 <= low <= high <= 1"
+                )
+        if not 0.0 <= float(cfg.actor_action_history_scale) <= 1.0:
+            raise ValueError("actor_action_history_scale must be in [0, 1]")
+        if not 0.0 <= float(cfg.actor_action_dc_rejection) <= 1.0:
+            raise ValueError("actor_action_dc_rejection must be in [0, 1]")
         self.high_latency_obs = bool(cfg.high_latency_obs)
         self.delay_conditioning = bool(cfg.enable_delay_conditioning)
         self.actuator_delay_observation_only = bool(
@@ -1615,6 +2572,196 @@ class MjxJuggleEnv:
             raise ValueError("hit_cycle_joint_weights must contain a positive value")
         if float(cfg.hit_cycle_action_dc_scale) <= 0.0:
             raise ValueError("hit_cycle_action_dc_scale must be positive")
+        if float(cfg.hit_cycle_racket_xy_path_scale_m) <= 0.0:
+            raise ValueError("hit_cycle_racket_xy_path_scale_m must be positive")
+        if float(cfg.hit_cycle_racket_xy_area_scale_m2) <= 0.0:
+            raise ValueError("hit_cycle_racket_xy_area_scale_m2 must be positive")
+        if float(cfg.racket_cycle_vxy_penalty_scale_m_s) <= 0.0:
+            raise ValueError("racket_cycle_vxy_penalty_scale_m_s must be positive")
+        if float(cfg.stationary_racket_xy_deadband_m) < 0.0:
+            raise ValueError("stationary_racket_xy_deadband_m must be non-negative")
+        if float(cfg.stationary_racket_xy_scale_m) <= 0.0:
+            raise ValueError("stationary_racket_xy_scale_m must be positive")
+        if float(cfg.stationary_racket_vxy_soft_limit_m_s) < 0.0:
+            raise ValueError("stationary_racket_vxy_soft_limit_m_s must be non-negative")
+        if float(cfg.stationary_racket_vxy_scale_m_s) <= 0.0:
+            raise ValueError("stationary_racket_vxy_scale_m_s must be positive")
+        if int(cfg.early_cycle_penalty_hit_count) < 0:
+            raise ValueError("early_cycle_penalty_hit_count must be non-negative")
+        if float(cfg.early_cycle_penalty_multiplier) < 0.0:
+            raise ValueError("early_cycle_penalty_multiplier must be non-negative")
+        if float(cfg.hit_racket_vxy_constraint_threshold_m_s) < 0.0:
+            raise ValueError(
+                "hit_racket_vxy_constraint_threshold_m_s must be non-negative"
+            )
+        if int(cfg.hit_racket_vxy_constraint_min_previous_hits) < 0:
+            raise ValueError(
+                "hit_racket_vxy_constraint_min_previous_hits must be non-negative"
+            )
+        if float(cfg.hit_racket_vxy_constraint_penalty) < 0.0:
+            raise ValueError("hit_racket_vxy_constraint_penalty must be non-negative")
+        if float(cfg.hit_vxy_constraint_threshold_m_s) < 0.0:
+            raise ValueError("hit_vxy_constraint_threshold_m_s must be non-negative")
+        if int(cfg.hit_vxy_constraint_min_previous_hits) < 0:
+            raise ValueError("hit_vxy_constraint_min_previous_hits must be non-negative")
+        if float(cfg.hit_vxy_constraint_penalty) < 0.0:
+            raise ValueError("hit_vxy_constraint_penalty must be non-negative")
+        if not 0.0 <= float(cfg.hit_racket_up_cos_constraint_min) <= 1.0:
+            raise ValueError("hit_racket_up_cos_constraint_min must be in [0, 1]")
+        if float(cfg.hit_racket_up_cos_constraint_penalty) < 0.0:
+            raise ValueError(
+                "hit_racket_up_cos_constraint_penalty must be non-negative"
+            )
+        if float(cfg.contact_edge_pose_penalty_multiplier) < 0.0:
+            raise ValueError("contact_edge_pose_penalty_multiplier must be non-negative")
+        if float(cfg.contact_edge_racket_vxy_penalty_multiplier) < 0.0:
+            raise ValueError(
+                "contact_edge_racket_vxy_penalty_multiplier must be non-negative"
+            )
+        if int(cfg.terminate_after_confirmed_hits) < 0:
+            raise ValueError("terminate_after_confirmed_hits must be non-negative")
+        if not (
+            0.0
+            <= float(cfg.hit_survival_apex_fraction)
+            <= float(cfg.hit_quality_apex_fraction)
+            <= 1.0
+        ):
+            raise ValueError(
+                "hit apex fractions must satisfy 0 <= survival <= quality <= 1"
+            )
+        if float(cfg.low_survival_hit_reward_weight) < 0.0:
+            raise ValueError("low_survival_hit_reward_weight must be non-negative")
+        falling_local_y_lo, falling_local_y_hi = [
+            float(value) for value in cfg.falling_reset_contact_local_y_offset_range_m
+        ]
+        if not (
+            np.isfinite(falling_local_y_lo) and np.isfinite(falling_local_y_hi)
+        ):
+            raise ValueError(
+                "falling_reset_contact_local_y_offset_range_m must be finite"
+            )
+        if int(cfg.hit_racket_vxy_steady_min_count) < 0:
+            raise ValueError("hit_racket_vxy_steady_min_count must be non-negative")
+        if float(cfg.hit_racket_vxy_recovery_soft_limit_m_s) < 0.0:
+            raise ValueError(
+                "hit_racket_vxy_recovery_soft_limit_m_s must be non-negative"
+            )
+        if float(cfg.episode_phase_stagger_min_frac) < 0.0 or float(
+            cfg.episode_phase_stagger_min_frac
+        ) > 1.0:
+            raise ValueError("episode_phase_stagger_min_frac must be in [0, 1]")
+        if float(cfg.hit_racket_vxy_quality_gate_sigma_m_s) < 0.0:
+            raise ValueError("hit_racket_vxy_quality_gate_sigma_m_s must be non-negative")
+        if not 0.0 <= float(cfg.hit_racket_vxy_quality_gate_floor) <= 1.0:
+            raise ValueError("hit_racket_vxy_quality_gate_floor must be in [0, 1]")
+        if float(cfg.hit_apex_view_y_progress_reward_weight) < 0.0:
+            raise ValueError("hit_apex_view_y_progress_reward_weight must be non-negative")
+        if float(cfg.hit_apex_view_y_progress_sigma_m) <= 0.0:
+            raise ValueError("hit_apex_view_y_progress_sigma_m must be positive")
+        if float(cfg.hit_apex_view_y_progress_deadband_m) < 0.0:
+            raise ValueError("hit_apex_view_y_progress_deadband_m must be non-negative")
+        if float(cfg.hit_apex_view_y_progress_racket_vxy_allowance_m_s) < 0.0:
+            raise ValueError(
+                "hit_apex_view_y_progress_racket_vxy_allowance_m_s must be non-negative"
+            )
+        if float(cfg.hit_apex_view_y_error_racket_vxy_allowance_m_s) < 0.0:
+            raise ValueError(
+                "hit_apex_view_y_error_racket_vxy_allowance_m_s must be non-negative"
+            )
+        if float(cfg.hit_apex_view_y_directional_racket_vxy_allowance_m_s) < 0.0:
+            raise ValueError(
+                "hit_apex_view_y_directional_racket_vxy_allowance_m_s must be non-negative"
+            )
+        if float(cfg.hit_local_y_return_outcome_racket_vxy_allowance_m_s) < 0.0:
+            raise ValueError(
+                "hit_local_y_return_outcome_racket_vxy_allowance_m_s must be non-negative"
+            )
+        if float(cfg.hit_local_y_return_outcome_reward_weight) < 0.0:
+            raise ValueError(
+                "hit_local_y_return_outcome_reward_weight must be non-negative"
+            )
+        if float(cfg.hit_local_y_return_outcome_sigma_m_s) <= 0.0:
+            raise ValueError("hit_local_y_return_outcome_sigma_m_s must be positive")
+        if float(cfg.hit_next_contact_drag_coefficient_m_inv) < 0.0:
+            raise ValueError(
+                "hit_next_contact_drag_coefficient_m_inv must be non-negative"
+            )
+        if float(cfg.ball_flight_drag_coefficient_m_inv) < 0.0:
+            raise ValueError("ball_flight_drag_coefficient_m_inv must be non-negative")
+        if float(cfg.hit_adaptive_reflected_velocity_penalty_weight) < 0.0:
+            raise ValueError(
+                "hit_adaptive_reflected_velocity_penalty_weight must be non-negative"
+            )
+        if float(cfg.hit_adaptive_reflected_velocity_xy_sigma_m_s) <= 0.0:
+            raise ValueError(
+                "hit_adaptive_reflected_velocity_xy_sigma_m_s must be positive"
+            )
+        if float(cfg.hit_adaptive_reflected_velocity_z_sigma_m_s) <= 0.0:
+            raise ValueError(
+                "hit_adaptive_reflected_velocity_z_sigma_m_s must be positive"
+            )
+        if float(cfg.hit_adaptive_reflected_velocity_center_coefficient_m_inv) < 0.0:
+            raise ValueError(
+                "hit_adaptive_reflected_velocity_center_coefficient_m_inv must be non-negative"
+            )
+        if float(cfg.hit_vxy_quality_gate_sigma_m_s) < 0.0:
+            raise ValueError("hit_vxy_quality_gate_sigma_m_s must be non-negative")
+        if not 0.0 <= float(cfg.hit_vxy_quality_gate_floor) <= 1.0:
+            raise ValueError("hit_vxy_quality_gate_floor must be in [0, 1]")
+        if not 0.0 <= float(cfg.hit_pose_quality_gate_floor) <= 1.0:
+            raise ValueError("hit_pose_quality_gate_floor must be in [0, 1]")
+        if float(cfg.hit_angular_speed_quality_gate_sigma_rad_s) < 0.0:
+            raise ValueError(
+                "hit_angular_speed_quality_gate_sigma_rad_s must be non-negative"
+            )
+        if float(cfg.hit_racket_angular_speed_reward_weight) < 0.0:
+            raise ValueError(
+                "hit_racket_angular_speed_reward_weight must be non-negative"
+            )
+        if float(cfg.hit_racket_angular_speed_reward_target_rad_s) < 0.0:
+            raise ValueError(
+                "hit_racket_angular_speed_reward_target_rad_s must be non-negative"
+            )
+        if float(cfg.hit_racket_angular_speed_reward_sigma_rad_s) <= 0.0:
+            raise ValueError(
+                "hit_racket_angular_speed_reward_sigma_rad_s must be positive"
+            )
+        if int(cfg.early_hit_vxy_penalty_hit_count) < 0:
+            raise ValueError("early_hit_vxy_penalty_hit_count must be non-negative")
+        if float(cfg.early_hit_vxy_penalty_multiplier) < 0.0:
+            raise ValueError("early_hit_vxy_penalty_multiplier must be non-negative")
+        if float(cfg.early_hit_vxy_zero_reward_multiplier) < 0.0:
+            raise ValueError("early_hit_vxy_zero_reward_multiplier must be non-negative")
+        if float(cfg.approach_racket_vxy_time_window_s) <= 0.0:
+            raise ValueError("approach_racket_vxy_time_window_s must be positive")
+        if float(cfg.approach_racket_vxy_alignment_sigma_m) <= 0.0:
+            raise ValueError("approach_racket_vxy_alignment_sigma_m must be positive")
+        if float(cfg.approach_racket_vxy_penalty_scale_m_s) <= 0.0:
+            raise ValueError("approach_racket_vxy_penalty_scale_m_s must be positive")
+        if float(cfg.approach_racket_flatness_penalty_weight) < 0.0:
+            raise ValueError(
+                "approach_racket_flatness_penalty_weight must be non-negative"
+            )
+        if float(cfg.approach_racket_tilt_speed_penalty_weight) < 0.0:
+            raise ValueError(
+                "approach_racket_tilt_speed_penalty_weight must be non-negative"
+            )
+        if int(cfg.early_approach_penalty_hit_count) < 0:
+            raise ValueError("early_approach_penalty_hit_count must be non-negative")
+        if float(cfg.early_approach_penalty_multiplier) < 0.0:
+            raise ValueError("early_approach_penalty_multiplier must be non-negative")
+        if float(cfg.first_hit_stationary_alignment_sigma_m) <= 0.0:
+            raise ValueError("first_hit_stationary_alignment_sigma_m must be positive")
+        if float(cfg.first_hit_stationary_max_rel_height_m) <= 0.0:
+            raise ValueError("first_hit_stationary_max_rel_height_m must be positive")
+        if float(cfg.first_hit_stationary_penalty_scale_m_s) <= 0.0:
+            raise ValueError("first_hit_stationary_penalty_scale_m_s must be positive")
+        if int(cfg.early_racket_xy_anchor_hit_count) < 0:
+            raise ValueError("early_racket_xy_anchor_hit_count must be non-negative")
+        if float(cfg.early_racket_xy_anchor_deadband_m) < 0.0:
+            raise ValueError("early_racket_xy_anchor_deadband_m must be non-negative")
+        if float(cfg.early_racket_xy_anchor_scale_m) <= 0.0:
+            raise ValueError("early_racket_xy_anchor_scale_m must be positive")
         self.hit_cycle_q_deadband_rad = jnp.deg2rad(
             jnp.asarray(cfg.hit_cycle_q_deadband_deg, dtype=jnp.float32)
         )
@@ -1982,13 +3129,16 @@ class MjxJuggleEnv:
 
         return model
 
-    def reset(self, keys: jax.Array) -> tuple[EnvState, jax.Array]:
+    def reset(
+        self, keys: jax.Array, stagger_episode_phase: bool = False
+    ) -> tuple[EnvState, jax.Array]:
         keys = jnp.asarray(keys)
         n_envs = keys.shape[0]
         data = _batch_tree(self.base_data, n_envs)
 
-        split_keys = jax.vmap(lambda k: jax.random.split(k, 34))(keys)
+        split_keys = jax.vmap(lambda k: jax.random.split(k, 35))(keys)
         next_keys = split_keys[:, 0]
+        key_episode_phase = split_keys[:, 34]
         key_xy = split_keys[:, 1]
         key_z = split_keys[:, 2]
         key_vel = split_keys[:, 3]
@@ -2049,9 +3199,13 @@ class MjxJuggleEnv:
                 else float(self.cfg.ball_spawn_xy_jitter)
             )
         )
+        # A zero falling-reset limit is intentional: it represents an exactly
+        # vertical descending ball.  Do not treat it as an unset value and
+        # silently fall back to the generic launch disturbance, otherwise the
+        # supposed zero-vxy interception curriculum still teaches chasing.
         vxy_limit = (
             float(self.cfg.falling_reset_vxy_max)
-            if falling_reset and float(self.cfg.falling_reset_vxy_max) > 0.0
+            if falling_reset
             else (
                 float(self.cfg.racket_launch_vxy_max)
                 if racket_launch_reset
@@ -2685,7 +3839,34 @@ class MjxJuggleEnv:
             tau_upper = jnp.maximum(0.02, time_apex_to_contact - min_downward_speed / g_abs)
             tau_lower = jnp.minimum(jnp.full_like(tau_upper, max(0.0, tau_lo)), tau_upper)
             tau = jnp.minimum(jnp.maximum(falling_tau_raw, tau_lower), tau_upper)
-            contact_xy = episode_racket_anchor[:, :2] + xy_jitter
+            local_y_lo, local_y_hi = sorted(
+                float(value)
+                for value in self.cfg.falling_reset_contact_local_y_offset_range_m
+            )
+            # Fold instead of splitting the historical reset key so every
+            # profile that leaves this offset at zero preserves its existing
+            # random reset sequence.
+            falling_local_y_offset = jax.vmap(
+                lambda key: jax.random.uniform(
+                    jax.random.fold_in(key, 661),
+                    (),
+                    minval=local_y_lo,
+                    maxval=max(local_y_lo + 1e-6, local_y_hi),
+                )
+            )(key_xy)
+            reset_base_yaw = data.qpos[:, self.base_yaw_qadr]
+            falling_local_y_offset_world = jnp.stack(
+                [
+                    -jnp.sin(reset_base_yaw) * falling_local_y_offset,
+                    jnp.cos(reset_base_yaw) * falling_local_y_offset,
+                ],
+                axis=-1,
+            )
+            contact_xy = (
+                episode_racket_anchor[:, :2]
+                + xy_jitter
+                + falling_local_y_offset_world
+            )
             contact_z = episode_racket_anchor[:, 2] + contact_rel_height + z_jitter
             contact_vz = -jnp.sqrt(2.0 * g_abs * apex_height)
             init_vz = contact_vz + g_abs * tau
@@ -2693,7 +3874,10 @@ class MjxJuggleEnv:
             ball_z = contact_z - init_vz * tau + 0.5 * g_abs * tau * tau
             ball_init = jnp.concatenate([ball_xy, ball_z[:, None]], axis=-1)
             ball_init_vel = jnp.concatenate([vxy, init_vz[:, None]], axis=-1)
-            reset_ball_racket_center_offset = jnp.linalg.norm(xy_jitter, axis=-1)
+            reset_ball_racket_center_offset = jnp.linalg.norm(
+                xy_jitter + falling_local_y_offset_world,
+                axis=-1,
+            )
         elif racket_launch_reset:
             racket_xmat = data.geom_xmat[:, self.racket_geom_id].reshape((-1, 3, 3))
             tangent_x = racket_xmat[:, :, 0]
@@ -2776,6 +3960,25 @@ class MjxJuggleEnv:
             coherent_missing_u
             < float(self.cfg.ball_obs_missing_episode_coherent_prob)
         )
+        if self.cfg.actor_previous_action_scale_range is None:
+            actor_previous_action_scale = jnp.full(
+                (n_envs,),
+                float(self.cfg.actor_previous_action_scale),
+                dtype=jnp.float32,
+            )
+        else:
+            previous_scale_low, previous_scale_high = map(
+                float, self.cfg.actor_previous_action_scale_range
+            )
+            previous_scale_u = jax.vmap(
+                lambda key: jax.random.uniform(
+                    jax.random.fold_in(key, 1911), dtype=jnp.float32
+                )
+            )(next_keys)
+            actor_previous_action_scale = (
+                previous_scale_low
+                + (previous_scale_high - previous_scale_low) * previous_scale_u
+            )
 
         reset_ball_obs_missing = jnp.zeros((n_envs,), dtype=bool)
         reset_ball_obs_pos = bpos
@@ -2820,11 +4023,43 @@ class MjxJuggleEnv:
                 -int(np.ceil(reset_missing_age / max(self.dt, 1e-6))),
                 0,
             ).astype(jnp.int32)
+        stagger_min_frac = float(self.cfg.episode_phase_stagger_min_frac)
+        if stagger_episode_phase and stagger_min_frac < 1.0:
+            # Spread the first truncation time so the surviving cohort stops
+            # sharing an episode phase.  Later resets restore the full horizon,
+            # so only the phase offset persists, not a shorter mean episode.
+            stagger_low = max(1, int(round(self.max_steps * stagger_min_frac)))
+            episode_limit = jax.vmap(
+                lambda k: jax.random.randint(
+                    k, (), stagger_low, self.max_steps + 1, dtype=jnp.int32
+                )
+            )(key_episode_phase)
+        else:
+            episode_limit = jnp.full((n_envs,), self.max_steps, dtype=jnp.int32)
+        if self.cfg.racket_launch_hold_time_range_s is None:
+            racket_launch_hold_time_s = jnp.full(
+                (n_envs,),
+                float(self.cfg.racket_launch_hold_time_s),
+                dtype=jnp.float32,
+            )
+        else:
+            hold_lo, hold_hi = sorted(
+                float(value)
+                for value in self.cfg.racket_launch_hold_time_range_s
+            )
+            hold_u = jax.vmap(
+                lambda key: jax.random.uniform(jax.random.fold_in(key, 976))
+            )(key_episode_phase)
+            racket_launch_hold_time_s = hold_lo + (hold_hi - hold_lo) * hold_u
+        racket_launch_hold_steps = jnp.rint(
+            racket_launch_hold_time_s / max(self.dt, 1e-9)
+        ).astype(jnp.int32)
         state = EnvState(
             model=model,
             data=data,
             rng=next_keys,
             step_count=jnp.zeros((n_envs,), dtype=jnp.int32),
+            episode_limit=episode_limit,
             racket_anchor=episode_racket_anchor,
             chest_target_offset=chest_target_offset,
             reset_ball_pos=ball_init,
@@ -2833,6 +4068,7 @@ class MjxJuggleEnv:
             reset_disturbance_strength=reset_disturbance_strength,
             reset_ball_surface_gap=racket_launch_surface_gap,
             reset_ball_racket_center_offset=reset_ball_racket_center_offset,
+            racket_launch_hold_steps=racket_launch_hold_steps,
             reset_ball_obs_missing=reset_ball_obs_missing,
             arm_cmd_q=jnp.broadcast_to(self.warm_arm_q, (n_envs, self.act_dim)),
             arm_cmd_qvel=jnp.zeros((n_envs, self.act_dim), dtype=jnp.float32),
@@ -2861,6 +4097,8 @@ class MjxJuggleEnv:
             arm_actuator_mode2_q=jnp.broadcast_to(self.warm_arm_q, (n_envs, self.act_dim)),
             arm_actuator_mode2_qvel=jnp.zeros((n_envs, self.act_dim), dtype=jnp.float32),
             prev_action=zero_action,
+            actor_previous_action_scale=actor_previous_action_scale,
+            proprio_noise_state=jnp.zeros((n_envs, self.act_dim + 3), dtype=jnp.float32),
             prev_arm_qvel=jnp.broadcast_to(self.warm_arm_qvel, (n_envs, self.act_dim)),
             prev_ball_pos=bpos,
             prev_racket_pos=rpos,
@@ -2875,6 +4113,31 @@ class MjxJuggleEnv:
             pending_hit_camera_in_margin=jnp.zeros((n_envs,), dtype=bool),
             pending_hit_camera_in_lower_band=jnp.zeros((n_envs,), dtype=bool),
             pending_hit_camera_v_frac=jnp.zeros((n_envs,), dtype=jnp.float32),
+            pending_hit_racket_vxy=jnp.zeros((n_envs,), dtype=jnp.float32),
+            pending_hit_racket_local_y_velocity=jnp.zeros((n_envs,), dtype=jnp.float32),
+            pending_hit_racket_up_cos=jnp.ones((n_envs,), dtype=jnp.float32),
+            pending_hit_racket_angular_speed=jnp.zeros(
+                (n_envs,), dtype=jnp.float32
+            ),
+            pending_hit_racket_full_angular_speed=jnp.zeros(
+                (n_envs,), dtype=jnp.float32
+            ),
+            pending_hit_racket_local_y_angular_speed=jnp.zeros(
+                (n_envs,), dtype=jnp.float32
+            ),
+            pending_hit_racket_local_xz_angular_speed=jnp.zeros(
+                (n_envs,), dtype=jnp.float32
+            ),
+            pending_hit_contact_center_dist=jnp.zeros(
+                (n_envs,), dtype=jnp.float32
+            ),
+            pending_hit_racket_xy=rpos[:, :2],
+            pending_hit_cycle_racket_xy_path_length=jnp.zeros(
+                (n_envs,), dtype=jnp.float32
+            ),
+            pending_hit_cycle_racket_xy_area_twice=jnp.zeros(
+                (n_envs,), dtype=jnp.float32
+            ),
             hit_count=jnp.zeros((n_envs,), dtype=jnp.int32),
             last_counted_hit_arm_q=jnp.broadcast_to(
                 self.warm_arm_q, (n_envs, self.act_dim)
@@ -2889,6 +4152,13 @@ class MjxJuggleEnv:
                 (n_envs, self.act_dim), dtype=jnp.float32
             ),
             hit_cycle_action_steps=jnp.zeros((n_envs,), dtype=jnp.int32),
+            last_counted_hit_racket_xy=rpos[:, :2],
+            hit_cycle_racket_xy_path_length=jnp.zeros(
+                (n_envs,), dtype=jnp.float32
+            ),
+            hit_cycle_racket_xy_area_twice=jnp.zeros(
+                (n_envs,), dtype=jnp.float32
+            ),
             action_buffer=jnp.zeros((n_envs, self.max_action_latency_steps + 1, self.act_dim), dtype=jnp.float32),
             action_latency_steps=action_latency_steps,
             command_buffer=jnp.broadcast_to(
@@ -2916,6 +4186,35 @@ class MjxJuggleEnv:
             ),
             cached_ball_obs_pos=reset_ball_obs_pos,
             cached_ball_obs_vel=zero_ball_vel,
+            ball_obs_velocity_observer_xy=jnp.zeros(
+                (n_envs, 2), dtype=jnp.float32
+            ),
+            ball_obs_velocity_observer_last_sample_step=jnp.zeros(
+                (n_envs,), dtype=jnp.int32
+            ),
+            ball_obs_velocity_observer_has_sample=jnp.zeros(
+                (n_envs,), dtype=bool
+            ),
+            ball_obs_consistency_innovation_xy=jnp.zeros(
+                (n_envs, 2), dtype=jnp.float32
+            ),
+            ball_obs_consistency_streak=jnp.zeros(
+                (n_envs,), dtype=jnp.int32
+            ),
+            ball_obs_prospective_position_history_xy=jnp.zeros(
+                (n_envs, 6, 2), dtype=jnp.float32
+            ),
+            ball_obs_prospective_time_history_s=jnp.zeros(
+                (n_envs, 6), dtype=jnp.float32
+            ),
+            ball_obs_prospective_history_count=jnp.zeros(
+                (n_envs,), dtype=jnp.int32
+            ),
+            ball_obs_prospective_prior_clipped_velocity_xy=jnp.zeros(
+                (n_envs, 2), dtype=jnp.float32
+            ),
+            ball_obs_velxy_noise_state=jnp.zeros((n_envs, 2), dtype=jnp.float32),
+            ball_obs_posthit_noise_left=jnp.zeros((n_envs,), dtype=jnp.int32),
             last_ball_obs_step=reset_last_ball_obs_step,
             ball_obs_valid_pos=reset_ball_obs_pos,
             ball_obs_valid_vel=zero_ball_vel,
@@ -3122,6 +4421,14 @@ class MjxJuggleEnv:
         rel_base = bpos_base - rpos_base
         arm_cmd_error = state.arm_cmd_q - q
         age = jnp.clip(ball_obs_age_seconds / max(1e-6, float(self.cfg.ball_obs_age_clip)), 0.0, 1.0)[:, None]
+        actor_prev_action, _actor_action_history, _actor_action_dc = (
+            self._actor_action_feedback(state)
+        )
+        actor_prev_action = (
+            jnp.zeros_like(state.prev_action)
+            if bool(self.cfg.actor_mask_previous_action)
+            else actor_prev_action * state.actor_previous_action_scale[:, None]
+        )
         return jnp.concatenate(
             [
                 q,
@@ -3133,12 +4440,112 @@ class MjxJuggleEnv:
                 rpos_base,
                 rvel_base,
                 rel_base,
-                state.prev_action,
+                actor_prev_action,
                 arm_cmd_error,
                 age,
             ],
             axis=-1,
         )
+
+    def _actor_action_feedback(
+        self, state: EnvState
+    ) -> tuple[jax.Array, jax.Array, jax.Array]:
+        """Return actor-only DC-rejected current/history action feedback."""
+
+        if self.high_latency_action_prev_frames > 0:
+            sequence = jnp.concatenate(
+                [state.action_history, state.prev_action[:, None, :]], axis=1
+            )
+            action_dc = jnp.mean(sequence, axis=1)
+        else:
+            # With no temporal history there is no observable DC/innovation
+            # decomposition, so preserve the legacy current-action input.
+            action_dc = jnp.zeros_like(state.prev_action)
+        rejection = float(self.cfg.actor_action_dc_rejection)
+        return (
+            state.prev_action - rejection * action_dc,
+            state.action_history - rejection * action_dc[:, None, :],
+            action_dc,
+        )
+
+    # Base-obs slices for the velocity channels that carry the real-robot gap.
+    _DQ_OBS_SLICE = slice(7, 14)
+    _RACKET_VEL_OBS_SLICE = slice(29, 32)
+
+    def _apply_proprio_obs_noise(
+        self, state: EnvState, base_obs: jax.Array, key: jax.Array
+    ) -> tuple[jax.Array, jax.Array]:
+        """Inject AR(1)-correlated noise on the arm-dq / racket-vel obs channels.
+
+        Applied to the raw base obs before it enters the latency buffer, so the
+        same corrupted sample feeds the current obs and the history frames -
+        matching how hardware noise propagates.  Shares the ball-noise warmup /
+        ramp schedule so a fine-tune starts from the clean policy's behaviour
+        and grows the perturbation in.
+        """
+        dq_std = float(self.cfg.proprio_dq_obs_noise_std)
+        rv_std = float(self.cfg.proprio_racket_vel_obs_noise_std)
+        if dq_std <= 0.0 and rv_std <= 0.0:
+            return base_obs, state.proprio_noise_state
+
+        rho = float(np.clip(self.cfg.proprio_obs_noise_rho, 0.0, 0.999))
+        eps = jax.vmap(lambda k: jax.random.normal(k, (self.act_dim + 3,), dtype=jnp.float32))(key)
+        noise_state = rho * state.proprio_noise_state + math.sqrt(max(1e-9, 1.0 - rho * rho)) * eps
+
+        warmup = max(0, int(self.cfg.proprio_obs_noise_warmup_env_steps))
+        ramp = max(1, int(self.cfg.proprio_obs_noise_ramp_env_steps))
+        scale = jnp.clip(
+            (state.total_env_steps.astype(jnp.float32) - float(warmup)) / float(ramp), 0.0, 1.0
+        )
+
+        std = jnp.concatenate(
+            [
+                jnp.full((self.act_dim,), dq_std, dtype=jnp.float32),
+                jnp.full((3,), rv_std, dtype=jnp.float32),
+            ]
+        )
+        delta = noise_state * std[None, :] * scale[:, None]
+        base_obs = base_obs.at[:, self._DQ_OBS_SLICE].add(delta[:, : self.act_dim])
+        base_obs = base_obs.at[:, self._RACKET_VEL_OBS_SLICE].add(delta[:, self.act_dim :])
+        return base_obs, noise_state
+
+    def _apply_proprio_obs_staleness(
+        self,
+        state: EnvState,
+        base_obs: jax.Array,
+        key: jax.Array,
+    ) -> tuple[jax.Array, jax.Array]:
+        """Hold only the real joint-derived channels for one control tick."""
+
+        probability = float(
+            np.clip(self.cfg.proprio_obs_one_step_stale_probability, 0.0, 1.0)
+        )
+        if probability <= 0.0:
+            return base_obs, jnp.zeros((base_obs.shape[0],), dtype=jnp.bool_)
+
+        held = jax.vmap(
+            lambda sample_key: jax.random.bernoulli(
+                jax.random.fold_in(sample_key, 20260812),
+                p=probability,
+            )
+        )(key)
+        held = held & (state.step_count > 0)
+        previous = state.obs_buffer[:, -1, :]
+
+        stale = base_obs
+        stale = stale.at[:, 0:14].set(previous[:, 0:14])
+        stale = stale.at[:, 26:32].set(previous[:, 26:32])
+        # rel = ball - racket: retain the current ball sample while replacing
+        # only the joint-derived racket position.
+        stale = stale.at[:, 32:35].add(
+            base_obs[:, 26:29] - previous[:, 26:29]
+        )
+        # command_error = current_command - sampled_q.  The command remains
+        # current even when the joint-state sample is held.
+        stale = stale.at[:, 42:49].add(
+            base_obs[:, 0:7] - previous[:, 0:7]
+        )
+        return jnp.where(held[:, None], stale, base_obs), held
 
     def _augment_obs(self, state: EnvState, base_obs: jax.Array) -> jax.Array:
         obs = self._augment_high_latency_obs(state, base_obs) if self.high_latency_obs else base_obs
@@ -3187,7 +4594,14 @@ class MjxJuggleEnv:
             axis=-1,
         )
         obs_hist = state.obs_history.reshape((base_obs.shape[0], -1))
-        action_hist = state.action_history.reshape((base_obs.shape[0], -1))
+        _actor_prev_action, actor_action_history, _actor_action_dc = (
+            self._actor_action_feedback(state)
+        )
+        action_hist = actor_action_history.reshape((base_obs.shape[0], -1))
+        if bool(self.cfg.actor_mask_action_history):
+            action_hist = jnp.zeros_like(action_hist)
+        else:
+            action_hist = action_hist * float(self.cfg.actor_action_history_scale)
         return jnp.concatenate(
             [
                 base_obs,
@@ -3401,6 +4815,21 @@ class MjxJuggleEnv:
     ) -> tuple[EnvState, jax.Array, jax.Array, jax.Array, dict[str, jax.Array]]:
         raw_policy_action = action
         policy_action = jnp.clip(raw_policy_action, -1.0, 1.0)
+        pre_release_control_active = (
+            (self.ball_reset_mode == "racket_launch")
+            & (state.racket_launch_hold_steps > 0)
+            & ((state.step_count + 1) <= state.racket_launch_hold_steps)
+            & (state.hit_count <= 0)
+            & (
+                str(self.cfg.racket_launch_pre_release_control_mode)
+                == "hold_command"
+            )
+        )
+        policy_action = jnp.where(
+            pre_release_control_active[:, None],
+            jnp.zeros_like(policy_action),
+            policy_action,
+        )
         action_clip_excess = jnp.maximum(jnp.abs(raw_policy_action) - 1.0, 0.0)
         action_buffer = jnp.concatenate([state.action_buffer[:, 1:, :], policy_action[:, None, :]], axis=1)
         action_idx = (self.max_action_latency_steps - state.action_latency_steps).astype(jnp.int32)
@@ -3476,9 +4905,39 @@ class MjxJuggleEnv:
             action = a_final
         da = action - state.prev_action
 
-        desired_qdd_raw = action * self.arm_acc_limit_rad_s2 * float(self.cfg.action_acc_scale) * state.action_scale_mult[:, None]
+        if self.action_command_mode == "velocity":
+            # The actor now names a desired joint velocity rather than a joint
+            # acceleration.  Retain the physical acceleration envelope while
+            # tracking that velocity target, so a policy cannot synthesize a
+            # non-deployable q-reference jump through the integrator.
+            desired_qvel_raw = (
+                action
+                * self.arm_vel_limit_rad_s
+                * float(self.cfg.action_velocity_scale)
+                * state.action_scale_mult[:, None]
+            )
+            if bool(self.cfg.arm_action_limiter):
+                desired_qvel = jnp.clip(
+                    desired_qvel_raw,
+                    -self.arm_vel_limit_rad_s,
+                    self.arm_vel_limit_rad_s,
+                )
+            else:
+                desired_qvel = desired_qvel_raw
+            desired_qdd_raw = (desired_qvel - state.arm_cmd_qvel) / self.dt
+        else:
+            desired_qdd_raw = (
+                action
+                * self.arm_acc_limit_rad_s2
+                * float(self.cfg.action_acc_scale)
+                * state.action_scale_mult[:, None]
+            )
         if bool(self.cfg.arm_action_limiter):
-            desired_qdd = jnp.clip(desired_qdd_raw, -self.arm_acc_limit_rad_s2, self.arm_acc_limit_rad_s2)
+            desired_qdd = jnp.clip(
+                desired_qdd_raw,
+                -self.arm_acc_limit_rad_s2,
+                self.arm_acc_limit_rad_s2,
+            )
         else:
             desired_qdd = desired_qdd_raw
         raw_cmd_qvel = state.arm_cmd_qvel + desired_qdd * self.dt
@@ -4998,6 +6457,20 @@ class MjxJuggleEnv:
             ) = carry
             d_before = d
             d = self.batched_step(state.model, d.replace(ctrl=ctrl))
+            if float(self.cfg.ball_flight_drag_coefficient_m_inv) > 0.0:
+                ball_linear_velocity = d.qvel[
+                    :, self.ball_vadr : self.ball_vadr + 3
+                ]
+                dragged_ball_velocity = apply_quadratic_ball_drag_jax(
+                    ball_linear_velocity,
+                    float(self.cfg.ball_flight_drag_coefficient_m_inv),
+                    self.timestep,
+                )
+                d = d.replace(
+                    qvel=d.qvel.at[
+                        :, self.ball_vadr : self.ball_vadr + 3
+                    ].set(dragged_ball_velocity)
+                )
             if bool(self.cfg.arm_actual_state_limiter):
                 arm_q_before = d_before.qpos[:, self.arm_qadr]
                 arm_qvel_before = d_before.qvel[:, self.arm_vadr]
@@ -5263,11 +6736,99 @@ class MjxJuggleEnv:
 
         step_count = state.step_count + 1
         current_time = step_count.astype(jnp.float32) * self.dt
+        hold_steps = state.racket_launch_hold_steps
+        racket_launch_hold_active = (
+            (self.ball_reset_mode == "racket_launch")
+            & (hold_steps > 0)
+            & (step_count <= hold_steps)
+            & (state.hit_count <= 0)
+        )
+        # Use exactly the same collision-surface definition as racket_launch
+        # reset.  right_ee_site is located at the rubber geom center, not at
+        # its upper contact surface, so pinning relative to that site would
+        # silently reduce the configured air gap by the rubber half-thickness.
+        hold_rmat = data.geom_xmat[:, self.racket_geom_id].reshape((-1, 3, 3))
+        hold_normal_raw = hold_rmat[:, :, 2]
+        hold_normal = hold_normal_raw * jnp.where(
+            hold_normal_raw[:, 2] >= 0.0,
+            1.0,
+            -1.0,
+        )[:, None]
+        hold_racket_half_thickness = state.model.geom_size[
+            :, self.racket_geom_id, 1
+        ]
+        hold_rpos = (
+            data.geom_xpos[:, self.racket_geom_id]
+            + hold_normal * hold_racket_half_thickness[:, None]
+        )
+        hold_ball_radius = state.model.geom_size[:, self.ball_geom_id, 0]
+        racket_relative_hold_ball_pos = hold_rpos + hold_normal * (
+            hold_ball_radius + state.reset_ball_surface_gap
+        )[:, None]
+        # A mechanically held ball is moving with the racket.  Preserve that
+        # translational velocity in qvel so opening the release gate does not
+        # create an unphysical velocity discontinuity.  The first hold step
+        # recenters any reset jitter and starts from rest, matching how the
+        # real ball is placed in the gate before policy settling begins.
+        racket_relative_hold_ball_linear_vel = jnp.where(
+            (step_count > 1)[:, None],
+            (racket_relative_hold_ball_pos - state.prev_ball_pos)
+            / max(self.dt, 1e-6),
+            jnp.zeros_like(racket_relative_hold_ball_pos),
+        )
+        world_fixed_hold = str(self.cfg.racket_launch_hold_mode) == "world_fixed"
+        hold_ball_pos = jnp.where(
+            world_fixed_hold,
+            state.reset_ball_pos,
+            racket_relative_hold_ball_pos,
+        )
+        hold_ball_linear_vel = jnp.where(
+            world_fixed_hold,
+            jnp.zeros_like(racket_relative_hold_ball_linear_vel),
+            racket_relative_hold_ball_linear_vel,
+        )
+        hold_ball_qvel = jnp.concatenate(
+            [hold_ball_linear_vel, jnp.zeros_like(hold_ball_linear_vel)],
+            axis=-1,
+        )
+        pinned_ball_qpos = jnp.where(
+            racket_launch_hold_active[:, None],
+            hold_ball_pos,
+            data.qpos[:, self.ball_qadr : self.ball_qadr + 3],
+        )
+        pinned_ball_qvel = jnp.where(
+            racket_launch_hold_active[:, None],
+            hold_ball_qvel,
+            data.qvel[:, self.ball_vadr : self.ball_vadr + 6],
+        )
+        if bool(self.cfg.stationary_ball_training):
+            pinned_ball_qpos = state.reset_ball_pos
+            pinned_ball_qvel = jnp.zeros_like(pinned_ball_qvel)
+        data = data.replace(
+            qpos=data.qpos.at[:, self.ball_qadr : self.ball_qadr + 3].set(
+                pinned_ball_qpos
+            ),
+            qvel=data.qvel.at[:, self.ball_vadr : self.ball_vadr + 6].set(
+                pinned_ball_qvel
+            ),
+        )
+        data = self.batched_forward(state.model, data)
+        in_contact = in_contact & (~racket_launch_hold_active)
+        other_ball_contact = other_ball_contact & (~racket_launch_hold_active)
+        if bool(self.cfg.stationary_ball_training):
+            in_contact = jnp.zeros_like(in_contact)
+            other_ball_contact = jnp.zeros_like(other_ball_contact)
         bpos = data.xpos[:, self.ball_body_id]
         rpos = data.site_xpos[:, self.racket_site_id]
         rmat = data.site_xmat[:, self.racket_site_id].reshape((-1, 3, 3))
         racket_normal = rmat[:, :, 2]
-        bvel = (bpos - state.prev_ball_pos) / max(self.dt, 1e-6)
+        bvel = jnp.where(
+            racket_launch_hold_active[:, None],
+            hold_ball_linear_vel,
+            (bpos - state.prev_ball_pos) / max(self.dt, 1e-6),
+        )
+        if bool(self.cfg.stationary_ball_training):
+            bvel = jnp.zeros_like(bvel)
         rvel = (rpos - state.prev_racket_pos) / max(self.dt, 1e-6)
         racket_vertical_acc = (
             rvel[:, 2] - state.prev_racket_vel[:, 2]
@@ -5290,14 +6851,35 @@ class MjxJuggleEnv:
         racket_tilt_angular_speed = jnp.linalg.norm(
             jnp.cross(racket_angular_velocity, racket_normal), axis=-1
         )
+        rel = bpos - rpos
+        rel_local = jnp.einsum(
+            "nij,nj->ni", jnp.swapaxes(rmat, 1, 2), rel
+        )
+        contact_xy_norm = jnp.linalg.norm(rel_local[:, :2], axis=-1)
+        contact_radius = state.model.geom_size[:, self.racket_geom_id, 0]
+        contact_xy_scale = jnp.minimum(
+            1.0,
+            contact_radius / jnp.maximum(contact_xy_norm, 1e-6),
+        )
+        contact_offset_local = jnp.concatenate(
+            [
+                rel_local[:, :2] * contact_xy_scale[:, None],
+                jnp.zeros((self.n_envs, 1), dtype=rel_local.dtype),
+            ],
+            axis=-1,
+        )
+        contact_offset_world = jnp.einsum(
+            "nij,nj->ni", rmat, contact_offset_local
+        )
+        racket_contact_point_velocity = rvel + jnp.cross(
+            racket_angular_velocity,
+            contact_offset_world,
+        )
         time_since_counted_hit = jnp.where(
             state.last_counted_hit_time >= 0.0,
             current_time - state.last_counted_hit_time,
             jnp.full_like(current_time, 1.0e6),
         )
-        rel = bpos - rpos
-        rel_local = jnp.einsum("nij,nj->ni", jnp.swapaxes(rmat, 1, 2), rel)
-
         sep_dist = jnp.linalg.norm(rel, axis=-1)
         no_contact_steps = jnp.where(in_contact, 0, state.no_contact_steps + 1)
         contact_hold_steps = jnp.where(in_contact, state.contact_hold_steps + 1, 0)
@@ -5310,6 +6892,20 @@ class MjxJuggleEnv:
         )
 
         hit_edge = in_contact & (~state.prev_contact) & hit_armed & (~state.pending_hit)
+        contact_racket_xy = rpos[:, :2]
+        contact_prev_racket_xy = state.prev_racket_pos[:, :2]
+        contact_cycle_xy_path_acc = (
+            state.hit_cycle_racket_xy_path_length
+            + jnp.linalg.norm(
+                contact_racket_xy - contact_prev_racket_xy,
+                axis=-1,
+            )
+        )
+        contact_cycle_xy_area_twice_acc = (
+            state.hit_cycle_racket_xy_area_twice
+            + contact_prev_racket_xy[:, 0] * contact_racket_xy[:, 1]
+            - contact_prev_racket_xy[:, 1] * contact_racket_xy[:, 0]
+        )
         camera_terms = self._camera_reward_terms(data, bpos)
         contact_camera_in_lower_band = (
             contact_camera_visible
@@ -5333,6 +6929,78 @@ class MjxJuggleEnv:
             state.pending_hit_camera_in_lower_band,
         )
         pending_hit_camera_v_frac = jnp.where(hit_edge, contact_camera_v_frac, state.pending_hit_camera_v_frac)
+        hit_racket_velocity = (
+            racket_contact_point_velocity
+            if self.hit_racket_vxy_measurement_mode == "contact_point"
+            else rvel
+        )
+        pending_hit_racket_vxy = jnp.where(
+            hit_edge,
+            jnp.linalg.norm(hit_racket_velocity[:, :2], axis=-1),
+            state.pending_hit_racket_vxy,
+        )
+        # Cache the signed base-local-Y surface velocity at the physical edge.
+        # Confirmation occurs after the racket can already have braked, so this
+        # must travel with the other contact-edge diagnostics.
+        contact_base_yaw = data.qpos[:, self.base_yaw_qadr]
+        contact_c_yaw = jnp.cos(contact_base_yaw)
+        contact_s_yaw = jnp.sin(contact_base_yaw)
+        hit_racket_local_y_velocity = (
+            -contact_s_yaw * hit_racket_velocity[:, 0]
+            + contact_c_yaw * hit_racket_velocity[:, 1]
+        )
+        pending_hit_racket_local_y_velocity = jnp.where(
+            hit_edge,
+            hit_racket_local_y_velocity,
+            state.pending_hit_racket_local_y_velocity,
+        )
+        contact_racket_up_cos = jnp.maximum(0.0, racket_normal[:, 2])
+        contact_center_dist = jnp.linalg.norm(rel_local[:, :2], axis=-1)
+        pending_hit_racket_up_cos = jnp.where(
+            hit_edge,
+            contact_racket_up_cos,
+            state.pending_hit_racket_up_cos,
+        )
+        pending_hit_racket_angular_speed = jnp.where(
+            hit_edge,
+            racket_stability_angular_speed,
+            state.pending_hit_racket_angular_speed,
+        )
+        pending_hit_racket_full_angular_speed = jnp.where(
+            hit_edge,
+            racket_angular_speed,
+            state.pending_hit_racket_full_angular_speed,
+        )
+        pending_hit_racket_local_y_angular_speed = jnp.where(
+            hit_edge,
+            jnp.abs(racket_angular_velocity_local[:, 1]),
+            state.pending_hit_racket_local_y_angular_speed,
+        )
+        pending_hit_racket_local_xz_angular_speed = jnp.where(
+            hit_edge,
+            racket_local_xz_angular_speed,
+            state.pending_hit_racket_local_xz_angular_speed,
+        )
+        pending_hit_contact_center_dist = jnp.where(
+            hit_edge,
+            contact_center_dist,
+            state.pending_hit_contact_center_dist,
+        )
+        pending_hit_racket_xy = jnp.where(
+            hit_edge[:, None],
+            contact_racket_xy,
+            state.pending_hit_racket_xy,
+        )
+        pending_hit_cycle_racket_xy_path_length = jnp.where(
+            hit_edge,
+            contact_cycle_xy_path_acc,
+            state.pending_hit_cycle_racket_xy_path_length,
+        )
+        pending_hit_cycle_racket_xy_area_twice = jnp.where(
+            hit_edge,
+            contact_cycle_xy_area_twice_acc,
+            state.pending_hit_cycle_racket_xy_area_twice,
+        )
         pending_hit = state.pending_hit | hit_edge
         pending_steps = jnp.where(pending_hit, state.pending_hit_steps + 1, 0)
         hit_armed = jnp.where(hit_edge, False, hit_armed)
@@ -5341,7 +7009,34 @@ class MjxJuggleEnv:
         gravity_mag = jnp.maximum(jnp.abs(state.dr_gravity_z), 1e-6)
         predicted_apex_z = bpos[:, 2] + (upward_vz * upward_vz) / (2.0 * gravity_mag)
         min_launch_rel_z = max(float(self.cfg.hit_confirm_rel_height), 0.04)
-        min_launch_apex_z = state.racket_anchor[:, 2] + max(0.70 * float(self.cfg.target_height), min_launch_rel_z + 0.06)
+        min_survival_apex_z = state.racket_anchor[:, 2] + max(
+            float(self.cfg.hit_survival_apex_fraction)
+            * float(self.cfg.target_height),
+            min_launch_rel_z + 0.04,
+        )
+        min_launch_apex_z = state.racket_anchor[:, 2] + max(
+            float(self.cfg.hit_quality_apex_fraction)
+            * float(self.cfg.target_height),
+            min_launch_rel_z + 0.06,
+        )
+        previous_rel_z = (
+            state.prev_ball_pos[:, 2] - state.prev_racket_pos[:, 2]
+        )
+        launch_clearance_crossing = (
+            pending_hit
+            & (~in_contact)
+            & (previous_rel_z < min_launch_rel_z)
+            & (rel[:, 2] >= min_launch_rel_z)
+            & (bvel[:, 2] > 0.0)
+        )
+        low_survival_launch = (
+            launch_clearance_crossing
+            & (predicted_apex_z >= min_survival_apex_z)
+            & (predicted_apex_z < min_launch_apex_z)
+        )
+        subfloor_launch = launch_clearance_crossing & (
+            predicted_apex_z < min_survival_apex_z
+        )
         launched_upward_raw = (
             pending_hit
             & (~in_contact)
@@ -5394,6 +7089,24 @@ class MjxJuggleEnv:
                 / max(1e-6, float(self.cfg.hit_min_interval))
             )
             ** 2,
+            0.0,
+        )
+        hit_max_interval_penalty = jnp.where(
+            cadence_eligible
+            & (float(self.cfg.hit_max_interval_penalty_weight) > 0.0)
+            & (hit_interval > float(self.cfg.hit_max_interval)),
+            float(self.cfg.hit_max_interval_penalty_weight)
+            * jnp.minimum(
+                1.0,
+                (
+                    (hit_interval - float(self.cfg.hit_max_interval))
+                    / max(
+                        1e-6,
+                        float(self.cfg.hit_max_interval_penalty_scale),
+                    )
+                )
+                ** 2,
+            ),
             0.0,
         )
         fast_hit_penalty = jnp.where(
@@ -5467,6 +7180,64 @@ class MjxJuggleEnv:
             * jnp.minimum(cycle_q_excursion_excess**2, 4.0),
             axis=-1,
         ) / cycle_joint_weight_sum
+        racket_xy = rpos[:, :2]
+        prev_racket_xy = state.prev_racket_pos[:, :2]
+        cycle_xy_step = jnp.linalg.norm(racket_xy - prev_racket_xy, axis=-1)
+        cycle_xy_path_acc = state.hit_cycle_racket_xy_path_length + cycle_xy_step
+        cycle_xy_area_twice_acc = (
+            state.hit_cycle_racket_xy_area_twice
+            + prev_racket_xy[:, 0] * racket_xy[:, 1]
+            - prev_racket_xy[:, 1] * racket_xy[:, 0]
+        )
+        cycle_xy_chord = jnp.linalg.norm(
+            pending_hit_racket_xy - state.last_counted_hit_racket_xy,
+            axis=-1,
+        )
+        hit_cycle_racket_xy_path_excess = jnp.maximum(
+            0.0,
+            pending_hit_cycle_racket_xy_path_length - cycle_xy_chord,
+        )
+        cycle_xy_closed_area_twice = (
+            pending_hit_cycle_racket_xy_area_twice
+            + pending_hit_racket_xy[:, 0]
+            * state.last_counted_hit_racket_xy[:, 1]
+            - pending_hit_racket_xy[:, 1]
+            * state.last_counted_hit_racket_xy[:, 0]
+        )
+        hit_cycle_racket_xy_area = 0.5 * jnp.abs(cycle_xy_closed_area_twice)
+        # At hit k this is the *measured* contact location produced by the
+        # preceding flight, not a same-step ballistic/drag prediction.  The
+        # reward masks it until a previous confirmed hit exists.
+        hit_contact_anchor_err = jnp.linalg.norm(
+            pending_hit_racket_xy - state.racket_anchor[:, :2],
+            axis=-1,
+        )
+        previous_hit_contact_anchor_err = jnp.linalg.norm(
+            state.last_counted_hit_racket_xy - state.racket_anchor[:, :2],
+            axis=-1,
+        )
+        hit_cycle_racket_xy_path_excess_norm = jnp.maximum(
+            0.0,
+            hit_cycle_racket_xy_path_excess
+            - float(self.cfg.hit_cycle_racket_xy_path_deadband_m),
+        ) / max(1e-6, float(self.cfg.hit_cycle_racket_xy_path_scale_m))
+        hit_cycle_racket_xy_path_pen = jnp.where(
+            bool(self.cfg.hit_cycle_racket_xy_path_linear_tail)
+            & (hit_cycle_racket_xy_path_excess_norm > 2.0),
+            4.0 + 4.0 * (hit_cycle_racket_xy_path_excess_norm - 2.0),
+            jnp.minimum(hit_cycle_racket_xy_path_excess_norm**2, 4.0),
+        )
+        hit_cycle_racket_xy_area_norm = jnp.maximum(
+            0.0,
+            hit_cycle_racket_xy_area
+            - float(self.cfg.hit_cycle_racket_xy_area_deadband_m2),
+        ) / max(1e-6, float(self.cfg.hit_cycle_racket_xy_area_scale_m2))
+        hit_cycle_racket_xy_area_pen = jnp.where(
+            bool(self.cfg.hit_cycle_racket_xy_area_linear_tail)
+            & (hit_cycle_racket_xy_area_norm > 2.0),
+            4.0 + 4.0 * (hit_cycle_racket_xy_area_norm - 2.0),
+            jnp.minimum(hit_cycle_racket_xy_area_norm**2, 4.0),
+        )
         last_counted_hit_arm_q = jnp.where(
             launched_upward[:, None], arm_q_now, state.last_counted_hit_arm_q
         )
@@ -5485,6 +7256,26 @@ class MjxJuggleEnv:
             launched_upward,
             jnp.zeros_like(cycle_action_steps_acc),
             cycle_action_steps_acc,
+        )
+        last_counted_hit_racket_xy = jnp.where(
+            launched_upward[:, None],
+            pending_hit_racket_xy,
+            state.last_counted_hit_racket_xy,
+        )
+        hit_cycle_racket_xy_path_length = jnp.where(
+            launched_upward,
+            jnp.maximum(
+                0.0,
+                cycle_xy_path_acc
+                - pending_hit_cycle_racket_xy_path_length,
+            ),
+            cycle_xy_path_acc,
+        )
+        hit_cycle_racket_xy_area_twice = jnp.where(
+            launched_upward,
+            cycle_xy_area_twice_acc
+            - pending_hit_cycle_racket_xy_area_twice,
+            cycle_xy_area_twice_acc,
         )
 
         reward, reward_terms = self._reward(
@@ -5510,11 +7301,14 @@ class MjxJuggleEnv:
             predicted_apex_z=predicted_apex_z,
             hit_count=hit_count,
             new_hit=launched_upward,
+            physical_contact_edge=hit_edge,
+            low_survival_launch=low_survival_launch,
             rewardable_hit=rewardable_hit,
             failed_hit=failed_hit,
             ignored_fast_hit=ignored_fast_hit,
             hit_cadence_reward=hit_cadence_reward,
             hit_min_interval_penalty=hit_min_interval_penalty,
+            hit_max_interval_penalty=hit_max_interval_penalty,
             fast_hit_penalty=fast_hit_penalty,
             hit_camera_visible=hit_camera_visible,
             hit_camera_in_margin=hit_camera_in_margin,
@@ -5535,10 +7329,124 @@ class MjxJuggleEnv:
             hit_cycle_action_dc_pen=hit_cycle_action_dc_pen,
             hit_cycle_q_excursion_pen=hit_cycle_q_excursion_pen,
             hit_cycle_q_excursion_max_rad=jnp.max(cycle_q_excursion, axis=-1),
+            hit_cycle_racket_xy_path_excess=hit_cycle_racket_xy_path_excess,
+            hit_cycle_racket_xy_area=hit_cycle_racket_xy_area,
+            hit_cycle_racket_xy_path_pen=hit_cycle_racket_xy_path_pen,
+            hit_cycle_racket_xy_area_pen=hit_cycle_racket_xy_area_pen,
+            hit_contact_anchor_err=hit_contact_anchor_err,
+            previous_hit_contact_anchor_err=previous_hit_contact_anchor_err,
+            hit_racket_vxy_at_contact=pending_hit_racket_vxy,
+            hit_racket_local_y_velocity_at_contact=(
+                pending_hit_racket_local_y_velocity
+            ),
+            hit_racket_up_cos_at_contact=pending_hit_racket_up_cos,
+            hit_racket_angular_speed_at_contact=(
+                pending_hit_racket_angular_speed
+            ),
+            hit_racket_full_angular_speed_at_contact=(
+                pending_hit_racket_full_angular_speed
+            ),
+            hit_racket_local_y_angular_speed_at_contact=(
+                pending_hit_racket_local_y_angular_speed
+            ),
+            hit_racket_local_xz_angular_speed_at_contact=(
+                pending_hit_racket_local_xz_angular_speed
+            ),
+            hit_contact_center_dist_at_contact=(
+                pending_hit_contact_center_dist
+            ),
         )
 
         arm_qvel = data.qvel[:, self.arm_vadr]
         terminated, done_terms = self._termination_terms(data, bpos, rpos, state.racket_anchor)
+        hit_racket_vxy_constraint_threshold = float(
+            self.cfg.hit_racket_vxy_constraint_threshold_m_s
+        )
+        hit_racket_vxy_exceeded = (
+            launched_upward
+            & (hit_racket_vxy_constraint_threshold > 0.0)
+            & (
+                state.hit_count
+                >= int(self.cfg.hit_racket_vxy_constraint_min_previous_hits)
+            )
+            & (pending_hit_racket_vxy > hit_racket_vxy_constraint_threshold)
+        )
+        terminated = terminated | hit_racket_vxy_exceeded
+        done_terms = dict(done_terms)
+        done_terms["hit_racket_vxy_exceeded"] = hit_racket_vxy_exceeded
+        hit_racket_vxy_constraint_excess = jnp.maximum(
+            pending_hit_racket_vxy - hit_racket_vxy_constraint_threshold,
+            0.0,
+        ) / max(hit_racket_vxy_constraint_threshold, 1e-6)
+        hit_racket_vxy_constraint_penalty = jnp.where(
+            hit_racket_vxy_exceeded,
+            -float(self.cfg.hit_racket_vxy_constraint_penalty)
+            * (1.0 + jnp.minimum(hit_racket_vxy_constraint_excess, 2.0)),
+            0.0,
+        )
+        hit_vxy_constraint_threshold = float(
+            self.cfg.hit_vxy_constraint_threshold_m_s
+        )
+        hit_vxy_at_confirmation = jnp.linalg.norm(bvel[:, :2], axis=-1)
+        hit_vxy_exceeded = (
+            launched_upward
+            & (hit_vxy_constraint_threshold > 0.0)
+            & (
+                state.hit_count
+                >= int(self.cfg.hit_vxy_constraint_min_previous_hits)
+            )
+            & (hit_vxy_at_confirmation > hit_vxy_constraint_threshold)
+        )
+        terminated = terminated | hit_vxy_exceeded
+        done_terms["hit_vxy_exceeded"] = hit_vxy_exceeded
+        hit_vxy_constraint_excess = jnp.maximum(
+            hit_vxy_at_confirmation - hit_vxy_constraint_threshold,
+            0.0,
+        ) / max(hit_vxy_constraint_threshold, 1e-6)
+        hit_vxy_constraint_penalty = jnp.where(
+            hit_vxy_exceeded,
+            -float(self.cfg.hit_vxy_constraint_penalty)
+            * (1.0 + jnp.minimum(hit_vxy_constraint_excess, 2.0)),
+            0.0,
+        )
+        hit_racket_up_cos_constraint_min = float(
+            self.cfg.hit_racket_up_cos_constraint_min
+        )
+        hit_racket_up_cos_exceeded = (
+            launched_upward
+            & (hit_racket_up_cos_constraint_min > 0.0)
+            & (
+                pending_hit_racket_up_cos
+                < hit_racket_up_cos_constraint_min
+            )
+        )
+        terminated = terminated | hit_racket_up_cos_exceeded
+        done_terms["hit_racket_up_cos_exceeded"] = (
+            hit_racket_up_cos_exceeded
+        )
+        hit_racket_up_cos_constraint_excess = jnp.maximum(
+            hit_racket_up_cos_constraint_min - pending_hit_racket_up_cos,
+            0.0,
+        ) / max(1.0 - hit_racket_up_cos_constraint_min, 1e-6)
+        hit_racket_up_cos_constraint_penalty = jnp.where(
+            hit_racket_up_cos_exceeded,
+            -float(self.cfg.hit_racket_up_cos_constraint_penalty)
+            * (
+                1.0
+                + jnp.minimum(hit_racket_up_cos_constraint_excess, 2.0)
+            ),
+            0.0,
+        )
+        hit_curriculum_complete = (
+            (int(self.cfg.terminate_after_confirmed_hits) > 0)
+            & launched_upward
+            & (
+                hit_count
+                >= int(self.cfg.terminate_after_confirmed_hits)
+            )
+        )
+        terminated = terminated | hit_curriculum_complete
+        done_terms["hit_curriculum_complete"] = hit_curriculum_complete
         ball_miss = (
             done_terms["ball_too_low"]
             | done_terms["ball_too_high"]
@@ -5596,8 +7504,11 @@ class MjxJuggleEnv:
             + ball_miss_penalty
             + racket_limit_penalty
             + racket_anchor_penalty
+            + hit_racket_vxy_constraint_penalty
+            + hit_vxy_constraint_penalty
+            + hit_racket_up_cos_constraint_penalty
         )
-        truncated = step_count >= self.max_steps
+        truncated = step_count >= state.episode_limit
         done = terminated | truncated
 
         next_state = EnvState(
@@ -5605,6 +7516,7 @@ class MjxJuggleEnv:
             data=data,
             rng=rng_after_delay,
             step_count=step_count,
+            episode_limit=state.episode_limit,
             racket_anchor=state.racket_anchor,
             chest_target_offset=state.chest_target_offset,
             reset_ball_pos=state.reset_ball_pos,
@@ -5613,6 +7525,7 @@ class MjxJuggleEnv:
             reset_disturbance_strength=state.reset_disturbance_strength,
             reset_ball_surface_gap=state.reset_ball_surface_gap,
             reset_ball_racket_center_offset=state.reset_ball_racket_center_offset,
+            racket_launch_hold_steps=state.racket_launch_hold_steps,
             reset_ball_obs_missing=state.reset_ball_obs_missing,
             arm_cmd_q=arm_cmd_q,
             arm_cmd_qvel=cmd_qvel,
@@ -5641,6 +7554,7 @@ class MjxJuggleEnv:
             arm_actuator_mode2_q=(mode2_q if second_order_actuator else arm_applied_q),
             arm_actuator_mode2_qvel=(mode2_qvel if second_order_actuator else arm_applied_qvel),
             prev_action=action,
+            actor_previous_action_scale=state.actor_previous_action_scale,
             prev_arm_qvel=arm_qvel,
             prev_ball_pos=bpos,
             prev_racket_pos=rpos,
@@ -5655,12 +7569,42 @@ class MjxJuggleEnv:
             pending_hit_camera_in_margin=pending_hit_camera_in_margin,
             pending_hit_camera_in_lower_band=pending_hit_camera_in_lower_band,
             pending_hit_camera_v_frac=pending_hit_camera_v_frac,
+            pending_hit_racket_vxy=pending_hit_racket_vxy,
+            pending_hit_racket_local_y_velocity=(
+                pending_hit_racket_local_y_velocity
+            ),
+            pending_hit_racket_up_cos=pending_hit_racket_up_cos,
+            pending_hit_racket_angular_speed=(
+                pending_hit_racket_angular_speed
+            ),
+            pending_hit_racket_full_angular_speed=(
+                pending_hit_racket_full_angular_speed
+            ),
+            pending_hit_racket_local_y_angular_speed=(
+                pending_hit_racket_local_y_angular_speed
+            ),
+            pending_hit_racket_local_xz_angular_speed=(
+                pending_hit_racket_local_xz_angular_speed
+            ),
+            pending_hit_contact_center_dist=(
+                pending_hit_contact_center_dist
+            ),
+            pending_hit_racket_xy=pending_hit_racket_xy,
+            pending_hit_cycle_racket_xy_path_length=(
+                pending_hit_cycle_racket_xy_path_length
+            ),
+            pending_hit_cycle_racket_xy_area_twice=(
+                pending_hit_cycle_racket_xy_area_twice
+            ),
             hit_count=hit_count,
             last_counted_hit_arm_q=last_counted_hit_arm_q,
             hit_cycle_arm_q_min=hit_cycle_arm_q_min,
             hit_cycle_arm_q_max=hit_cycle_arm_q_max,
             hit_cycle_action_sum=hit_cycle_action_sum,
             hit_cycle_action_steps=hit_cycle_action_steps,
+            last_counted_hit_racket_xy=last_counted_hit_racket_xy,
+            hit_cycle_racket_xy_path_length=hit_cycle_racket_xy_path_length,
+            hit_cycle_racket_xy_area_twice=hit_cycle_racket_xy_area_twice,
             action_buffer=action_buffer,
             action_latency_steps=state.action_latency_steps,
             command_buffer=command_buffer,
@@ -5673,9 +7617,38 @@ class MjxJuggleEnv:
             obs_buffer=state.obs_buffer,
             obs_latency_steps=state.obs_latency_steps,
             obs_history=state.obs_history,
+            # Physics substeps carry the AR(1) proprioceptive noise state through
+            # unchanged; it is advanced once per control step in
+            # _apply_observation_pipeline, not per substep.
+            proprio_noise_state=state.proprio_noise_state,
+            ball_obs_velxy_noise_state=state.ball_obs_velxy_noise_state,
+            ball_obs_posthit_noise_left=state.ball_obs_posthit_noise_left,
             action_history=state.action_history,
             cached_ball_obs_pos=state.cached_ball_obs_pos,
             cached_ball_obs_vel=state.cached_ball_obs_vel,
+            ball_obs_velocity_observer_xy=state.ball_obs_velocity_observer_xy,
+            ball_obs_velocity_observer_last_sample_step=(
+                state.ball_obs_velocity_observer_last_sample_step
+            ),
+            ball_obs_velocity_observer_has_sample=(
+                state.ball_obs_velocity_observer_has_sample
+            ),
+            ball_obs_consistency_innovation_xy=(
+                state.ball_obs_consistency_innovation_xy
+            ),
+            ball_obs_consistency_streak=state.ball_obs_consistency_streak,
+            ball_obs_prospective_position_history_xy=(
+                state.ball_obs_prospective_position_history_xy
+            ),
+            ball_obs_prospective_time_history_s=(
+                state.ball_obs_prospective_time_history_s
+            ),
+            ball_obs_prospective_history_count=(
+                state.ball_obs_prospective_history_count
+            ),
+            ball_obs_prospective_prior_clipped_velocity_xy=(
+                state.ball_obs_prospective_prior_clipped_velocity_xy
+            ),
             last_ball_obs_step=state.last_ball_obs_step,
             ball_obs_valid_pos=state.ball_obs_valid_pos,
             ball_obs_valid_vel=state.ball_obs_valid_vel,
@@ -5798,6 +7771,30 @@ class MjxJuggleEnv:
         metrics = {
             "hit_count": hit_count.astype(jnp.float32),
             "new_hit": launched_upward.astype(jnp.float32),
+            # Keep the three hit-detection layers observable.  ``hit_count``
+            # is the task-valid/count-gated event, while a physical contact
+            # edge can still resolve as an unconfirmed (usually too-low or
+            # non-upward) launch.  Without these two event streams a visually
+            # valid low bounce is indistinguishable from contact chatter in
+            # aggregate training telemetry.
+            "physical_contact_edge": hit_edge.astype(jnp.float32),
+            "launch_clearance_crossing": launch_clearance_crossing.astype(
+                jnp.float32
+            ),
+            "low_survival_launch": low_survival_launch.astype(jnp.float32),
+            "subfloor_launch": subfloor_launch.astype(jnp.float32),
+            "failed_hit": failed_hit.astype(jnp.float32),
+            "racket_launch_hold_active": (
+                racket_launch_hold_active.astype(jnp.float32)
+            ),
+            "racket_launch_pre_release_control_active": (
+                pre_release_control_active.astype(jnp.float32)
+            ),
+            "racket_launch_release_event": (
+                (self.ball_reset_mode == "racket_launch")
+                & (hold_steps > 0)
+                & (step_count == hold_steps + 1)
+            ).astype(jnp.float32),
             "confirmed_hit": launched_upward_raw.astype(jnp.float32),
             "rewardable_hit": rewardable_hit.astype(jnp.float32),
             "ignored_fast_hit": ignored_fast_hit.astype(jnp.float32),
@@ -5820,7 +7817,11 @@ class MjxJuggleEnv:
             "reset_disturbance_strength": state.reset_disturbance_strength,
             "reset_ball_surface_gap": state.reset_ball_surface_gap,
             "reset_ball_racket_center_offset": state.reset_ball_racket_center_offset,
+            "reset_racket_launch_hold_time_s": (
+                state.racket_launch_hold_steps.astype(jnp.float32) * self.dt
+            ),
             "action_scale_mult": state.action_scale_mult,
+            "actor_previous_action_scale": state.actor_previous_action_scale,
             "dr_gravity_z": state.dr_gravity_z,
             "reset_ball_obs_missing": state.reset_ball_obs_missing.astype(jnp.float32),
             "dr_ball_mass": state.dr_ball_mass,
@@ -5925,6 +7926,11 @@ class MjxJuggleEnv:
             "racket_y": rpos[:, 1],
             "racket_vx": rvel[:, 0],
             "racket_vy": rvel[:, 1],
+            "racket_contact_point_vx": racket_contact_point_velocity[:, 0],
+            "racket_contact_point_vy": racket_contact_point_velocity[:, 1],
+            "racket_contact_point_vxy": jnp.linalg.norm(
+                racket_contact_point_velocity[:, :2], axis=-1
+            ),
             "racket_angular_velocity_world_x": racket_angular_velocity[:, 0],
             "racket_angular_velocity_world_y": racket_angular_velocity[:, 1],
             "racket_angular_velocity_world_z": racket_angular_velocity[:, 2],
@@ -6001,6 +8007,13 @@ class MjxJuggleEnv:
         metrics["reward/ball_miss_termination_penalty"] = ball_miss_penalty
         metrics["reward/racket_z_limit_termination_penalty"] = racket_limit_penalty
         metrics["reward/racket_anchor_termination_penalty"] = racket_anchor_penalty
+        metrics["reward/hit_racket_vxy_constraint_penalty"] = (
+            hit_racket_vxy_constraint_penalty
+        )
+        metrics["reward/hit_vxy_constraint_penalty"] = hit_vxy_constraint_penalty
+        metrics["reward/hit_racket_up_cos_constraint_penalty"] = (
+            hit_racket_up_cos_constraint_penalty
+        )
         metrics["reward/command_tracking_error_penalty"] = command_tracking_penalty
         metrics["reward/delay_action_jerk_penalty"] = delay_action_jerk_penalty
         metrics["reward/total"] = reward
@@ -6029,7 +8042,7 @@ class MjxJuggleEnv:
         true_bpos: jax.Array,
         true_bvel: jax.Array,
     ) -> tuple[EnvState, jax.Array, dict[str, jax.Array]]:
-        split_keys = jax.vmap(lambda k: jax.random.split(k, 8))(state.rng)
+        split_keys = jax.vmap(lambda k: jax.random.split(k, 11))(state.rng)
         next_rng = split_keys[:, 0]
         key_pos_noise = split_keys[:, 1]
         key_vel_noise = split_keys[:, 2]
@@ -6038,6 +8051,9 @@ class MjxJuggleEnv:
         key_burst_duration = split_keys[:, 5]
         key_view_bounds_missing = split_keys[:, 6]
         key_camera_missing = split_keys[:, 7]
+        key_proprio_noise = split_keys[:, 8]
+        key_velxy_noise = split_keys[:, 9]
+        key_posthit_noise = split_keys[:, 10]
 
         total_steps_cfg = max(1, int(self.cfg.total_training_steps))
         warmup = max(0, int(round(total_steps_cfg * float(self.cfg.ball_obs_noise_warmup_ratio))))
@@ -6126,6 +8142,70 @@ class MjxJuggleEnv:
                 view_bounds_sample_available = view_bounds_visible_for_obs | (~view_bounds_missing)
             camera_visible_for_obs = camera_visible_for_obs & view_bounds_sample_available
         sampled_pos = true_bpos + pos_noise
+        # Lateral ball-velocity estimator-error model (see ball_obs_vel_xy_*
+        # config comment): AR(1)-correlated baseline error plus a spike for a
+        # few observation frames after the observed vertical velocity flips
+        # sign (the hit) -- the regime where the real estimator degrades most
+        # and precisely when the recenter decision is made.
+        velxy_std = float(self.cfg.ball_obs_vel_xy_noise_std)
+        posthit_std = float(self.cfg.ball_obs_posthit_vel_xy_noise_std)
+        # Keep this explicit rollout metric: the curriculum is expressed in
+        # per-environment steps and is deliberately much slower than a PPO
+        # update.  Without reporting the current multiplier, stable task
+        # metrics during the warm-up could be mistaken for robustness at the
+        # configured final estimator-error level.
+        v_warm = max(0, int(self.cfg.ball_obs_vel_xy_noise_warmup_env_steps))
+        v_ramp = max(1, int(self.cfg.ball_obs_vel_xy_noise_ramp_env_steps))
+        velxy_noise_ramp_scale = jnp.clip(
+            (state.total_env_steps.astype(jnp.float32) - float(v_warm))
+            / float(v_ramp),
+            0.0,
+            1.0,
+        )
+        # A stage may deliberately start part-way up the noise ladder.  Keep
+        # the default exactly legacy-compatible (floor=0) while ensuring the
+        # reported scale is the *applied* scale, not only the local ramp.
+        velxy_noise_floor = float(
+            np.clip(self.cfg.ball_obs_vel_xy_noise_min_scale, 0.0, 1.0)
+        )
+        velxy_noise_scale = (
+            velxy_noise_floor
+            + (1.0 - velxy_noise_floor) * velxy_noise_ramp_scale
+        )
+        if velxy_std > 0.0 or posthit_std > 0.0:
+            rho_v = float(np.clip(self.cfg.ball_obs_vel_xy_noise_rho, 0.0, 0.999))
+            eps_v = jax.vmap(
+                lambda k: jax.random.normal(k, (2,), dtype=jnp.float32)
+            )(key_velxy_noise)
+            velxy_noise_state = (
+                rho_v * state.ball_obs_velxy_noise_state
+                + math.sqrt(max(1e-9, 1.0 - rho_v * rho_v)) * eps_v
+            )
+            flip = (
+                refresh
+                & (state.cached_ball_obs_vel[:, 2] < -0.3)
+                & (true_bvel[:, 2] > 0.3)
+            )
+            posthit_left = jnp.where(
+                flip,
+                jnp.int32(int(self.cfg.ball_obs_posthit_vel_noise_frames)),
+                jnp.where(
+                    refresh,
+                    jnp.maximum(state.ball_obs_posthit_noise_left - 1, 0),
+                    state.ball_obs_posthit_noise_left,
+                ),
+            )
+            spike_eps = jax.vmap(
+                lambda k: jax.random.normal(k, (2,), dtype=jnp.float32)
+            )(key_posthit_noise)
+            extra_xy = (
+                velxy_noise_state * velxy_std
+                + spike_eps * posthit_std * (posthit_left > 0)[:, None]
+            ) * velxy_noise_scale[:, None]
+            vel_noise = vel_noise.at[:, :2].add(extra_xy)
+        else:
+            velxy_noise_state = state.ball_obs_velxy_noise_state
+            posthit_left = state.ball_obs_posthit_noise_left
         sampled_vel = true_bvel + vel_noise
         last_ball_obs_step = jnp.where(refresh, state.step_count, state.last_ball_obs_step)
 
@@ -6186,21 +8266,563 @@ class MjxJuggleEnv:
             False,
             state.ball_obs_missing_since_sample | missing_on_refresh,
         )
-        valid_pos = jnp.where(sample_available[:, None], sampled_pos, state.ball_obs_valid_pos)
-        valid_vel = jnp.where(sample_available[:, None], sampled_vel, state.ball_obs_valid_vel)
-        cached_pos = jnp.where(sample_available[:, None], sampled_pos, state.cached_ball_obs_pos)
-        cached_vel = jnp.where(sample_available[:, None], sampled_vel, state.cached_ball_obs_vel)
+        observer_mode = (
+            str(self.cfg.ball_obs_velocity_observer_mode)
+            .strip()
+            .lower()
+            .replace("-", "_")
+        )
+        if observer_mode not in {
+            "raw",
+            "ema_xy",
+            "innovation_clip_xy",
+            "alpha_beta_xy",
+            "confidence_gate_xy",
+            "prospective_signal_xy",
+        }:
+            raise ValueError(
+                "ball_obs_velocity_observer_mode must be 'raw', 'ema_xy', or "
+                "'innovation_clip_xy', 'alpha_beta_xy', or "
+                "'confidence_gate_xy', or 'prospective_signal_xy'"
+            )
+        observed_sample_pos = sampled_pos
+        consistency_innovation_xy = state.ball_obs_consistency_innovation_xy
+        consistency_streak = state.ball_obs_consistency_streak
+        consistency_gate_active = jnp.zeros_like(
+            state.ball_obs_velocity_observer_has_sample
+        )
+        consistency_correction_norm = jnp.zeros_like(state.ball_obs_age_seconds)
+        consistency_contact_guard = jnp.zeros_like(
+            state.ball_obs_velocity_observer_has_sample
+        )
+        pre_consistency_velocity_xy = sampled_vel[:, :2]
+        prospective_position_history_xy = (
+            state.ball_obs_prospective_position_history_xy
+        )
+        prospective_time_history_s = state.ball_obs_prospective_time_history_s
+        prospective_history_count = state.ball_obs_prospective_history_count
+        prospective_prior_clipped_velocity_xy = (
+            state.ball_obs_prospective_prior_clipped_velocity_xy
+        )
+        prospective_candidate_velocity_xy = sampled_vel[:, :2]
+        prospective_model_velocity_xy = jnp.zeros_like(sampled_vel[:, :2])
+        prospective_proposal = jnp.zeros_like(
+            state.ball_obs_velocity_observer_has_sample
+        )
+        prospective_score_valid = jnp.zeros_like(
+            state.ball_obs_velocity_observer_has_sample
+        )
+        prospective_raw_prediction_error_m = jnp.zeros_like(
+            state.ball_obs_age_seconds
+        )
+        prospective_model_prediction_error_m = jnp.zeros_like(
+            state.ball_obs_age_seconds
+        )
+        prospective_model_advantage_m = jnp.zeros_like(
+            state.ball_obs_age_seconds
+        )
+        prospective_correction_norm = jnp.zeros_like(
+            state.ball_obs_age_seconds
+        )
+        if observer_mode == "raw":
+            observed_sample_vel = sampled_vel
+            observer_xy = state.ball_obs_velocity_observer_xy
+            observer_last_sample_step = state.ball_obs_velocity_observer_last_sample_step
+            observer_has_sample = state.ball_obs_velocity_observer_has_sample
+            observer_gain = jnp.zeros_like(state.ball_obs_age_seconds)
+            observer_delta_vxy = jnp.zeros_like(state.ball_obs_age_seconds)
+        else:
+            observer_elapsed_s = jnp.maximum(
+                self.dt,
+                (
+                    state.step_count
+                    - state.ball_obs_velocity_observer_last_sample_step
+                ).astype(jnp.float32)
+                * self.dt,
+            )
+            if observer_mode == "ema_xy":
+                observer_tau_s = float(self.cfg.ball_obs_velocity_observer_tau_ms) * 1e-3
+                if not np.isfinite(observer_tau_s) or observer_tau_s <= 0.0:
+                    raise ValueError(
+                        "ema_xy ball_obs_velocity_observer_tau_ms must be positive"
+                    )
+                observer_gain = -jnp.expm1(-observer_elapsed_s / observer_tau_s)
+                observer_candidate_xy = state.ball_obs_velocity_observer_xy + (
+                    observer_gain[:, None]
+                    * (
+                        sampled_vel[:, :2]
+                        - state.ball_obs_velocity_observer_xy
+                    )
+                )
+                accepted_observer_xy = jnp.where(
+                    state.ball_obs_velocity_observer_has_sample[:, None],
+                    observer_candidate_xy,
+                    sampled_vel[:, :2],
+                )
+            elif observer_mode == "innovation_clip_xy":
+                max_innovation = float(
+                    self.cfg.ball_obs_velocity_observer_max_innovation_m_s
+                )
+                if not np.isfinite(max_innovation) or max_innovation <= 0.0:
+                    raise ValueError(
+                        "innovation_clip_xy "
+                        "ball_obs_velocity_observer_max_innovation_m_s must be positive"
+                    )
+                innovation_xy = sampled_vel[:, :2] - state.ball_obs_velocity_observer_xy
+                innovation_norm = jnp.linalg.norm(innovation_xy, axis=-1)
+                observer_gain = jnp.minimum(
+                    1.0,
+                    jnp.asarray(max_innovation, dtype=jnp.float32)
+                    / jnp.maximum(innovation_norm, 1e-8),
+                )
+                observer_candidate_xy = state.ball_obs_velocity_observer_xy + (
+                    observer_gain[:, None] * innovation_xy
+                )
+                accepted_observer_xy = jnp.where(
+                    state.ball_obs_velocity_observer_has_sample[:, None],
+                    observer_candidate_xy,
+                    sampled_vel[:, :2],
+                )
+            elif observer_mode == "alpha_beta_xy":
+                alpha = float(self.cfg.ball_obs_joint_observer_alpha)
+                beta = float(self.cfg.ball_obs_joint_observer_beta)
+                raw_velocity_gain = float(
+                    self.cfg.ball_obs_joint_observer_raw_velocity_gain
+                )
+                for field_name, value in (
+                    ("ball_obs_joint_observer_alpha", alpha),
+                    ("ball_obs_joint_observer_beta", beta),
+                    (
+                        "ball_obs_joint_observer_raw_velocity_gain",
+                        raw_velocity_gain,
+                    ),
+                ):
+                    if not np.isfinite(value) or not 0.0 <= value <= 1.0:
+                        raise ValueError(f"{field_name} must be in [0, 1]")
+                accepted_position_xy, accepted_observer_xy = (
+                    alpha_beta_joint_observer_xy(
+                        state.ball_obs_valid_pos[:, :2],
+                        state.ball_obs_velocity_observer_xy,
+                        sampled_pos[:, :2],
+                        sampled_vel[:, :2],
+                        observer_elapsed_s,
+                        state.ball_obs_velocity_observer_has_sample,
+                        alpha=alpha,
+                        beta=beta,
+                        raw_velocity_gain=raw_velocity_gain,
+                    )
+                )
+                observed_sample_pos = sampled_pos.at[:, :2].set(
+                    accepted_position_xy
+                )
+                observer_gain = jnp.full_like(
+                    state.ball_obs_age_seconds,
+                    raw_velocity_gain,
+                )
+            elif observer_mode == "confidence_gate_xy":
+                max_innovation = float(
+                    self.cfg.ball_obs_velocity_observer_max_innovation_m_s
+                )
+                if not np.isfinite(max_innovation) or max_innovation <= 0.0:
+                    raise ValueError(
+                        "confidence_gate_xy requires a positive checkpoint "
+                        "innovation limit"
+                    )
+                threshold = float(
+                    self.cfg.ball_obs_consistency_gate_threshold_m_s
+                )
+                direction_cosine = float(
+                    self.cfg.ball_obs_consistency_gate_direction_cosine
+                )
+                min_samples = int(self.cfg.ball_obs_consistency_gate_min_samples)
+                correction_gain = float(
+                    self.cfg.ball_obs_consistency_gate_correction_gain
+                )
+                max_correction = float(
+                    self.cfg.ball_obs_consistency_gate_max_correction_m_s
+                )
+                contact_guard_s = float(
+                    self.cfg.ball_obs_consistency_gate_contact_guard_s
+                )
+                if not np.isfinite(threshold) or threshold <= 0.0:
+                    raise ValueError(
+                        "ball_obs_consistency_gate_threshold_m_s must be positive"
+                    )
+                if not -1.0 <= direction_cosine <= 1.0:
+                    raise ValueError(
+                        "ball_obs_consistency_gate_direction_cosine must be in [-1, 1]"
+                    )
+                if min_samples < 2:
+                    raise ValueError(
+                        "ball_obs_consistency_gate_min_samples must be >= 2"
+                    )
+                if not 0.0 < correction_gain <= 1.0:
+                    raise ValueError(
+                        "ball_obs_consistency_gate_correction_gain must be in (0, 1]"
+                    )
+                if not np.isfinite(max_correction) or max_correction <= 0.0:
+                    raise ValueError(
+                        "ball_obs_consistency_gate_max_correction_m_s must be positive"
+                    )
+                if not np.isfinite(contact_guard_s) or contact_guard_s < 0.0:
+                    raise ValueError(
+                        "ball_obs_consistency_gate_contact_guard_s must be >= 0"
+                    )
+                velocity_innovation_xy = (
+                    sampled_vel[:, :2] - state.ball_obs_velocity_observer_xy
+                )
+                velocity_innovation_norm = jnp.linalg.norm(
+                    velocity_innovation_xy, axis=-1
+                )
+                observer_gain = jnp.minimum(
+                    1.0,
+                    jnp.asarray(max_innovation, dtype=jnp.float32)
+                    / jnp.maximum(velocity_innovation_norm, 1e-8),
+                )
+                clipped_candidate_xy = state.ball_obs_velocity_observer_xy + (
+                    observer_gain[:, None] * velocity_innovation_xy
+                )
+                clipped_velocity_xy = jnp.where(
+                    state.ball_obs_velocity_observer_has_sample[:, None],
+                    clipped_candidate_xy,
+                    sampled_vel[:, :2],
+                )
+                pre_consistency_velocity_xy = clipped_velocity_xy
+                current_time_s = state.step_count.astype(jnp.float32) * self.dt
+                time_since_hit_s = current_time_s - state.last_hit_time
+                consistency_contact_guard = state.prev_contact | (
+                    (state.last_hit_time >= 0.0)
+                    & (time_since_hit_s >= 0.0)
+                    & (time_since_hit_s <= contact_guard_s)
+                )
+                (
+                    accepted_observer_xy,
+                    consistency_candidate_innovation_xy,
+                    consistency_candidate_streak,
+                    consistency_gate_active,
+                    consistency_correction_norm,
+                ) = confidence_gated_consistency_velocity_xy(
+                    state.ball_obs_valid_pos[:, :2],
+                    sampled_pos[:, :2],
+                    clipped_velocity_xy,
+                    observer_elapsed_s,
+                    state.ball_obs_velocity_observer_has_sample,
+                    state.ball_obs_consistency_innovation_xy,
+                    state.ball_obs_consistency_streak,
+                    consistency_contact_guard,
+                    threshold_m_s=threshold,
+                    direction_cosine=direction_cosine,
+                    min_samples=min_samples,
+                    correction_gain=correction_gain,
+                    max_correction_m_s=max_correction,
+                )
+                consistency_innovation_xy = jnp.where(
+                    sample_available[:, None],
+                    consistency_candidate_innovation_xy,
+                    state.ball_obs_consistency_innovation_xy,
+                )
+                consistency_streak = jnp.where(
+                    sample_available,
+                    consistency_candidate_streak,
+                    state.ball_obs_consistency_streak,
+                )
+            else:
+                max_innovation = float(
+                    self.cfg.ball_obs_velocity_observer_max_innovation_m_s
+                )
+                window_samples = int(
+                    self.cfg.ball_obs_prospective_window_samples
+                )
+                prediction_margin_m = float(
+                    self.cfg.ball_obs_prospective_prediction_margin_m
+                )
+                velocity_disagreement_m_s = float(
+                    self.cfg.ball_obs_prospective_velocity_disagreement_m_s
+                )
+                candidate_gain = float(
+                    self.cfg.ball_obs_prospective_candidate_gain
+                )
+                max_correction_m_s = float(
+                    self.cfg.ball_obs_prospective_max_correction_m_s
+                )
+                max_sample_gap_s = float(
+                    self.cfg.ball_obs_prospective_max_sample_gap_s
+                )
+                contact_guard_s = float(
+                    self.cfg.ball_obs_prospective_contact_guard_s
+                )
+                if not np.isfinite(max_innovation) or max_innovation <= 0.0:
+                    raise ValueError(
+                        "prospective_signal_xy requires a positive checkpoint "
+                        "innovation limit"
+                    )
+                if window_samples not in {4, 5, 6}:
+                    raise ValueError(
+                        "ball_obs_prospective_window_samples must be 4, 5, or 6"
+                    )
+                if not np.isfinite(prediction_margin_m) or prediction_margin_m < 0.0:
+                    raise ValueError(
+                        "ball_obs_prospective_prediction_margin_m must be >= 0"
+                    )
+                if (
+                    not np.isfinite(velocity_disagreement_m_s)
+                    or velocity_disagreement_m_s <= 0.0
+                ):
+                    raise ValueError(
+                        "ball_obs_prospective_velocity_disagreement_m_s must be positive"
+                    )
+                if not 0.0 < candidate_gain <= 1.0:
+                    raise ValueError(
+                        "ball_obs_prospective_candidate_gain must be in (0, 1]"
+                    )
+                if not np.isfinite(max_correction_m_s) or max_correction_m_s <= 0.0:
+                    raise ValueError(
+                        "ball_obs_prospective_max_correction_m_s must be positive"
+                    )
+                if not np.isfinite(max_sample_gap_s) or max_sample_gap_s <= 0.0:
+                    raise ValueError(
+                        "ball_obs_prospective_max_sample_gap_s must be positive"
+                    )
+                if not np.isfinite(contact_guard_s) or contact_guard_s < 0.0:
+                    raise ValueError(
+                        "ball_obs_prospective_contact_guard_s must be >= 0"
+                    )
+
+                velocity_innovation_xy = (
+                    sampled_vel[:, :2] - state.ball_obs_velocity_observer_xy
+                )
+                velocity_innovation_norm = jnp.linalg.norm(
+                    velocity_innovation_xy, axis=-1
+                )
+                observer_gain = jnp.minimum(
+                    1.0,
+                    jnp.asarray(max_innovation, dtype=jnp.float32)
+                    / jnp.maximum(velocity_innovation_norm, 1e-8),
+                )
+                clipped_candidate_xy = state.ball_obs_velocity_observer_xy + (
+                    observer_gain[:, None] * velocity_innovation_xy
+                )
+                clipped_velocity_xy = jnp.where(
+                    state.ball_obs_velocity_observer_has_sample[:, None],
+                    clipped_candidate_xy,
+                    sampled_vel[:, :2],
+                )
+                pre_consistency_velocity_xy = clipped_velocity_xy
+                accepted_observer_xy = clipped_velocity_xy
+
+                current_time_s = state.step_count.astype(jnp.float32) * self.dt
+                time_since_hit_s = current_time_s - state.last_hit_time
+                consistency_contact_guard = state.prev_contact | (
+                    (state.last_hit_time >= 0.0)
+                    & (time_since_hit_s >= 0.0)
+                    & (time_since_hit_s <= contact_guard_s)
+                )
+                history_ready = (
+                    state.ball_obs_prospective_history_count >= window_samples
+                )
+                history_position_xy = (
+                    state.ball_obs_prospective_position_history_xy[
+                        :, -window_samples:, :
+                    ]
+                )
+                history_time_s = state.ball_obs_prospective_time_history_s[
+                    :, -window_samples:
+                ]
+                (
+                    prospective_candidate_velocity_xy,
+                    prospective_model_velocity_xy,
+                    prospective_candidate_proposal,
+                    prospective_raw_prediction_error_m,
+                    prospective_model_prediction_error_m,
+                    prospective_model_advantage_m,
+                    prospective_correction_norm,
+                ) = prospective_consistency_signal_xy(
+                    history_position_xy,
+                    history_time_s,
+                    sampled_pos[:, :2],
+                    current_time_s,
+                    state.ball_obs_prospective_prior_clipped_velocity_xy,
+                    clipped_velocity_xy,
+                    history_ready,
+                    ~consistency_contact_guard & ~reacquired_after_missing,
+                    prediction_margin_m=prediction_margin_m,
+                    velocity_disagreement_m_s=velocity_disagreement_m_s,
+                    candidate_gain=candidate_gain,
+                    max_correction_m_s=max_correction_m_s,
+                    max_sample_gap_s=max_sample_gap_s,
+                )
+                prospective_proposal = (
+                    sample_available & prospective_candidate_proposal
+                )
+                prospective_score_valid = (
+                    sample_available
+                    & history_ready
+                    & (~consistency_contact_guard)
+                    & (~reacquired_after_missing)
+                    & state.ball_obs_velocity_observer_has_sample
+                    & (observer_elapsed_s <= max_sample_gap_s)
+                )
+
+                history_reset = consistency_contact_guard | reacquired_after_missing | (
+                    sample_available
+                    & state.ball_obs_velocity_observer_has_sample
+                    & (observer_elapsed_s > max_sample_gap_s)
+                )
+                base_position_history_xy = jnp.where(
+                    history_reset[:, None, None],
+                    0.0,
+                    state.ball_obs_prospective_position_history_xy,
+                )
+                base_time_history_s = jnp.where(
+                    history_reset[:, None],
+                    0.0,
+                    state.ball_obs_prospective_time_history_s,
+                )
+                base_history_count = jnp.where(
+                    history_reset,
+                    0,
+                    state.ball_obs_prospective_history_count,
+                )
+                appended_position_history_xy = jnp.concatenate(
+                    [
+                        base_position_history_xy[:, 1:, :],
+                        sampled_pos[:, None, :2],
+                    ],
+                    axis=1,
+                )
+                appended_time_history_s = jnp.concatenate(
+                    [
+                        base_time_history_s[:, 1:],
+                        current_time_s[:, None],
+                    ],
+                    axis=1,
+                )
+                prospective_position_history_xy = jnp.where(
+                    sample_available[:, None, None],
+                    appended_position_history_xy,
+                    base_position_history_xy,
+                )
+                prospective_time_history_s = jnp.where(
+                    sample_available[:, None],
+                    appended_time_history_s,
+                    base_time_history_s,
+                )
+                prospective_history_count = jnp.where(
+                    sample_available,
+                    jnp.minimum(base_history_count + 1, 6),
+                    base_history_count,
+                ).astype(jnp.int32)
+                prospective_prior_clipped_velocity_xy = jnp.where(
+                    sample_available[:, None],
+                    clipped_velocity_xy,
+                    state.ball_obs_prospective_prior_clipped_velocity_xy,
+                )
+            observer_xy = jnp.where(
+                sample_available[:, None],
+                accepted_observer_xy,
+                state.ball_obs_velocity_observer_xy,
+            )
+            observer_last_sample_step = jnp.where(
+                sample_available,
+                state.step_count,
+                state.ball_obs_velocity_observer_last_sample_step,
+            )
+            observer_has_sample = (
+                state.ball_obs_velocity_observer_has_sample | sample_available
+            )
+            observed_sample_vel = sampled_vel.at[:, :2].set(accepted_observer_xy)
+            observer_delta_vxy = jnp.linalg.norm(
+                sampled_vel[:, :2] - accepted_observer_xy,
+                axis=-1,
+            )
+        valid_pos = jnp.where(
+            sample_available[:, None],
+            observed_sample_pos,
+            state.ball_obs_valid_pos,
+        )
+        valid_vel = jnp.where(
+            sample_available[:, None], observed_sample_vel, state.ball_obs_valid_vel
+        )
+        cached_pos = jnp.where(
+            sample_available[:, None],
+            observed_sample_pos,
+            state.cached_ball_obs_pos,
+        )
+        cached_vel = jnp.where(
+            sample_available[:, None], observed_sample_vel, state.cached_ball_obs_vel
+        )
         if bool(self.cfg.ball_obs_age_tracks_stale):
             age_seconds = jnp.where(sample_available, 0.0, state.ball_obs_age_seconds + self.dt)
         else:
-            age_seconds = jnp.where(blocked_by_dropout, state.ball_obs_age_seconds + self.dt, 0.0)
+            age_seconds = jnp.where(
+                blocked_by_dropout,
+                state.ball_obs_age_seconds + self.dt,
+                0.0,
+            )
         dropout_steps_total = state.ball_obs_dropout_steps_total + blocked_by_dropout.astype(jnp.int32)
         burst_count = state.ball_obs_burst_count + burst_start.astype(jnp.int32)
+
+        # V2A is deliberately signal-only, so these simulation-oracle
+        # decompositions are metrics rather than observer state.  They explain
+        # whether a harmful proposal points away from truth (the past-only
+        # model is wrong) or points toward truth but takes too large a bounded
+        # step (the candidate construction is wrong).
+        prospective_delta_velocity_xy = (
+            prospective_candidate_velocity_xy - pre_consistency_velocity_xy
+        )
+        prospective_oracle_residual_xy = (
+            true_bvel[:, :2] - pre_consistency_velocity_xy
+        )
+        prospective_oracle_step_dot = jnp.sum(
+            prospective_delta_velocity_xy * prospective_oracle_residual_xy,
+            axis=-1,
+        )
+        prospective_oracle_pre_error = jnp.linalg.norm(
+            prospective_oracle_residual_xy,
+            axis=-1,
+        )
+        prospective_oracle_candidate_error = jnp.linalg.norm(
+            prospective_candidate_velocity_xy - true_bvel[:, :2],
+            axis=-1,
+        )
+        prospective_oracle_model_error = jnp.linalg.norm(
+            prospective_model_velocity_xy - true_bvel[:, :2],
+            axis=-1,
+        )
+        prospective_direction_aligned = (
+            prospective_proposal & (prospective_oracle_step_dot > 0.0)
+        )
+        prospective_candidate_harmed = (
+            prospective_proposal
+            & (
+                prospective_oracle_candidate_error
+                > prospective_oracle_pre_error
+            )
+        )
+        prospective_time_since_hit_s = (
+            state.step_count.astype(jnp.float32) * self.dt
+            - state.last_hit_time
+        )
 
         state = state._replace(
             rng=next_rng,
             cached_ball_obs_pos=cached_pos,
             cached_ball_obs_vel=cached_vel,
+            ball_obs_velocity_observer_xy=observer_xy,
+            ball_obs_velocity_observer_last_sample_step=observer_last_sample_step,
+            ball_obs_velocity_observer_has_sample=observer_has_sample,
+            ball_obs_consistency_innovation_xy=consistency_innovation_xy,
+            ball_obs_consistency_streak=consistency_streak,
+            ball_obs_prospective_position_history_xy=(
+                prospective_position_history_xy
+            ),
+            ball_obs_prospective_time_history_s=prospective_time_history_s,
+            ball_obs_prospective_history_count=prospective_history_count,
+            ball_obs_prospective_prior_clipped_velocity_xy=(
+                prospective_prior_clipped_velocity_xy
+            ),
+            ball_obs_velxy_noise_state=velxy_noise_state,
+            ball_obs_posthit_noise_left=posthit_left,
             last_ball_obs_step=last_ball_obs_step,
             ball_obs_valid_pos=valid_pos,
             ball_obs_valid_vel=valid_vel,
@@ -6211,6 +8833,15 @@ class MjxJuggleEnv:
             ball_obs_burst_count=burst_count,
         )
         raw_base_obs = self._make_obs(state, valid_pos, valid_vel, age_seconds)
+        raw_base_obs, proprio_noise_state = self._apply_proprio_obs_noise(
+            state, raw_base_obs, key_proprio_noise
+        )
+        raw_base_obs, proprio_obs_stale_active = (
+            self._apply_proprio_obs_staleness(
+                state, raw_base_obs, key_proprio_noise
+            )
+        )
+        state = state._replace(proprio_noise_state=proprio_noise_state)
         obs_buffer = jnp.concatenate([state.obs_buffer[:, 1:, :], raw_base_obs[:, None, :]], axis=1)
         obs_idx = (self.max_obs_latency_steps - state.obs_latency_steps).astype(jnp.int32)
         delayed_base_obs = obs_buffer[jnp.arange(obs_buffer.shape[0]), obs_idx]
@@ -6234,8 +8865,187 @@ class MjxJuggleEnv:
         lost_active = (lost_timeout_s > 0.0) & (age_seconds >= lost_timeout_s)
         lost_entered = lost_active & (previous_age_seconds < lost_timeout_s)
         metrics = {
+            "proprio_obs_stale_active": proprio_obs_stale_active.astype(
+                jnp.float32
+            ),
             "ball_obs_refresh_due": refresh.astype(jnp.float32),
             "ball_obs_sample_available": sample_available.astype(jnp.float32),
+            "ball_obs_velocity_observer_gain": observer_gain,
+            "ball_obs_velocity_observer_raw_filtered_delta_vxy": observer_delta_vxy,
+            "ball_obs_consistency_innovation_vxy": jnp.where(
+                sample_available,
+                jnp.linalg.norm(consistency_innovation_xy, axis=-1),
+                0.0,
+            ),
+            "ball_obs_consistency_streak": consistency_streak.astype(jnp.float32),
+            # The candidate is evaluated on every compiled control step, but
+            # its output is accepted only when a fresh camera sample exists.
+            # Report the *effective* activation/correction so repeated stale
+            # frames cannot inflate the diagnostic counts.
+            "ball_obs_consistency_gate_active": (
+                consistency_gate_active & sample_available
+            ).astype(jnp.float32),
+            "ball_obs_consistency_correction_vxy": jnp.where(
+                sample_available,
+                consistency_correction_norm,
+                0.0,
+            ),
+            # Simulation-only oracle diagnostics.  These never enter the
+            # actor observation or reward; they only determine whether a
+            # fresh-frame consistency correction moved XY velocity toward or
+            # away from MJX truth.
+            "ball_obs_consistency_oracle_pre_error_vxy": jnp.where(
+                sample_available,
+                jnp.linalg.norm(
+                    pre_consistency_velocity_xy - true_bvel[:, :2], axis=-1
+                ),
+                0.0,
+            ),
+            "ball_obs_consistency_oracle_post_error_vxy": jnp.where(
+                sample_available,
+                jnp.linalg.norm(
+                    observed_sample_vel[:, :2] - true_bvel[:, :2], axis=-1
+                ),
+                0.0,
+            ),
+            "ball_obs_consistency_oracle_helped": (
+                sample_available
+                & consistency_gate_active
+                & (
+                    jnp.linalg.norm(
+                        observed_sample_vel[:, :2] - true_bvel[:, :2], axis=-1
+                    )
+                    < jnp.linalg.norm(
+                        pre_consistency_velocity_xy - true_bvel[:, :2], axis=-1
+                    )
+                )
+            ).astype(jnp.float32),
+            "ball_obs_consistency_oracle_harmed": (
+                sample_available
+                & consistency_gate_active
+                & (
+                    jnp.linalg.norm(
+                        observed_sample_vel[:, :2] - true_bvel[:, :2], axis=-1
+                    )
+                    > jnp.linalg.norm(
+                        pre_consistency_velocity_xy - true_bvel[:, :2], axis=-1
+                    )
+                )
+            ).astype(jnp.float32),
+            "ball_obs_prospective_score_valid": prospective_score_valid.astype(
+                jnp.float32
+            ),
+            "ball_obs_prospective_proposal": prospective_proposal.astype(
+                jnp.float32
+            ),
+            "ball_obs_prospective_raw_prediction_error_m": jnp.where(
+                prospective_score_valid,
+                prospective_raw_prediction_error_m,
+                0.0,
+            ),
+            "ball_obs_prospective_model_prediction_error_m": jnp.where(
+                prospective_score_valid,
+                prospective_model_prediction_error_m,
+                0.0,
+            ),
+            "ball_obs_prospective_model_advantage_m": jnp.where(
+                prospective_score_valid,
+                prospective_model_advantage_m,
+                0.0,
+            ),
+            "ball_obs_prospective_model_velocity_vxy": jnp.where(
+                prospective_score_valid,
+                jnp.linalg.norm(prospective_model_velocity_xy, axis=-1),
+                0.0,
+            ),
+            "ball_obs_prospective_correction_vxy": jnp.where(
+                prospective_proposal,
+                prospective_correction_norm,
+                0.0,
+            ),
+            "ball_obs_prospective_oracle_pre_error_vxy": jnp.where(
+                prospective_proposal,
+                prospective_oracle_pre_error,
+                0.0,
+            ),
+            "ball_obs_prospective_oracle_candidate_error_vxy": jnp.where(
+                prospective_proposal,
+                prospective_oracle_candidate_error,
+                0.0,
+            ),
+            "ball_obs_prospective_oracle_model_error_vxy": jnp.where(
+                prospective_proposal,
+                prospective_oracle_model_error,
+                0.0,
+            ),
+            "ball_obs_prospective_oracle_helped": (
+                prospective_proposal
+                & (
+                    prospective_oracle_candidate_error
+                    < prospective_oracle_pre_error
+                )
+            ).astype(jnp.float32),
+            "ball_obs_prospective_oracle_harmed": (
+                prospective_candidate_harmed
+            ).astype(jnp.float32),
+            "ball_obs_prospective_oracle_direction_aligned": (
+                prospective_direction_aligned
+            ).astype(jnp.float32),
+            "ball_obs_prospective_oracle_wrong_direction": (
+                prospective_proposal & (~prospective_direction_aligned)
+            ).astype(jnp.float32),
+            "ball_obs_prospective_oracle_aligned_but_harmed": (
+                prospective_direction_aligned & prospective_candidate_harmed
+            ).astype(jnp.float32),
+            "ball_obs_prospective_oracle_model_helped": (
+                prospective_proposal
+                & (prospective_oracle_model_error < prospective_oracle_pre_error)
+            ).astype(jnp.float32),
+            "ball_obs_prospective_oracle_model_harmed": (
+                prospective_proposal
+                & (prospective_oracle_model_error > prospective_oracle_pre_error)
+            ).astype(jnp.float32),
+            "ball_obs_prospective_oracle_pre_error_lt_correction": (
+                prospective_proposal
+                & (prospective_oracle_pre_error < prospective_correction_norm)
+            ).astype(jnp.float32),
+            "ball_obs_prospective_oracle_pre_error_lt_half_correction": (
+                prospective_proposal
+                & (
+                    prospective_oracle_pre_error
+                    < 0.5 * prospective_correction_norm
+                )
+            ).astype(jnp.float32),
+            "ball_obs_prospective_proposal_before_first_hit": (
+                prospective_proposal & (state.last_hit_time < 0.0)
+            ).astype(jnp.float32),
+            "ball_obs_prospective_proposal_posthit_060_120ms": (
+                prospective_proposal
+                & (state.last_hit_time >= 0.0)
+                & (prospective_time_since_hit_s > 0.060)
+                & (prospective_time_since_hit_s <= 0.120)
+            ).astype(jnp.float32),
+            "ball_obs_prospective_proposal_posthit_120_250ms": (
+                prospective_proposal
+                & (prospective_time_since_hit_s > 0.120)
+                & (prospective_time_since_hit_s <= 0.250)
+            ).astype(jnp.float32),
+            "ball_obs_prospective_proposal_posthit_after_250ms": (
+                prospective_proposal
+                & (prospective_time_since_hit_s > 0.250)
+            ).astype(jnp.float32),
+            "ball_obs_prospective_proposal_ascending": (
+                prospective_proposal & (true_bvel[:, 2] >= 0.0)
+            ).astype(jnp.float32),
+            "ball_obs_prospective_proposal_descending": (
+                prospective_proposal & (true_bvel[:, 2] < 0.0)
+            ).astype(jnp.float32),
+            "ball_obs_prospective_history_count": (
+                prospective_history_count.astype(jnp.float32)
+            ),
+            "ball_obs_consistency_contact_guard": consistency_contact_guard.astype(
+                jnp.float32
+            ),
             "ball_obs_camera_available": camera_visible_for_obs.astype(jnp.float32),
             "ball_obs_view_available": view_bounds_visible_for_obs.astype(jnp.float32),
             "ball_obs_missing_on_refresh": missing_on_refresh.astype(jnp.float32),
@@ -6247,6 +9057,15 @@ class MjxJuggleEnv:
             "ball_obs_reacquired": reacquired_after_missing.astype(jnp.float32),
             "ball_obs_reacquired_after_missing": reacquired_after_missing.astype(jnp.float32),
             "ball_obs_reacquired_after_lost": reacquired_after_lost.astype(jnp.float32),
+            "ball_obs_velxy_noise_scale": velxy_noise_scale,
+            "actor_action_dc_rejection": jnp.full(
+                (state.prev_action.shape[0],),
+                float(self.cfg.actor_action_dc_rejection),
+                dtype=jnp.float32,
+            ),
+            "actor_action_feedback_dc_norm": jnp.linalg.norm(
+                self._actor_action_feedback(state)[2], axis=-1
+            ),
         }
         return state, obs, metrics
 
@@ -6293,11 +9112,14 @@ class MjxJuggleEnv:
         predicted_apex_z: jax.Array,
         hit_count: jax.Array,
         new_hit: jax.Array,
+        physical_contact_edge: jax.Array,
+        low_survival_launch: jax.Array,
         rewardable_hit: jax.Array,
         failed_hit: jax.Array,
         ignored_fast_hit: jax.Array,
         hit_cadence_reward: jax.Array,
         hit_min_interval_penalty: jax.Array,
+        hit_max_interval_penalty: jax.Array,
         fast_hit_penalty: jax.Array,
         hit_camera_visible: jax.Array,
         hit_camera_in_lower_band: jax.Array,
@@ -6318,6 +9140,20 @@ class MjxJuggleEnv:
         hit_cycle_action_dc_pen: jax.Array,
         hit_cycle_q_excursion_pen: jax.Array,
         hit_cycle_q_excursion_max_rad: jax.Array,
+        hit_cycle_racket_xy_path_excess: jax.Array,
+        hit_cycle_racket_xy_area: jax.Array,
+        hit_cycle_racket_xy_path_pen: jax.Array,
+        hit_cycle_racket_xy_area_pen: jax.Array,
+        hit_contact_anchor_err: jax.Array,
+        previous_hit_contact_anchor_err: jax.Array,
+        hit_racket_vxy_at_contact: jax.Array,
+        hit_racket_local_y_velocity_at_contact: jax.Array,
+        hit_racket_up_cos_at_contact: jax.Array,
+        hit_racket_angular_speed_at_contact: jax.Array,
+        hit_racket_full_angular_speed_at_contact: jax.Array,
+        hit_racket_local_y_angular_speed_at_contact: jax.Array,
+        hit_racket_local_xz_angular_speed_at_contact: jax.Array,
+        hit_contact_center_dist_at_contact: jax.Array,
     ) -> tuple[jax.Array, dict[str, jax.Array]]:
         del cmd_qvel
         if self.cfg.hit_apex_target_abs_z is None:
@@ -6485,12 +9321,37 @@ class MjxJuggleEnv:
         ball_base_vx = c_yaw * bvel[:, 0] + s_yaw * bvel[:, 1]
         ball_base_vy = -s_yaw * bvel[:, 0] + c_yaw * bvel[:, 1]
         ball_base_vxy_pen = ball_base_vx * ball_base_vx + ball_base_vy * ball_base_vy
-        ball_vxy_pen = jnp.sum(bvel[:, :2] ** 2, axis=-1)
+        ball_vxy_pen = jnp.sum(
+            (
+                bvel[:, :2]
+                / max(1e-6, float(self.cfg.ball_vxy_penalty_scale_m_s))
+            )
+            ** 2,
+            axis=-1,
+        )
         gravity_abs = max(1e-6, abs(float(self.default_gravity_z)))
         time_to_apex = upward_vz / gravity_abs
         time_to_next_contact = 2.0 * time_to_apex
         predicted_apex_xy = bpos[:, :2] + bvel[:, :2] * time_to_apex[:, None]
-        predicted_next_contact_xy = bpos[:, :2] + bvel[:, :2] * time_to_next_contact[:, None]
+        landing_drag = float(self.cfg.hit_next_contact_drag_coefficient_m_inv)
+        if landing_drag > 0.0:
+            # For each horizontal component, x(t)-x(0) =
+            # sign(v) * log(1 + k |v| t) / k under dv/dt=-k|v|v.
+            # This is the paper's decoupled, quadratic-drag prediction.  It
+            # is used only for the curriculum reward and leaves MJX dynamics
+            # and all legacy profiles unchanged.
+            horizontal_travel = (
+                jnp.sign(bvel[:, :2])
+                * jnp.log1p(
+                    landing_drag
+                    * jnp.abs(bvel[:, :2])
+                    * time_to_next_contact[:, None]
+                )
+                / landing_drag
+            )
+            predicted_next_contact_xy = bpos[:, :2] + horizontal_travel
+        else:
+            predicted_next_contact_xy = bpos[:, :2] + bvel[:, :2] * time_to_next_contact[:, None]
         base_to_apex_world = predicted_apex_xy - base_pose[:, :2]
         apex_view_x = c_yaw * base_to_apex_world[:, 0] + s_yaw * base_to_apex_world[:, 1]
         apex_view_y = -s_yaw * base_to_apex_world[:, 0] + c_yaw * base_to_apex_world[:, 1]
@@ -6502,9 +9363,58 @@ class MjxJuggleEnv:
             jnp.sum((predicted_next_contact_xy - racket_anchor[:, :2]) ** 2, axis=-1)
             / max(1e-6, float(self.cfg.hit_next_contact_anchor_sigma_m)) ** 2
         )
+        adaptive_reflected_velocity_target = adaptive_reflected_velocity_target_jax(
+            bpos,
+            racket_anchor[:, :2],
+            target_hit_apex_z,
+            gravity_abs,
+            float(self.cfg.hit_next_contact_drag_coefficient_m_inv),
+            float(
+                self.cfg.hit_adaptive_reflected_velocity_center_coefficient_m_inv
+            ),
+        )
+        adaptive_reflected_velocity_error = bvel - adaptive_reflected_velocity_target
+        adaptive_reflected_velocity_norm_sq = (
+            jnp.sum(
+                (
+                    adaptive_reflected_velocity_error[:, :2]
+                    / max(
+                        1.0e-6,
+                        float(
+                            self.cfg.hit_adaptive_reflected_velocity_xy_sigma_m_s
+                        ),
+                    )
+                )
+                ** 2,
+                axis=-1,
+            )
+            + (
+                adaptive_reflected_velocity_error[:, 2]
+                / max(
+                    1.0e-6,
+                    float(self.cfg.hit_adaptive_reflected_velocity_z_sigma_m_s),
+                )
+            )
+            ** 2
+        )
+        # A random pre-acquisition contact can be several sigmas from the
+        # desired reflected velocity.  Squaring that error made avoiding all
+        # contact cheaper than learning a hit.  The vector pseudo-Huber keeps
+        # the paper-derived optimum but bounds the far-tail gradient, so the
+        # acquisition and reflected-velocity objectives can coexist.
+        adaptive_reflected_velocity_pen = (
+            jnp.sqrt(1.0 + adaptive_reflected_velocity_norm_sq) - 1.0
+        )
         ball_view_x = ball_base_x
         ball_view_y = -s_yaw * base_to_ball_world[:, 0] + c_yaw * base_to_ball_world[:, 1]
         ball_view_z = bpos[:, 2]
+        hit_apex_view_y_progress = bounded_apex_view_y_progress_jax(
+            ball_view_y,
+            apex_view_y,
+            float(self.cfg.ball_view_y_target_m),
+            float(self.cfg.hit_apex_view_y_progress_sigma_m),
+            float(self.cfg.hit_apex_view_y_progress_deadband_m),
+        )
         ball_view_xy_center_pen = (
             ((ball_view_x - float(self.cfg.ball_view_x_target_m)) / max(1e-6, float(self.cfg.ball_view_x_sigma_m))) ** 2
             + ((ball_view_y - float(self.cfg.ball_view_y_target_m)) / max(1e-6, float(self.cfg.ball_view_y_sigma_m))) ** 2
@@ -6719,6 +9629,117 @@ class MjxJuggleEnv:
         term_pre_hit_intercept_penalty = (
             -float(self.cfg.pre_hit_intercept_penalty_weight) * pre_hit_intercept_penalty
         )
+        approach_vxy_window = float(self.cfg.approach_racket_vxy_time_window_s)
+        approach_vxy_active = (
+            (bvel[:, 2] < -1e-4)
+            & (bpos[:, 2] > rpos[:, 2])
+            & (time_to_racket >= 0.0)
+            & (time_to_racket <= approach_vxy_window)
+        )
+        approach_vxy_urgency = jnp.clip(
+            1.0 - time_to_racket / approach_vxy_window,
+            0.0,
+            1.0,
+        ) ** 2
+        approach_vxy_alignment = jnp.exp(
+            -0.5
+            * (
+                descending_intercept_xy_err
+                / float(self.cfg.approach_racket_vxy_alignment_sigma_m)
+            )
+            ** 2
+        )
+        approach_racket_vxy = jnp.linalg.norm(rvel[:, :2], axis=-1)
+        approach_racket_vxy_excess = jnp.maximum(
+            0.0,
+            approach_racket_vxy
+            - float(self.cfg.approach_racket_vxy_soft_limit_m_s),
+        ) / float(self.cfg.approach_racket_vxy_penalty_scale_m_s)
+        approach_racket_vxy_penalty_shape = jnp.where(
+            bool(self.cfg.approach_racket_vxy_linear_tail)
+            & (approach_racket_vxy_excess > 2.0),
+            # C1-continuous Huber-style tail: value and derivative match x^2
+            # at x=2, but high-speed reset transients retain corrective
+            # gradient instead of hitting the historical min(x^2, 4) plateau.
+            4.0 + 4.0 * (approach_racket_vxy_excess - 2.0),
+            jnp.minimum(approach_racket_vxy_excess**2, 4.0),
+        )
+        approach_racket_vxy_pen = jnp.where(
+            approach_vxy_active,
+            approach_vxy_urgency
+            * approach_vxy_alignment
+            * approach_racket_vxy_penalty_shape,
+            0.0,
+        )
+        term_approach_racket_vxy_penalty = (
+            -float(self.cfg.approach_racket_vxy_penalty_weight)
+            * approach_racket_vxy_pen
+            * jnp.where(
+                hit_count < int(self.cfg.early_approach_penalty_hit_count),
+                float(self.cfg.early_approach_penalty_multiplier),
+                1.0,
+            )
+        )
+        first_hit_stationary_alignment = jnp.exp(
+            -0.5
+            * (
+                jnp.linalg.norm(rel[:, :2], axis=-1)
+                / float(self.cfg.first_hit_stationary_alignment_sigma_m)
+            )
+            ** 2
+        )
+        first_hit_stationary_active = (
+            (hit_count <= 0)
+            & (rel[:, 2] >= -0.02)
+            & (
+                rel[:, 2]
+                <= float(self.cfg.first_hit_stationary_max_rel_height_m)
+            )
+        )
+        first_hit_stationary_excess = jnp.maximum(
+            0.0,
+            approach_racket_vxy
+            - float(self.cfg.first_hit_stationary_soft_limit_m_s),
+        ) / float(self.cfg.first_hit_stationary_penalty_scale_m_s)
+        first_hit_stationary_penalty_shape = jnp.where(
+            bool(self.cfg.first_hit_stationary_linear_tail)
+            & (first_hit_stationary_excess > 2.0),
+            # Match x^2 in value and slope at x=2, then retain a finite
+            # gradient for unsafe autonomous-launch speeds.  This is separate
+            # from the descent-only approach barrier because the first lift
+            # hit happens before the ball has a descending phase.
+            4.0 + 4.0 * (first_hit_stationary_excess - 2.0),
+            jnp.minimum(first_hit_stationary_excess**2, 4.0),
+        )
+        first_hit_stationary_pen = jnp.where(
+            first_hit_stationary_active,
+            first_hit_stationary_alignment
+            * first_hit_stationary_penalty_shape,
+            0.0,
+        )
+        term_first_hit_stationary_penalty = (
+            -float(self.cfg.first_hit_stationary_penalty_weight)
+            * first_hit_stationary_pen
+        )
+        early_racket_xy_anchor_active = (
+            hit_count <= int(self.cfg.early_racket_xy_anchor_hit_count)
+        )
+        early_racket_xy_anchor_excess = jnp.maximum(
+            0.0,
+            racket_xy_dist
+            - float(self.cfg.early_racket_xy_anchor_deadband_m),
+        ) / float(self.cfg.early_racket_xy_anchor_scale_m)
+        early_racket_xy_anchor_penalty_shape = jnp.where(
+            early_racket_xy_anchor_excess > 2.0,
+            4.0 + 4.0 * (early_racket_xy_anchor_excess - 2.0),
+            early_racket_xy_anchor_excess**2,
+        )
+        term_early_racket_xy_anchor_penalty = jnp.where(
+            early_racket_xy_anchor_active,
+            -float(self.cfg.early_racket_xy_anchor_penalty_weight)
+            * early_racket_xy_anchor_penalty_shape,
+            0.0,
+        )
         term_racket_xy_reward = float(self.cfg.racket_xy_gauss_reward_weight) * racket_xy_gauss
         term_racket_xy_penalty = -float(self.cfg.racket_xy_gauss_penalty_weight) * racket_xy_gauss_pen
         term_racket_z_penalty = -float(self.cfg.racket_z_soft_penalty_weight) * racket_z_band_pen
@@ -6774,11 +9795,35 @@ class MjxJuggleEnv:
         term_racket_flatness_penalty = (
             -float(self.cfg.racket_flatness_penalty_weight) * racket_flatness_pen
         )
+        approach_pose_gate = (
+            approach_vxy_active.astype(jnp.float32)
+            * approach_vxy_urgency
+            * approach_vxy_alignment
+        )
+        approach_racket_flatness_pen = (
+            approach_pose_gate * jnp.minimum(racket_flatness_pen, 4.0)
+        )
+        term_approach_racket_flatness_penalty = (
+            -float(self.cfg.approach_racket_flatness_penalty_weight)
+            * approach_racket_flatness_pen
+        )
+        approach_racket_tilt_speed_pen = (
+            approach_pose_gate * racket_tilt_angular_speed_pen
+        )
+        term_approach_racket_tilt_speed_penalty = (
+            -float(self.cfg.approach_racket_tilt_speed_penalty_weight)
+            * approach_racket_tilt_speed_pen
+        )
         # Keep the sparse impact objective on the same angular axes as the
         # dense stability objective and curriculum gate.  ``full_norm``
         # preserves the historical behavior; ``local_xz`` deliberately leaves
         # the useful local-y juggling stroke out of the impact penalty.
-        hit_racket_angular_speed = racket_stability_angular_speed
+        # All sparse impact-quality terms must describe the physical contact
+        # edge.  Hit confirmation occurs several control frames later, after
+        # the delayed actuator may already have braked or reoriented the
+        # racket, and previously allowed a tilted/rotating contact to receive
+        # credit for its post-contact pose.
+        hit_racket_angular_speed = hit_racket_angular_speed_at_contact
         angular_speed_excess = jnp.maximum(
             0.0,
             hit_racket_angular_speed
@@ -6820,7 +9865,95 @@ class MjxJuggleEnv:
             -float(self.cfg.post_hit_racket_retreat_penalty_weight)
             * post_hit_racket_retreat_pen
         )
-        flatness_err = jnp.maximum(0.0, float(self.cfg.hit_flatness_target_cos) - racket_up_cos)
+        racket_cycle_vxy = jnp.linalg.norm(rvel[:, :2], axis=-1)
+        racket_cycle_vxy_excess = jnp.maximum(
+            0.0,
+            racket_cycle_vxy
+            - float(self.cfg.racket_cycle_vxy_soft_limit_m_s),
+        ) / max(1e-6, float(self.cfg.racket_cycle_vxy_penalty_scale_m_s))
+        racket_cycle_vxy_pen = jnp.where(
+            bool(self.cfg.racket_cycle_vxy_linear_tail)
+            & (racket_cycle_vxy_excess > 2.0),
+            4.0 + 4.0 * (racket_cycle_vxy_excess - 2.0),
+            jnp.minimum(racket_cycle_vxy_excess**2, 4.0),
+        )
+        racket_cycle_motion_active = (
+            ((hit_count > 0) & (~new_hit))
+            | bool(self.cfg.stationary_ball_training)
+        )
+        early_cycle_multiplier = jnp.where(
+            (hit_count > 0)
+            & (hit_count <= int(self.cfg.early_cycle_penalty_hit_count)),
+            float(self.cfg.early_cycle_penalty_multiplier),
+            1.0,
+        )
+        term_racket_cycle_vxy_penalty = jnp.where(
+            racket_cycle_motion_active,
+            -float(self.cfg.racket_cycle_vxy_penalty_weight)
+            * early_cycle_multiplier
+            * racket_cycle_vxy_pen,
+            0.0,
+        )
+        stationary_xy_error = jnp.linalg.norm((bpos - rpos)[:, :2], axis=-1)
+        stationary_alignment = jnp.exp(
+            -0.5
+            * (stationary_xy_error / max(1e-6, float(self.cfg.stationary_racket_xy_scale_m)))
+            ** 2
+        )
+        stationary_xy_excess = jnp.maximum(
+            stationary_xy_error - float(self.cfg.stationary_racket_xy_deadband_m),
+            0.0,
+        ) / max(1e-6, float(self.cfg.stationary_racket_xy_scale_m))
+        stationary_z_error = jnp.abs(rpos[:, 2] - racket_anchor[:, 2])
+        stationary_z_excess = jnp.maximum(
+            stationary_z_error - float(self.cfg.stationary_racket_z_deadband_m),
+            0.0,
+        ) / max(1e-6, float(self.cfg.stationary_racket_z_scale_m))
+        stationary_vxy_excess = jnp.maximum(
+            racket_cycle_vxy - float(self.cfg.stationary_racket_vxy_soft_limit_m_s),
+            0.0,
+        ) / max(1e-6, float(self.cfg.stationary_racket_vxy_scale_m_s))
+        stationary_active = jnp.asarray(bool(self.cfg.stationary_ball_training))
+        term_stationary_racket_alignment = jnp.where(
+            stationary_active,
+            float(self.cfg.stationary_racket_alignment_reward_weight)
+            * stationary_alignment,
+            0.0,
+        )
+        term_stationary_racket_xy_penalty = jnp.where(
+            stationary_active,
+            -float(self.cfg.stationary_racket_xy_penalty_weight)
+            * (jnp.sqrt(1.0 + stationary_xy_excess**2) - 1.0),
+            0.0,
+        )
+        term_stationary_racket_z_penalty = jnp.where(
+            stationary_active,
+            -float(self.cfg.stationary_racket_z_penalty_weight)
+            * (jnp.sqrt(1.0 + stationary_z_excess**2) - 1.0),
+            0.0,
+        )
+        term_stationary_racket_vxy_penalty = jnp.where(
+            stationary_active,
+            -float(self.cfg.stationary_racket_vxy_penalty_weight)
+            * (jnp.sqrt(1.0 + stationary_vxy_excess**2) - 1.0),
+            0.0,
+        )
+        stationary_vz_excess = jnp.maximum(
+            jnp.abs(rvel[:, 2])
+            - float(self.cfg.stationary_racket_vz_soft_limit_m_s),
+            0.0,
+        ) / max(1e-6, float(self.cfg.stationary_racket_vz_scale_m_s))
+        term_stationary_racket_vz_penalty = jnp.where(
+            stationary_active,
+            -float(self.cfg.stationary_racket_vz_penalty_weight)
+            * (jnp.sqrt(1.0 + stationary_vz_excess**2) - 1.0),
+            0.0,
+        )
+        hit_racket_up_cos = hit_racket_up_cos_at_contact
+        flatness_err = jnp.maximum(
+            0.0,
+            float(self.cfg.hit_flatness_target_cos) - hit_racket_up_cos,
+        )
         flatness_score = jnp.exp(-0.5 * (flatness_err / max(1e-6, float(self.cfg.hit_flatness_sigma))) ** 2)
         hit_flatness_excess_pen = jnp.minimum(
             (
@@ -6889,6 +10022,11 @@ class MjxJuggleEnv:
             + term_descending_intercept_excess_penalty
             + term_pre_hit_intercept
             + term_pre_hit_intercept_penalty
+            + term_approach_racket_vxy_penalty
+            + term_approach_racket_flatness_penalty
+            + term_approach_racket_tilt_speed_penalty
+            + term_first_hit_stationary_penalty
+            + term_early_racket_xy_anchor_penalty
             + term_racket_xy_reward
             + term_racket_xy_penalty
             + term_racket_z_penalty
@@ -6898,6 +10036,11 @@ class MjxJuggleEnv:
             + term_racket_stability_angular_speed_penalty
             + term_racket_flatness_penalty
             + term_post_hit_racket_retreat_penalty
+            + term_racket_cycle_vxy_penalty
+            + term_stationary_racket_alignment
+            + term_stationary_racket_xy_penalty
+            + term_stationary_racket_vxy_penalty
+            + term_stationary_racket_vz_penalty
             + term_contact_flatness_penalty
             + camera_terms["camera_reward_dense"]
             + term_action_penalty
@@ -6911,34 +10054,241 @@ class MjxJuggleEnv:
         )
         reward = dense_reward * self.dt
 
-        contact_center_dist = jnp.linalg.norm(rel_local[:, :2], axis=-1)
+        contact_center_dist = hit_contact_center_dist_at_contact
         center_gain = jnp.exp(-0.5 * (contact_center_dist / max(1e-6, float(self.cfg.hit_center_sigma))) ** 2)
         local_center_gain = jnp.exp(-0.5 * (contact_center_dist / max(1e-6, float(self.cfg.hit_center_local_sigma))) ** 2)
+        # Use the cached physical-contact-edge velocity.  Measuring here from
+        # the confirmation-step rigid-body state would incorrectly reward a
+        # racket that has already braked after sweeping through the ball.
+        hit_racket_vxy = hit_racket_vxy_at_contact
+        hit_racket_vxy_gate_sigma = float(
+            self.cfg.hit_racket_vxy_quality_gate_sigma_m_s
+        )
+        hit_racket_vxy_quality_score = jnp.where(
+            hit_racket_vxy_gate_sigma > 0.0,
+            float(self.cfg.hit_racket_vxy_quality_gate_floor)
+            + (1.0 - float(self.cfg.hit_racket_vxy_quality_gate_floor))
+            * jnp.exp(
+                -0.5
+                * (hit_racket_vxy / max(1e-6, hit_racket_vxy_gate_sigma)) ** 2
+            ),
+            1.0,
+        )
+        hit_vxy = jnp.linalg.norm(bvel[:, :2], axis=-1)
+        hit_vxy_local_y_target_active = bool(
+            float(self.cfg.hit_vxy_local_y_target_gain_s_inv) > 0.0
+            and float(self.cfg.hit_vxy_local_y_target_max_m_s) > 0.0
+        )
+        if hit_vxy_local_y_target_active:
+            hit_vxy_local_y_target = bounded_base_local_y_velocity_target_jax(
+                ball_view_y,
+                float(self.cfg.ball_view_y_target_m),
+                float(self.cfg.hit_vxy_local_y_target_gain_s_inv),
+                float(self.cfg.hit_vxy_local_y_target_max_m_s),
+                float(self.cfg.hit_vxy_local_y_target_deadband_m),
+            )
+            # The hit-vxy reward may ask for a small, bounded corrective
+            # local-Y component; retain the real local-X component and score
+            # only the residual around that target.  ``hit_vxy`` below stays
+            # the true velocity for all metrics, quality gates, and safety.
+            hit_vxy_for_shaping = jnp.sqrt(
+                ball_base_vx * ball_base_vx
+                + (ball_base_vy - hit_vxy_local_y_target)
+                * (ball_base_vy - hit_vxy_local_y_target)
+            )
+        else:
+            hit_vxy_local_y_target = jnp.zeros_like(hit_vxy)
+            # Preserve historical arithmetic exactly for profiles that leave
+            # the target disabled.
+            hit_vxy_for_shaping = hit_vxy
+        hit_vxy_gate_sigma = float(self.cfg.hit_vxy_quality_gate_sigma_m_s)
+        hit_vxy_quality_score = jnp.where(
+            hit_vxy_gate_sigma > 0.0,
+            float(self.cfg.hit_vxy_quality_gate_floor)
+            + (1.0 - float(self.cfg.hit_vxy_quality_gate_floor))
+            * jnp.exp(
+                -0.5 * (hit_vxy / max(1e-6, hit_vxy_gate_sigma)) ** 2
+            ),
+            1.0,
+        )
+        hit_angular_gate_sigma = float(
+            self.cfg.hit_angular_speed_quality_gate_sigma_rad_s
+        )
+        hit_angular_quality_score = jnp.where(
+            hit_angular_gate_sigma > 0.0,
+            jnp.exp(
+                -0.5
+                * (
+                    hit_racket_angular_speed
+                    / max(1e-6, hit_angular_gate_sigma)
+                )
+                ** 2
+            ),
+            1.0,
+        )
+        hit_pose_quality_floor = float(self.cfg.hit_pose_quality_gate_floor)
+        hit_pose_quality_score = hit_pose_quality_floor + (
+            1.0 - hit_pose_quality_floor
+        ) * flatness_score * hit_angular_quality_score
+        hit_motion_quality_score = (
+            hit_racket_vxy_quality_score
+            * hit_vxy_quality_score
+            * hit_pose_quality_score
+        )
         hit_count_credit = float(self.cfg.hit_reward_combo) * jnp.minimum(
             hit_count.astype(jnp.float32),
             float(self.cfg.hit_combo_count_cap),
         )
         hit_quality = jnp.maximum(0.2, center_gain * flatness_score)
-        hit_bonus = jnp.where(
-            bool(self.cfg.hit_combo_quality_independent),
-            float(self.cfg.hit_reward_base) * hit_quality + hit_count_credit,
-            (float(self.cfg.hit_reward_base) + hit_count_credit) * hit_quality,
+        hit_bonus = compose_hit_bonus_jax(
+            hit_motion_quality_score,
+            hit_quality,
+            hit_count_credit,
+            hit_reward_base=float(self.cfg.hit_reward_base),
+            combo_quality_independent=bool(
+                self.cfg.hit_combo_quality_independent
+            ),
+            combo_motion_quality_independent=bool(
+                self.cfg.hit_combo_motion_quality_independent
+            ),
         )
         hit_height_err = jnp.abs(predicted_apex_z - target_hit_apex_z)
         hit_height_excess = jnp.maximum(0.0, hit_height_err - float(self.cfg.hit_height_tolerance))
         hit_height_pen = float(self.cfg.hit_height_penalty_weight) * hit_height_excess * hit_height_excess
-        hit_vxy = jnp.linalg.norm(bvel[:, :2], axis=-1)
-        hit_vxy_excess = jnp.maximum(0.0, hit_vxy - float(self.cfg.hit_vxy_soft_limit_m_s))
-        hit_vxy_pen = float(self.cfg.hit_vxy_penalty_weight) * hit_vxy_excess * hit_vxy_excess
-        hit_racket_vxy = jnp.linalg.norm(rvel[:, :2], axis=-1)
+        hit_vxy_excess = jnp.maximum(
+            0.0,
+            hit_vxy_for_shaping - float(self.cfg.hit_vxy_soft_limit_m_s),
+        )
+        hit_vxy_normalized_excess = hit_vxy_excess / max(
+            1e-6,
+            float(self.cfg.hit_vxy_penalty_scale_m_s),
+        )
+        hit_vxy_loss = (
+            jnp.sqrt(1.0 + hit_vxy_normalized_excess**2) - 1.0
+            if self.hit_vxy_penalty_loss == "pseudo_huber"
+            else hit_vxy_normalized_excess**2
+        )
+        hit_vxy_pen = float(self.cfg.hit_vxy_penalty_weight) * hit_vxy_loss
+        hit_vxy_zero_score = jnp.exp(
+            -0.5
+            * (
+                hit_vxy_for_shaping
+                / max(1e-6, float(self.cfg.hit_vxy_zero_reward_sigma_m_s))
+            )
+            ** 2
+        )
+        hit_contact_z_excess = jnp.maximum(
+            0.0,
+            bpos[:, 2] - float(self.cfg.hit_contact_z_soft_limit_m),
+        )
+        hit_contact_z_pen = (
+            float(self.cfg.hit_contact_z_penalty_weight)
+            * hit_contact_z_excess
+            * hit_contact_z_excess
+        )
+        hit_racket_vxy_steady_limit = float(self.cfg.hit_racket_vxy_soft_limit_m_s)
+        hit_racket_vxy_recovery_limit = float(
+            self.cfg.hit_racket_vxy_recovery_soft_limit_m_s
+        )
+        hit_racket_vxy_steady_min = int(self.cfg.hit_racket_vxy_steady_min_count)
+        if hit_racket_vxy_steady_min > 0 and hit_racket_vxy_recovery_limit > 0.0:
+            hit_racket_vxy_limit = jnp.where(
+                hit_count >= hit_racket_vxy_steady_min,
+                hit_racket_vxy_steady_limit,
+                hit_racket_vxy_recovery_limit,
+            )
+        else:
+            hit_racket_vxy_limit = hit_racket_vxy_steady_limit
+        hit_racket_vxy_corrective_allowance = jnp.where(
+            hit_apex_view_y_progress > 0.0,
+            float(self.cfg.hit_apex_view_y_progress_racket_vxy_allowance_m_s),
+            0.0,
+        )
+        # V63 makes the bounded exploration allowance available before the
+        # policy has already produced an inward apex.  The state gate is
+        # local-Y error at the same confirmed-hit event, so it does not conceal
+        # an outward result: the signed apex reward still penalizes it and all
+        # actual contact-speed metrics/constraints continue to see the truth.
+        hit_apex_view_y_error_allowance_active = jnp.abs(
+            ball_view_y - float(self.cfg.ball_view_y_target_m)
+        ) > float(self.cfg.hit_apex_view_y_progress_deadband_m)
+        hit_racket_vxy_error_allowance = jnp.where(
+            hit_apex_view_y_error_allowance_active,
+            float(self.cfg.hit_apex_view_y_error_racket_vxy_allowance_m_s),
+            0.0,
+        )
+        # V64 opens the same exploration path only for contact-point motion
+        # aligned with the already requested base-local-Y return velocity.  It
+        # is decided from the physical contact-edge velocity, not a post-hit
+        # outcome, so the policy can explore an inward correction without also
+        # receiving a discount for an equally large outward sweep.
+        hit_racket_vxy_directional_allowance_active = local_y_return_alignment_jax(
+            hit_vxy_local_y_target,
+            hit_racket_local_y_velocity_at_contact,
+        )
+        hit_racket_vxy_directional_allowance = jnp.where(
+            hit_racket_vxy_directional_allowance_active,
+            float(self.cfg.hit_apex_view_y_directional_racket_vxy_allowance_m_s),
+            0.0,
+        )
+        # V65 deliberately scores the physical result at the confirmed hit,
+        # not a contact-point-velocity proxy.  The target is the same bounded
+        # local-Y return reference that the existing hit-vxy residual uses;
+        # therefore a near-zero or wrong-direction outgoing ball receives no
+        # discount.  The event arrives after contact, but PPO still assigns
+        # credit to the causal action sequence without assuming a tangential
+        # contact mapping that the V64 trace disproved.
+        hit_local_y_return_outcome_active = local_y_return_alignment_jax(
+            hit_vxy_local_y_target,
+            ball_base_vy,
+        )
+        hit_local_y_return_outcome_score = bounded_local_y_return_outcome_score_jax(
+            hit_vxy_local_y_target,
+            ball_base_vy,
+            float(self.cfg.hit_local_y_return_outcome_sigma_m_s),
+        )
+        hit_racket_vxy_outcome_allowance = jnp.where(
+            hit_local_y_return_outcome_active,
+            float(self.cfg.hit_local_y_return_outcome_racket_vxy_allowance_m_s),
+            0.0,
+        )
+        # This affects only reward shaping after a demonstrated inward apex
+        # correction.  The true contact speed remains the value used by all
+        # quality metrics, constraints, and advancement gates.
+        hit_racket_vxy_shaping_limit = (
+            hit_racket_vxy_limit
+            + jnp.maximum(
+                hit_racket_vxy_corrective_allowance,
+                jnp.maximum(
+                    hit_racket_vxy_error_allowance,
+                    jnp.maximum(
+                        hit_racket_vxy_directional_allowance,
+                        hit_racket_vxy_outcome_allowance,
+                    ),
+                ),
+            )
+        )
+        # A "steady" hit is a new contact at/after the steady-state hit index.
+        # When no steady split is configured every new hit counts as steady, so
+        # the emitted RMS degrades gracefully to the aggregate metric.
+        if hit_racket_vxy_steady_min > 0:
+            steady_hit = jnp.logical_and(
+                new_hit, hit_count >= hit_racket_vxy_steady_min
+            )
+        else:
+            steady_hit = new_hit
         hit_racket_vxy_excess = jnp.maximum(
             0.0,
-            hit_racket_vxy - float(self.cfg.hit_racket_vxy_soft_limit_m_s),
+            hit_racket_vxy - hit_racket_vxy_shaping_limit,
+        )
+        hit_racket_vxy_normalized_excess = hit_racket_vxy_excess / max(
+            1e-6,
+            float(self.cfg.hit_racket_vxy_penalty_scale_m_s),
         )
         hit_racket_vxy_pen = (
             float(self.cfg.hit_racket_vxy_penalty_weight)
-            * hit_racket_vxy_excess
-            * hit_racket_vxy_excess
+            * hit_racket_vxy_normalized_excess
+            * hit_racket_vxy_normalized_excess
         )
         low_hit_deficit = jnp.maximum(0.0, (target_ball_z - float(self.cfg.low_hit_apex_margin)) - predicted_apex_z)
         low_hit_pen = float(self.cfg.low_hit_penalty_weight) * low_hit_deficit * low_hit_deficit
@@ -6947,7 +10297,12 @@ class MjxJuggleEnv:
             float(self.cfg.first_hit_apex_sigma),
         )
         first_hit_apex_score = jnp.exp(-0.5 * first_hit_apex_err * first_hit_apex_err)
-        center_flat = float(self.cfg.center_flat_hit_reward_weight) * local_center_gain * flatness_score
+        center_flat = (
+            hit_motion_quality_score
+            * float(self.cfg.center_flat_hit_reward_weight)
+            * local_center_gain
+            * flatness_score
+        )
         hit_contact_center_excess = jnp.maximum(
             0.0,
             contact_center_dist
@@ -6964,7 +10319,7 @@ class MjxJuggleEnv:
             )
             ** 2
         )
-        height_bonus = jnp.where(
+        height_bonus = hit_motion_quality_score * jnp.where(
             predicted_apex_z >= target_ball_z,
             0.35 * jnp.exp(-10.0 * (predicted_apex_z - target_ball_z) * (predicted_apex_z - target_ball_z)),
             0.0,
@@ -6993,6 +10348,11 @@ class MjxJuggleEnv:
             0.0,
         )
         term_hit_bonus = jnp.where(hit_reward_mask, hit_bonus, 0.0)
+        term_low_survival_hit_reward = jnp.where(
+            low_survival_launch,
+            float(self.cfg.low_survival_hit_reward_weight),
+            0.0,
+        )
         term_center_flat_hit = jnp.where(hit_reward_mask, center_flat, 0.0)
         term_hit_flatness_excess_penalty = jnp.where(
             hit_reward_mask,
@@ -7015,10 +10375,74 @@ class MjxJuggleEnv:
         )
         term_hit_cadence_reward = jnp.where(hit_reward_mask, hit_cadence_reward, 0.0)
         term_hit_min_interval_penalty = jnp.where(hit_reward_mask, -hit_min_interval_penalty, 0.0)
+        term_hit_max_interval_penalty = jnp.where(
+            hit_reward_mask, -hit_max_interval_penalty, 0.0
+        )
+        post_hit_overdue_excess = jnp.maximum(
+            0.0,
+            time_since_counted_hit
+            - float(self.cfg.post_hit_overdue_soft_limit_s),
+        )
+        term_post_hit_overdue_penalty = jnp.where(
+            (hit_count > 0)
+            & (~new_hit)
+            & (float(self.cfg.post_hit_overdue_penalty_weight) > 0.0),
+            -float(self.cfg.post_hit_overdue_penalty_weight)
+            * jnp.minimum(
+                1.0,
+                (
+                    post_hit_overdue_excess
+                    / max(
+                        1e-6,
+                        float(self.cfg.post_hit_overdue_penalty_scale_s),
+                    )
+                )
+                ** 2,
+            ),
+            0.0,
+        )
         term_hit_height_penalty = jnp.where(hit_reward_mask, -hit_height_pen, 0.0)
-        term_hit_vxy_penalty = jnp.where(recoverability_hit_reward_mask, -hit_vxy_pen, 0.0)
-        term_hit_racket_vxy_penalty = jnp.where(
+        hit_vxy_reward_mask = jnp.where(
+            bool(self.cfg.hit_vxy_first_hit_only),
+            first_hit_reward_mask,
+            jnp.where(
+                bool(self.cfg.hit_vxy_apply_from_first_hit),
+                hit_reward_mask,
+                recoverability_hit_reward_mask,
+            ),
+        )
+        early_hit_vxy_multiplier = jnp.where(
+            hit_count <= int(self.cfg.early_hit_vxy_penalty_hit_count),
+            float(self.cfg.early_hit_vxy_penalty_multiplier),
+            1.0,
+        )
+        term_hit_vxy_penalty = jnp.where(
+            hit_vxy_reward_mask, -early_hit_vxy_multiplier * hit_vxy_pen, 0.0
+        )
+        early_hit_vxy_zero_reward_multiplier = jnp.where(
+            hit_count <= int(self.cfg.early_hit_vxy_penalty_hit_count),
+            float(self.cfg.early_hit_vxy_zero_reward_multiplier),
+            1.0,
+        )
+        term_hit_vxy_zero_reward = jnp.where(
+            hit_vxy_reward_mask,
+            early_hit_vxy_zero_reward_multiplier
+            * float(self.cfg.hit_vxy_zero_reward_weight)
+            * hit_vxy_zero_score,
+            0.0,
+        )
+        term_hit_contact_z_penalty = jnp.where(
+            hit_reward_mask,
+            -hit_contact_z_pen,
+            0.0,
+        )
+        hit_racket_vxy_reward_mask = jnp.where(
+            bool(self.cfg.hit_racket_vxy_apply_from_first_hit),
+            hit_reward_mask,
             recoverability_hit_reward_mask,
+        )
+        term_hit_racket_vxy_penalty = jnp.where(
+            hit_racket_vxy_reward_mask,
             -hit_racket_vxy_pen,
             0.0,
         )
@@ -7028,14 +10452,98 @@ class MjxJuggleEnv:
             * hit_racket_angular_speed_pen,
             0.0,
         )
+        hit_racket_angular_speed_reward_excess = jnp.maximum(
+            0.0,
+            hit_racket_angular_speed
+            - float(self.cfg.hit_racket_angular_speed_reward_target_rad_s),
+        ) / max(
+            1e-6,
+            float(self.cfg.hit_racket_angular_speed_reward_sigma_rad_s),
+        )
+        hit_racket_angular_speed_reward_score = jnp.exp(
+            -0.5
+            * hit_racket_angular_speed_reward_excess
+            * hit_racket_angular_speed_reward_excess
+        )
+        term_hit_racket_angular_speed_reward = jnp.where(
+            hit_reward_mask,
+            float(self.cfg.hit_racket_angular_speed_reward_weight)
+            * hit_racket_angular_speed_reward_score,
+            0.0,
+        )
+        term_contact_edge_pose_penalty = jnp.where(
+            physical_contact_edge,
+            -float(self.cfg.contact_edge_pose_penalty_multiplier)
+            * (
+                float(self.cfg.hit_flatness_excess_penalty_weight)
+                * hit_flatness_excess_pen
+                + float(self.cfg.hit_racket_angular_speed_penalty_weight)
+                * hit_racket_angular_speed_pen
+            ),
+            0.0,
+        )
+        term_contact_edge_racket_vxy_penalty = jnp.where(
+            physical_contact_edge,
+            -float(self.cfg.contact_edge_racket_vxy_penalty_multiplier)
+            * hit_racket_vxy_pen,
+            0.0,
+        )
         term_hit_apex_view_center_penalty = jnp.where(
             hit_reward_mask,
             -float(self.cfg.hit_apex_view_center_penalty_weight) * hit_apex_view_center_pen,
             0.0,
         )
+        term_hit_apex_view_y_progress = jnp.where(
+            hit_reward_mask,
+            float(self.cfg.hit_apex_view_y_progress_reward_weight)
+            * hit_apex_view_y_progress,
+            0.0,
+        )
+        term_hit_local_y_return_outcome = jnp.where(
+            hit_reward_mask,
+            float(self.cfg.hit_local_y_return_outcome_reward_weight)
+            * hit_local_y_return_outcome_score,
+            0.0,
+        )
         term_hit_next_contact_anchor_penalty = jnp.where(
             recoverability_hit_reward_mask,
             -float(self.cfg.hit_next_contact_anchor_penalty_weight) * hit_next_contact_anchor_pen,
+            0.0,
+        )
+        term_hit_adaptive_reflected_velocity_penalty = jnp.where(
+            hit_reward_mask,
+            -float(self.cfg.hit_adaptive_reflected_velocity_penalty_weight)
+            * adaptive_reflected_velocity_pen,
+            0.0,
+        )
+        posterior_contact_mask = hit_reward_mask & hit_cycle_eligible
+        posterior_anchor_norm = (
+            hit_contact_anchor_err
+            / max(1e-6, float(self.cfg.hit_posterior_contact_anchor_sigma_m))
+        )
+        posterior_anchor_pen = jnp.sqrt(1.0 + posterior_anchor_norm**2) - 1.0
+        contact_anchor_contraction = jnp.clip(
+            (
+                previous_hit_contact_anchor_err
+                - hit_contact_anchor_err
+            )
+            / max(
+                1e-6,
+                float(self.cfg.hit_contact_anchor_contraction_sigma_m),
+            ),
+            -1.0,
+            1.0,
+        )
+        term_hit_posterior_contact_anchor_penalty = jnp.where(
+            posterior_contact_mask,
+            -float(self.cfg.hit_posterior_contact_anchor_penalty_weight)
+            * posterior_anchor_pen,
+            0.0,
+        )
+        term_hit_contact_anchor_contraction = jnp.where(
+            posterior_contact_mask,
+            float(self.cfg.hit_contact_anchor_contraction_reward_weight)
+            * contact_anchor_contraction,
             0.0,
         )
         term_low_hit_penalty = jnp.where(hit_reward_mask, -low_hit_pen, 0.0)
@@ -7059,9 +10567,24 @@ class MjxJuggleEnv:
             * hit_cycle_q_excursion_pen,
             0.0,
         )
+        term_hit_cycle_racket_xy_path_penalty = jnp.where(
+            hit_cycle_eligible,
+            -float(self.cfg.hit_cycle_racket_xy_path_penalty_weight)
+            * early_cycle_multiplier
+            * hit_cycle_racket_xy_path_pen,
+            0.0,
+        )
+        term_hit_cycle_racket_xy_area_penalty = jnp.where(
+            hit_cycle_eligible,
+            -float(self.cfg.hit_cycle_racket_xy_area_penalty_weight)
+            * early_cycle_multiplier
+            * hit_cycle_racket_xy_area_pen,
+            0.0,
+        )
         reward = (
             reward
             + term_hit_bonus
+            + term_low_survival_hit_reward
             + term_center_flat_hit
             + term_hit_flatness_excess_penalty
             + term_hit_contact_center_excess_penalty
@@ -7070,18 +10593,52 @@ class MjxJuggleEnv:
             + term_first_hit_apex
             + term_hit_cadence_reward
             + term_hit_min_interval_penalty
+            + term_hit_max_interval_penalty
+            + term_post_hit_overdue_penalty
             + term_hit_height_penalty
             + term_hit_vxy_penalty
+            + term_hit_vxy_zero_reward
+            + term_hit_contact_z_penalty
             + term_hit_racket_vxy_penalty
             + term_hit_racket_angular_speed_penalty
+            + term_hit_racket_angular_speed_reward
+            + term_contact_edge_pose_penalty
+            + term_contact_edge_racket_vxy_penalty
             + term_hit_apex_view_center_penalty
+            + term_hit_apex_view_y_progress
+            + term_hit_local_y_return_outcome
             + term_hit_next_contact_anchor_penalty
+            + term_hit_adaptive_reflected_velocity_penalty
+            + term_hit_posterior_contact_anchor_penalty
+            + term_hit_contact_anchor_contraction
             + term_low_hit_penalty
             + term_failed_hit_penalty
             + term_fast_hit_penalty
             + term_hit_cycle_q_closure_penalty
             + term_hit_cycle_action_dc_penalty
             + term_hit_cycle_q_excursion_penalty
+            + term_hit_cycle_racket_xy_path_penalty
+            + term_hit_cycle_racket_xy_area_penalty
+        )
+        stationary_dense_reward = (
+            term_stationary_racket_alignment
+            + term_stationary_racket_xy_penalty
+            + term_stationary_racket_z_penalty
+            + term_stationary_racket_vxy_penalty
+            + term_stationary_racket_vz_penalty
+            + term_racket_flatness_penalty
+            + term_racket_stability_angular_speed_penalty
+            + term_action_penalty
+            + term_action_delta_penalty
+            + term_action_clip_excess_penalty
+            + term_arm_vel_penalty
+            + term_arm_acc_penalty
+            + term_arm_limiter_penalty
+        ) * self.dt
+        reward = jnp.where(
+            stationary_active & bool(self.cfg.stationary_reward_only),
+            stationary_dense_reward,
+            reward,
         )
         terms = {
             "total": reward,
@@ -7157,6 +10714,36 @@ class MjxJuggleEnv:
             ),
             "pre_hit_intercept": term_pre_hit_intercept * self.dt,
             "pre_hit_intercept_penalty": term_pre_hit_intercept_penalty * self.dt,
+            "approach_racket_vxy_penalty": (
+                term_approach_racket_vxy_penalty * self.dt
+            ),
+            "approach_racket_flatness_penalty": (
+                term_approach_racket_flatness_penalty * self.dt
+            ),
+            "approach_racket_tilt_speed_penalty": (
+                term_approach_racket_tilt_speed_penalty * self.dt
+            ),
+            "first_hit_stationary_penalty": (
+                term_first_hit_stationary_penalty * self.dt
+            ),
+            "early_racket_xy_anchor_penalty": (
+                term_early_racket_xy_anchor_penalty * self.dt
+            ),
+            "metric/early_racket_xy_anchor_active": (
+                early_racket_xy_anchor_active.astype(jnp.float32)
+            ),
+            "metric/early_racket_xy_anchor_dist_m": racket_xy_dist,
+            "metric/first_hit_stationary_active": (
+                first_hit_stationary_active.astype(jnp.float32)
+            ),
+            "metric/approach_racket_vxy_m_s": jnp.where(
+                approach_vxy_active,
+                approach_racket_vxy,
+                0.0,
+            ),
+            "metric/approach_racket_vxy_active": (
+                approach_vxy_active.astype(jnp.float32)
+            ),
             "racket_xy_reward": term_racket_xy_reward * self.dt,
             "racket_xy_penalty": term_racket_xy_penalty * self.dt,
             "racket_z_penalty": term_racket_z_penalty * self.dt,
@@ -7212,6 +10799,7 @@ class MjxJuggleEnv:
                 (arm_acc_ratio > 1.0).astype(jnp.float32), axis=-1
             ),
             "hit_bonus": term_hit_bonus,
+            "low_survival_hit_reward": term_low_survival_hit_reward,
             "center_flat_hit": term_center_flat_hit,
             "hit_flatness_excess_penalty": term_hit_flatness_excess_penalty,
             "hit_contact_center_excess_penalty": (
@@ -7221,6 +10809,12 @@ class MjxJuggleEnv:
             "hit_cycle_q_closure_penalty": term_hit_cycle_q_closure_penalty,
             "hit_cycle_action_dc_penalty": term_hit_cycle_action_dc_penalty,
             "hit_cycle_q_excursion_penalty": term_hit_cycle_q_excursion_penalty,
+            "hit_cycle_racket_xy_path_penalty": (
+                term_hit_cycle_racket_xy_path_penalty
+            ),
+            "hit_cycle_racket_xy_area_penalty": (
+                term_hit_cycle_racket_xy_area_penalty
+            ),
             "metric/hit_cycle_eligible": hit_cycle_eligible.astype(jnp.float32),
             "metric/hit_cycle_q_closure_pen": jnp.where(
                 hit_cycle_eligible, hit_cycle_q_pen, 0.0
@@ -7241,6 +10835,16 @@ class MjxJuggleEnv:
                 jnp.rad2deg(hit_cycle_q_excursion_max_rad),
                 0.0,
             ),
+            "metric/hit_cycle_racket_xy_path_excess_m": jnp.where(
+                hit_cycle_eligible,
+                hit_cycle_racket_xy_path_excess,
+                0.0,
+            ),
+            "metric/hit_cycle_racket_xy_area_m2": jnp.where(
+                hit_cycle_eligible,
+                hit_cycle_racket_xy_area,
+                0.0,
+            ),
             "hit_camera": term_hit_camera,
             "metric/hit_camera_event": new_hit.astype(jnp.float32),
             "metric/hit_camera_visible_event": (new_hit & hit_camera_visible).astype(jnp.float32),
@@ -7253,8 +10857,28 @@ class MjxJuggleEnv:
             ),
             "metric/hit_event_count": new_hit.astype(jnp.float32),
             "metric/hit_vxy_sum": jnp.where(new_hit, hit_vxy, 0.0),
+            "metric/hit_vxy_sq_sum": jnp.where(new_hit, hit_vxy * hit_vxy, 0.0),
+            "metric/hit_vxy_shaping_sum": jnp.where(
+                new_hit, hit_vxy_for_shaping, 0.0
+            ),
+            "metric/hit_vxy_local_y_target_sum": jnp.where(
+                new_hit, hit_vxy_local_y_target, 0.0
+            ),
+            "metric/hit_ball_local_y_velocity_sum": jnp.where(
+                new_hit, ball_base_vy, 0.0
+            ),
+            "metric/hit_local_y_return_outcome_score_sum": jnp.where(
+                new_hit, hit_local_y_return_outcome_score, 0.0
+            ),
+            "metric/hit_ball_z_sum": jnp.where(new_hit, bpos[:, 2], 0.0),
+            "metric/hit_ball_z_over_limit_event": (
+                new_hit
+                & (bpos[:, 2] > float(self.cfg.hit_contact_z_soft_limit_m))
+            ).astype(jnp.float32),
             "metric/hit_contact_center_dist_sum": jnp.where(new_hit, contact_center_dist, 0.0),
-            "metric/hit_racket_up_cos_sum": jnp.where(new_hit, racket_up_cos, 0.0),
+            "metric/hit_racket_up_cos_sum": jnp.where(
+                new_hit, hit_racket_up_cos, 0.0
+            ),
             "metric/hit_apex_rel_height_sum": jnp.where(
                 new_hit,
                 predicted_apex_z - racket_anchor[:, 2],
@@ -7262,23 +10886,155 @@ class MjxJuggleEnv:
             ),
             "first_hit_apex": term_first_hit_apex,
             "hit_cadence_reward": term_hit_cadence_reward,
+            "hit_local_y_return_outcome": term_hit_local_y_return_outcome,
             "hit_min_interval_penalty": term_hit_min_interval_penalty,
+            "hit_max_interval_penalty": term_hit_max_interval_penalty,
+            "post_hit_overdue_penalty": term_post_hit_overdue_penalty,
             "hit_height_penalty": term_hit_height_penalty,
             "hit_vxy_penalty": term_hit_vxy_penalty,
+            "hit_vxy_zero_reward": term_hit_vxy_zero_reward,
+            "metric/hit_vxy_zero_score_sum": jnp.where(
+                new_hit, hit_vxy_zero_score, 0.0
+            ),
+            "metric/hit_vxy_quality_score_sum": jnp.where(
+                new_hit, hit_vxy_quality_score, 0.0
+            ),
+            "metric/hit_motion_quality_score_sum": jnp.where(
+                new_hit, hit_motion_quality_score, 0.0
+            ),
+            "metric/hit_pose_quality_score_sum": jnp.where(
+                new_hit, hit_pose_quality_score, 0.0
+            ),
+            "hit_contact_z_penalty": term_hit_contact_z_penalty,
             "hit_racket_vxy_penalty": term_hit_racket_vxy_penalty,
+            "metric/hit_racket_vxy_sum": jnp.where(
+                new_hit, hit_racket_vxy, 0.0
+            ),
+            "metric/hit_racket_vxy_sq_sum": jnp.where(
+                new_hit, hit_racket_vxy * hit_racket_vxy, 0.0
+            ),
+            "metric/hit_racket_vxy_shaping_limit_sum": jnp.where(
+                new_hit, hit_racket_vxy_shaping_limit, 0.0
+            ),
+            "metric/hit_racket_vxy_quality_score_sum": jnp.where(
+                new_hit, hit_racket_vxy_quality_score, 0.0
+            ),
+            # Steady-state-only lateral speed accumulators. Early hits in an
+            # episode are recovery swings that legitimately need lateral motion,
+            # so the advance gate is scored on hits at/after
+            # ``hit_racket_vxy_steady_min_count`` only. Emitting count and
+            # squared-sum lets the trainer form an RMS over just those hits.
+            "metric/steady_hit_events": jnp.where(steady_hit, 1.0, 0.0),
+            "metric/steady_hit_racket_vxy_sq_sum": jnp.where(
+                steady_hit, hit_racket_vxy * hit_racket_vxy, 0.0
+            ),
+            "racket_cycle_vxy_penalty": term_racket_cycle_vxy_penalty * self.dt,
+            "stationary_racket_alignment": term_stationary_racket_alignment * self.dt,
+            "stationary_racket_xy_penalty": term_stationary_racket_xy_penalty * self.dt,
+            "stationary_racket_z_penalty": term_stationary_racket_z_penalty * self.dt,
+            "stationary_racket_vxy_penalty": term_stationary_racket_vxy_penalty * self.dt,
+            "stationary_racket_vz_penalty": term_stationary_racket_vz_penalty * self.dt,
+            "metric/stationary_racket_xy_error_m": stationary_xy_error,
+            "metric/stationary_racket_z_error_m": stationary_z_error,
+            "metric/stationary_racket_vxy_m_s": racket_cycle_vxy,
+            "metric/stationary_racket_vz_m_s": jnp.abs(rvel[:, 2]),
+            "metric/racket_cycle_vxy_m_s": jnp.where(
+                racket_cycle_motion_active,
+                racket_cycle_vxy,
+                0.0,
+            ),
+            "metric/racket_cycle_motion_active": (
+                racket_cycle_motion_active.astype(jnp.float32)
+            ),
             "hit_racket_angular_speed_penalty": (
                 term_hit_racket_angular_speed_penalty
+            ),
+            "hit_racket_angular_speed_reward": (
+                term_hit_racket_angular_speed_reward
+            ),
+            "metric/hit_racket_angular_speed_reward_score": jnp.where(
+                hit_reward_mask,
+                hit_racket_angular_speed_reward_score,
+                0.0,
+            ),
+            "contact_edge_pose_penalty": term_contact_edge_pose_penalty,
+            "contact_edge_racket_vxy_penalty": (
+                term_contact_edge_racket_vxy_penalty
             ),
             "metric/hit_racket_angular_speed_rad_s": jnp.where(
                 hit_reward_mask, hit_racket_angular_speed, 0.0
             ),
             "metric/hit_racket_full_angular_speed_rad_s": jnp.where(
-                hit_reward_mask, racket_full_angular_speed, 0.0
+                hit_reward_mask, hit_racket_full_angular_speed_at_contact, 0.0
+            ),
+            "metric/hit_racket_local_y_angular_speed_rad_s": jnp.where(
+                hit_reward_mask,
+                hit_racket_local_y_angular_speed_at_contact,
+                0.0,
+            ),
+            "metric/hit_racket_local_xz_angular_speed_rad_s": jnp.where(
+                hit_reward_mask,
+                hit_racket_local_xz_angular_speed_at_contact,
+                0.0,
             ),
             "hit_apex_view_center_penalty": term_hit_apex_view_center_penalty,
+            "hit_apex_view_y_progress": term_hit_apex_view_y_progress,
             "hit_next_contact_anchor_penalty": term_hit_next_contact_anchor_penalty,
+            "hit_adaptive_reflected_velocity_penalty": (
+                term_hit_adaptive_reflected_velocity_penalty
+            ),
+            "metric/hit_adaptive_reflected_velocity_error_sum": jnp.where(
+                hit_reward_mask,
+                jnp.linalg.norm(adaptive_reflected_velocity_error, axis=-1),
+                0.0,
+            ),
+            "metric/hit_adaptive_reflected_velocity_target_vxy_sum": jnp.where(
+                hit_reward_mask,
+                jnp.linalg.norm(
+                    adaptive_reflected_velocity_target[:, :2], axis=-1
+                ),
+                0.0,
+            ),
+            "hit_posterior_contact_anchor_penalty": (
+                term_hit_posterior_contact_anchor_penalty
+            ),
+            "hit_contact_anchor_contraction": (
+                term_hit_contact_anchor_contraction
+            ),
+            "metric/hit_posterior_contact_event": (
+                posterior_contact_mask.astype(jnp.float32)
+            ),
+            "metric/hit_posterior_contact_anchor_err_sum": jnp.where(
+                posterior_contact_mask,
+                hit_contact_anchor_err,
+                0.0,
+            ),
+            "metric/hit_contact_anchor_contraction_sum": jnp.where(
+                posterior_contact_mask,
+                contact_anchor_contraction,
+                0.0,
+            ),
             "metric/hit_apex_view_x_sum": jnp.where(new_hit, apex_view_x, 0.0),
             "metric/hit_apex_view_y_sum": jnp.where(new_hit, apex_view_y, 0.0),
+            "metric/hit_apex_view_y_progress_sum": jnp.where(
+                new_hit, hit_apex_view_y_progress, 0.0
+            ),
+            "metric/hit_apex_view_y_error_allowance_active": jnp.where(
+                new_hit, hit_apex_view_y_error_allowance_active.astype(jnp.float32), 0.0
+            ),
+            "metric/hit_apex_view_y_directional_allowance_active": jnp.where(
+                new_hit,
+                hit_racket_vxy_directional_allowance_active.astype(jnp.float32),
+                0.0,
+            ),
+            "metric/hit_local_y_return_outcome_allowance_active": jnp.where(
+                new_hit,
+                hit_local_y_return_outcome_active.astype(jnp.float32),
+                0.0,
+            ),
+            "metric/hit_racket_local_y_velocity_sum": jnp.where(
+                new_hit, hit_racket_local_y_velocity_at_contact, 0.0
+            ),
             "metric/hit_next_contact_anchor_err_sum": jnp.where(
                 new_hit,
                 jnp.sqrt(jnp.maximum(hit_next_contact_anchor_pen, 0.0))

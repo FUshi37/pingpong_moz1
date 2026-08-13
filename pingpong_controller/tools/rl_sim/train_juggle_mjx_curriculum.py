@@ -12,6 +12,7 @@ latency, camera, and DR knobs exposed by ``MjxJuggleConfig``.
 from __future__ import annotations
 
 import argparse
+import csv
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
 import pickle
@@ -91,6 +92,20 @@ D455_REAL_VIEW_Y_TARGET_M = -0.35
 D455_STABLE_VIEW_Z_IDEAL_M = (1.02, 1.42)
 D455_RECOVERY_VIEW_Z_IDEAL_M = (1.02, 1.42)
 
+
+# First hit ordinal treated as the steady juggling cycle.  Hits 2-3 still carry
+# the post-spawn recentering transient, whose racket lateral speed is ~1.8x the
+# steady value; excluding them keeps lateral-quality metrics from tracking
+# rollout hit-ordinal composition instead of policy quality.
+STEADY_HIT_MIN_COUNT = 4.0
+# Same threshold as an int, for env config fields that compare integer hit
+# counts (``hit_racket_vxy_steady_min_count``).
+STEADY_HIT_MIN_COUNT_INT = int(STEADY_HIT_MIN_COUNT)
+# Minimum per-rollout steady-regime hit events required before the steady RMS
+# gate is trusted.  Phase-mask RMS reports 0.0 on an empty population, so a
+# collapsed policy would otherwise score a perfect 0.0.  r5 rollouts carried
+# ~3.5k steady events per update, so this only rejects genuine collapse.
+STEADY_HIT_MIN_EVENTS = 200.0
 
 STAGE_NAME_ALIASES = {
     "stage5e2_low_reset_visible_recenter_len33_soft": "stage5e2a_low_reset_view_recenter_len45_soft",
@@ -194,6 +209,345 @@ GOAL_D455_SPORT_TASKSPACE_SUCCESSREF_OBSRES2MM_NOCOMP_PROFILE = (
 GOAL_D455_SPORT_TASKSPACE_OBSRES2MM_NOCOMP_DIRECT_PROFILE = (
     "goal_d455_sport_taskspace_obsres2mm_nocomp_direct_v1"
 )
+GOAL_D455_SPORT_TASKSPACE_DEPLOY_POLISH_PROFILE = (
+    "goal_d455_sport_taskspace_deploy_polish_v1"
+)
+GOAL_D455_SPORT_TASKSPACE_DEPLOY_POLISH_V2_PROFILE = (
+    "goal_d455_sport_taskspace_deploy_polish_v2"
+)
+GOAL_D455_SPORT_TASKSPACE_DEPLOY_POLISH_V3_PROFILE = (
+    "goal_d455_sport_taskspace_deploy_polish_v3"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v1"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V2_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v2"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V3_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v3"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V4_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v4"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V5_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v5"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V6_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v6"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V7_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v7"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V8_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v8"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V9_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v9"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V10_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v10"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V11_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v11"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V12_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v12"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V13_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v13"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V14_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v14"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V15_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v15"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V16_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v16"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V17_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v17"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V18_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v18"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V19_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v19"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V20_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v20"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V21_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v21"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V22_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v22"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V23_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v23"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V24_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v24"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V25_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v25"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V26_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v26"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V27_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v27"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V28_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v28"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V29_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v29"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V30_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v30"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V31_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v31"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V32_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v32"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V33_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v33"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V34_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v34"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V35_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v35"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V36_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v36"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V37_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v37"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V38_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v38"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V39_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v39"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V41_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v41"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V42_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v42"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V43_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v43"
+)
+GOAL_D455_SPORT_TASKSPACE_VERTICAL_STRIKE_V44_PROFILE = (
+    "goal_d455_sport_taskspace_vertical_strike_v44"
+)
+GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V44_PROFILE = (
+    "goal_d455_sport_taskspace_racket_xy_polish_v44"
+)
+GOAL_D455_SPORT_TASKSPACE_FOV_APEX_V45_PROFILE = (
+    "goal_d455_sport_taskspace_fov_apex_v45"
+)
+GOAL_D455_SPORT_TASKSPACE_NOISE_ADAPT_V46_PROFILE = (
+    "goal_d455_sport_taskspace_noise_adapt_v46"
+)
+GOAL_D455_SPORT_TASKSPACE_NOISE_FOV_V47_PROFILE = (
+    "goal_d455_sport_taskspace_noise_fov_v47"
+)
+GOAL_D455_SPORT_TASKSPACE_ESTNOISE_V48_PROFILE = (
+    "goal_d455_sport_taskspace_estnoise_v48"
+)
+GOAL_D455_SPORT_TASKSPACE_ESTNOISE_FOV_V49_PROFILE = (
+    "goal_d455_sport_taskspace_estnoise_fov_v49"
+)
+GOAL_D455_SPORT_TASKSPACE_ESTNOISE_INVARIANT_V50_PROFILE = (
+    "goal_d455_sport_taskspace_estnoise_invariant_v50"
+)
+GOAL_D455_SPORT_TASKSPACE_ESTNOISE_GATED_V52_PROFILE = (
+    "goal_d455_sport_taskspace_estnoise_gated_v52"
+)
+GOAL_D455_SPORT_TASKSPACE_ESTNOISE_VIEWCENTER_V59_PROFILE = (
+    "goal_d455_sport_taskspace_estnoise_viewcenter_v59"
+)
+GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YTIGHT_V60_PROFILE = (
+    "goal_d455_sport_taskspace_estnoise_ytight_v60"
+)
+GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YTARGET_V61_PROFILE = (
+    "goal_d455_sport_taskspace_estnoise_ytarget_v61"
+)
+GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YPROGRESS_V62_PROFILE = (
+    "goal_d455_sport_taskspace_estnoise_yprogress_v62"
+)
+GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YPROSPECTIVE_V63_PROFILE = (
+    "goal_d455_sport_taskspace_estnoise_yprospective_v63"
+)
+GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YDIRECTIONAL_V64_PROFILE = (
+    "goal_d455_sport_taskspace_estnoise_ydirectional_v64"
+)
+GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YOUTCOME_V65_PROFILE = (
+    "goal_d455_sport_taskspace_estnoise_youtcome_v65"
+)
+GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_SINGLEHIT_V66_PROFILE = (
+    "goal_d455_sport_taskspace_estnoise_yreturn_singlehit_v66"
+)
+GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_OUTCOME_V67_PROFILE = (
+    "goal_d455_sport_taskspace_estnoise_yreturn_outcome_v67"
+)
+GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_FALLING_ADAPT_V68_PROFILE = (
+    "goal_d455_sport_taskspace_estnoise_yreturn_falling_adapt_v68"
+)
+GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_PREHITBRAKE_V69_PROFILE = (
+    "goal_d455_sport_taskspace_estnoise_yreturn_prehitbrake_v69"
+)
+GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_ANCHOR_V70_PROFILE = (
+    "goal_d455_sport_taskspace_estnoise_yreturn_anchor_v70"
+)
+GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V71_PROFILE = (
+    "goal_d455_sport_taskspace_estnoise_yreturn_staticanchor_v71"
+)
+GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V72_PROFILE = (
+    "goal_d455_sport_taskspace_estnoise_yreturn_staticanchor_v72"
+)
+GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V73_PROFILE = (
+    "goal_d455_sport_taskspace_estnoise_yreturn_staticanchor_v73"
+)
+GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V74_PROFILE = (
+    "goal_d455_sport_taskspace_estnoise_yreturn_staticanchor_v74"
+)
+GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V75_PROFILE = (
+    "goal_d455_sport_taskspace_estnoise_yreturn_staticanchor_v75"
+)
+GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V76_PROFILE = (
+    "goal_d455_sport_taskspace_estnoise_yreturn_staticanchor_v76"
+)
+GOAL_D455_SPORT_TASKSPACE_BELIEF_CONTRACTION_V77_PROFILE = (
+    "goal_d455_sport_taskspace_belief_contraction_v77"
+)
+GOAL_D455_SPORT_TASKSPACE_BELIEF_JOINT_QUALITY_V78_PROFILE = (
+    "goal_d455_sport_taskspace_belief_joint_quality_v78"
+)
+GOAL_D455_SPORT_TASKSPACE_BELIEF_CONSTRAINED_V79_PROFILE = (
+    "goal_d455_sport_taskspace_belief_constrained_v79"
+)
+GOAL_D455_SPORT_TASKSPACE_BELIEF_EVENT_ALIGNED_V80_PROFILE = (
+    "goal_d455_sport_taskspace_belief_event_aligned_v80"
+)
+GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_COMBO_V81A_PROFILE = (
+    "goal_d455_sport_taskspace_belief_ablate_combo_v81a"
+)
+GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_FLOOR_V81B_PROFILE = (
+    "goal_d455_sport_taskspace_belief_ablate_floor_v81b"
+)
+GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_SQUARED_V81C_PROFILE = (
+    "goal_d455_sport_taskspace_belief_ablate_squared_v81c"
+)
+GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_EARLY_V81D_PROFILE = (
+    "goal_d455_sport_taskspace_belief_ablate_early_v81d"
+)
+GOAL_D455_SPORT_TASKSPACE_BELIEF_TRANSIENT_RESAMPLE_V82_PROFILE = (
+    "goal_d455_sport_taskspace_belief_transient_resample_v82"
+)
+GOAL_D455_SPORT_TASKSPACE_BELIEF_BOUNDED_RESIDUAL_V83_PROFILE = (
+    "goal_d455_sport_taskspace_belief_bounded_residual_v83"
+)
+GOAL_D455_SPORT_TASKSPACE_BELIEF_BOUNDED_RESIDUAL_V84_PROFILE = (
+    "goal_d455_sport_taskspace_belief_bounded_residual_v84"
+)
+GOAL_D455_SPORT_TASKSPACE_BELIEF_FEEDBACK_BREAK_V85_PROFILE = (
+    "goal_d455_sport_taskspace_belief_feedback_break_v85"
+)
+GOAL_D455_SPORT_TASKSPACE_BELIEF_FEEDBACK_DC_V88_PROFILE = (
+    "goal_d455_sport_taskspace_belief_feedback_dc_v88"
+)
+GOAL_D455_SPORT_TASKSPACE_WORLD_HOLD_V90_PROFILE = (
+    "goal_d455_sport_taskspace_world_hold_v90"
+)
+GOAL_D455_SPORT_TASKSPACE_RELEASE_ROBUST_V92_PROFILE = (
+    "goal_d455_sport_taskspace_release_robust_v92"
+)
+GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_EXEC_RATE_V93_PROFILE = (
+    "goal_d455_sport_taskspace_record_new3_exec_rate_v93"
+)
+GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_IMPACT_ANGULAR_V94_PROFILE = (
+    "goal_d455_sport_taskspace_record_new3_impact_angular_v94"
+)
+GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_ANGULAR_POSITIVE_V95_PROFILE = (
+    "goal_d455_sport_taskspace_record_new3_angular_positive_v95"
+)
+GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_VIEW_V96_PROFILE = (
+    "goal_d455_sport_taskspace_record_new3_view_v96"
+)
+GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_LATERAL_V96_PROFILE = (
+    "goal_d455_sport_taskspace_record_new3_lateral_v96"
+)
+GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_BALANCED_V96_PROFILE = (
+    "goal_d455_sport_taskspace_record_new3_balanced_v96"
+)
+GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_PLATEAU_V97_PROFILE = (
+    "goal_d455_sport_taskspace_record_new3_plateau_v97"
+)
+GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_COUNT_ALIGNED_V98_PROFILE = (
+    "goal_d455_sport_taskspace_record_new3_count_aligned_v98"
+)
+GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_HEAVY_BALL_V99_PROFILE = (
+    "goal_d455_sport_taskspace_record_new3_heavy_ball_v99"
+)
+GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_HEAVY_BALL_GUIDED_V100_PROFILE = (
+    "goal_d455_sport_taskspace_record_new3_heavy_ball_guided_v100"
+)
+GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_HEAVY_BALL_VIEW_ANGULAR_V101_PROFILE = (
+    "goal_d455_sport_taskspace_record_new3_heavy_ball_view_angular_v101"
+)
+GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_HEAVY_BALL_EFFECTIVE_HIT_V102_PROFILE = (
+    "goal_d455_sport_taskspace_record_new3_heavy_ball_effective_hit_v102"
+)
+GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V1_PROFILE = (
+    "goal_d455_sport_taskspace_qvel_vertical_v1"
+)
+GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V2_PROFILE = (
+    "goal_d455_sport_taskspace_qvel_vertical_v2"
+)
+GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V3_PROFILE = (
+    "goal_d455_sport_taskspace_qvel_vertical_v3"
+)
+GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V4_PROFILE = (
+    "goal_d455_sport_taskspace_qvel_vertical_v4"
+)
+GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V5_PROFILE = (
+    "goal_d455_sport_taskspace_qvel_vertical_v5"
+)
+GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V6_PROFILE = (
+    "goal_d455_sport_taskspace_qvel_vertical_v6"
+)
+GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V7_PROFILE = (
+    "goal_d455_sport_taskspace_qvel_vertical_v7"
+)
+GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V8_PROFILE = (
+    "goal_d455_sport_taskspace_qvel_vertical_v8"
+)
+GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V9_PROFILE = (
+    "goal_d455_sport_taskspace_qvel_vertical_v9"
+)
+GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V10_PROFILE = (
+    "goal_d455_sport_taskspace_qvel_vertical_v10"
+)
+GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V11_PROFILE = (
+    "goal_d455_sport_taskspace_qvel_vertical_v11"
+)
+GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V12_PROFILE = (
+    "goal_d455_sport_taskspace_qvel_vertical_v12"
+)
+GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V13_PROFILE = (
+    "goal_d455_sport_taskspace_qvel_vertical_v13"
+)
+GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V14_PROFILE = (
+    "goal_d455_sport_taskspace_qvel_vertical_v14"
+)
 GOAL_D455_SPORT_TASKSPACE_OBSRES2MM_ANALYTIC_DIRECT_PROFILE = (
     "goal_d455_sport_taskspace_obsres2mm_analytic_direct_v1"
 )
@@ -204,6 +558,119 @@ GOAL_D455_AUTOLAUNCH_SPORT_ACTUATOR_PROFILES = (
     GOAL_D455_AUTOLAUNCH_SPORT_ACTUATOR_OBSRES2MM_NOCOMP_PROFILE,
     GOAL_D455_AUTOLAUNCH_SPORT_ACTUATOR_OBSRES2MM_INVERSEMPC_PROFILE,
     GOAL_D455_SPORT_TASKSPACE_OBSRES2MM_NOCOMP_DIRECT_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_DEPLOY_POLISH_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_DEPLOY_POLISH_V2_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_DEPLOY_POLISH_V3_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V2_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V3_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V4_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V5_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V6_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V7_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V8_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V9_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V10_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V11_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V12_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V13_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V14_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V15_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V16_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V17_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V18_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V19_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V20_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V21_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V22_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V23_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V24_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V25_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V26_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V27_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V28_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V29_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V30_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V31_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V32_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V33_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V34_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V35_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V36_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V37_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V38_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V39_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V41_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V42_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V43_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_VERTICAL_STRIKE_V44_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V44_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_FOV_APEX_V45_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_NOISE_ADAPT_V46_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_NOISE_FOV_V47_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_V48_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_FOV_V49_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_INVARIANT_V50_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_GATED_V52_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_VIEWCENTER_V59_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YTIGHT_V60_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YTARGET_V61_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YPROGRESS_V62_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YPROSPECTIVE_V63_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YDIRECTIONAL_V64_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YOUTCOME_V65_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_SINGLEHIT_V66_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_OUTCOME_V67_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_FALLING_ADAPT_V68_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_PREHITBRAKE_V69_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_ANCHOR_V70_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V71_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V72_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V73_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V74_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V75_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V76_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_CONTRACTION_V77_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_JOINT_QUALITY_V78_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_CONSTRAINED_V79_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_EVENT_ALIGNED_V80_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_COMBO_V81A_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_FLOOR_V81B_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_SQUARED_V81C_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_EARLY_V81D_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_TRANSIENT_RESAMPLE_V82_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_BOUNDED_RESIDUAL_V83_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_BOUNDED_RESIDUAL_V84_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_FEEDBACK_BREAK_V85_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_FEEDBACK_DC_V88_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_WORLD_HOLD_V90_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RELEASE_ROBUST_V92_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_EXEC_RATE_V93_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_IMPACT_ANGULAR_V94_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_ANGULAR_POSITIVE_V95_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_VIEW_V96_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_LATERAL_V96_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_BALANCED_V96_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_PLATEAU_V97_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_COUNT_ALIGNED_V98_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_HEAVY_BALL_V99_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_HEAVY_BALL_GUIDED_V100_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_HEAVY_BALL_VIEW_ANGULAR_V101_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_HEAVY_BALL_EFFECTIVE_HIT_V102_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V1_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V2_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V3_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V4_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V5_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V6_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V7_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V8_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V9_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V10_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V11_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V12_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V13_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V14_PROFILE,
     GOAL_D455_SPORT_TASKSPACE_OBSRES2MM_ANALYTIC_DIRECT_PROFILE,
     *GOAL_D455_SPORT_TASKSPACE_SUCCESSREF_PROFILES,
 )
@@ -401,9 +868,17 @@ class CurriculumStage:
     target_mean_hits: float = 2.0
     gate_mode: str = "strict"
     advance_gate_mode: str = "strict"
+    # Collapse probes normally require a 50% first-hit rate. A documented
+    # reset-mode entry bridge may lower only its admission floor so PPO can
+    # see the new reset distribution; the bridge's own training gate and all
+    # downstream collapse probes retain their declared/default requirements.
+    advance_collapse_target_hit1_rate: float = 0.50
     target_mean_len_frac: float = 0.20
     min_updates: int = 5
     min_recent_mean_return: float | None = None
+    # Optional admission-only return floor when the preceding stage probes
+    # this stage. Final self-validation always uses the global strict floor.
+    advance_transfer_min_mean_return: float | None = None
     target_camera_visible: float | None = None
     min_recent_camera_reward_dense: float | None = None
     target_ball_view_in_bounds: float | None = None
@@ -417,7 +892,33 @@ class CurriculumStage:
     target_hit_camera_visible_rate: float | None = None
     target_hit_camera_lower_band_rate: float | None = None
     max_recent_mean_hit_vxy: float | None = None
+    max_recent_rms_hit_vxy: float | None = None
+    max_recent_mean_hit_racket_vxy: float | None = None
+    max_recent_rms_hit_racket_vxy: float | None = None
+    max_recent_mean_first_hit_ball_vxy: float | None = None
+    max_recent_rms_first_hit_ball_vxy: float | None = None
+    # Historical first-hit profiles treated these gates as an alternative to
+    # aggregate hit-vxy.  A transient-repair stage needs both: improving the
+    # launch tail must not conceal recurrent regression (or vice versa).
+    require_aggregate_hit_vxy_with_first_hit: bool = False
+    max_recent_mean_recurrent_hit_racket_vxy: float | None = None
+    max_recent_rms_recurrent_hit_racket_vxy: float | None = None
+    max_recent_rms_steady_hit_racket_vxy: float | None = None
+    max_recent_hit_cycle_racket_xy_path_excess_m: float | None = None
+    max_recent_hit_cycle_racket_xy_area_m2: float | None = None
+    max_recent_mean_racket_cycle_vxy: float | None = None
+    max_recent_stationary_racket_vxy_m_s: float | None = None
+    max_recent_stationary_racket_xy_error_m: float | None = None
+    # Extra stage-local best-checkpoint weights.  These default to zero so
+    # historical curricula retain their ranking.  A focused repair stage can
+    # make its primary metric dominate small hit/return fluctuations.
+    best_checkpoint_mean_hit_vxy_weight: float = 0.0
+    best_checkpoint_rms_hit_vxy_weight: float = 0.0
+    max_recent_mean_hit_ball_z: float | None = None
+    max_recent_hit_ball_z_over_limit_rate: float | None = None
     max_recent_hit_next_contact_anchor_err: float | None = None
+    max_recent_mean_hit_posterior_contact_anchor_err: float | None = None
+    min_recent_mean_hit_contact_anchor_contraction: float | None = None
     max_recent_mean_hit_camera_v_frac: float | None = None
     target_episode_truncation_rate: float | None = None
     target_racket_up_cos: float | None = None
@@ -3912,6 +4413,8083 @@ def _sport_pure_actuator_quality_repair_stages(
                     "close the per-hit joint-ratchet deadband; no teacher, "
                     "compensation, planner, hard joint range, or reduced "
                     "velocity/acceleration envelope."
+                ),
+            )
+        )
+    return repaired
+
+
+def _sport_taskspace_deploy_polish_v1_stages(
+    stages: list[CurriculumStage],
+    *,
+    stage_steps_override: int | None,
+    pure_vxy_first: bool = False,
+    observation_vxy_curriculum: bool = False,
+) -> list[CurriculumStage]:
+    """Sequentially polish lateral velocity, contact height, then D455 view.
+
+    This resume-only course deliberately starts from the converged GPU1 final
+    task distribution.  Each objective remains active in every later stage,
+    so solving height cannot regress lateral velocity and solving view cannot
+    regress either deployment constraint.
+    """
+
+    if not stages:
+        raise ValueError("deploy polish requires the completed sport curriculum")
+    base = stages[-1]
+
+    def steps(default: int) -> int:
+        return int(stage_steps_override) if stage_steps_override is not None else default
+
+    def gate(
+        name: str,
+        cfg: MjxJuggleConfig,
+        notes: str,
+        *,
+        mean_hits: float,
+        len_frac: float,
+        hit12: float,
+        hits_ge3: float,
+        full: float,
+        mean_vxy: float,
+        rms_vxy: float,
+        next_contact: float,
+        mean_hit_z: float | None = None,
+        z_over_rate: float | None = None,
+        view: float = 0.88,
+        z_ideal: float = 0.94,
+        camera: float = 0.995,
+        hit_camera: float = 0.995,
+        hit_band: float = 0.94,
+        min_updates: int = 60,
+        hold: int = 12,
+        best_vxy_mean_weight: float = 0.0,
+        best_vxy_rms_weight: float = 0.0,
+    ) -> CurriculumStage:
+        return CurriculumStage(
+            name=name,
+            total_steps=steps(20_000_000),
+            cfg=cfg,
+            notes=notes,
+            gate_mode="strict",
+            advance_gate_mode="strict",
+            target_mean_hits=mean_hits,
+            target_mean_len_frac=len_frac,
+            min_updates=min_updates,
+            target_camera_visible=camera,
+            target_ball_view_in_bounds=view,
+            target_ball_view_z_ideal=z_ideal,
+            target_hit1_rate=0.995,
+            target_hit3_rate=0.96,
+            target_hit12_rate=hit12,
+            target_mean_hits_ge3=hits_ge3,
+            target_min_hit_interval_s=0.36,
+            target_max_hit_interval_s=0.50,
+            target_hit_camera_visible_rate=hit_camera,
+            target_hit_camera_lower_band_rate=hit_band,
+            max_recent_mean_hit_vxy=mean_vxy,
+            max_recent_rms_hit_vxy=rms_vxy,
+            best_checkpoint_mean_hit_vxy_weight=best_vxy_mean_weight,
+            best_checkpoint_rms_hit_vxy_weight=best_vxy_rms_weight,
+            max_recent_mean_hit_ball_z=mean_hit_z,
+            max_recent_hit_ball_z_over_limit_rate=z_over_rate,
+            max_recent_hit_next_contact_anchor_err=next_contact,
+            target_episode_truncation_rate=full,
+            target_racket_up_cos=0.995,
+            max_recent_hit_racket_angular_speed_rad_s=1.20,
+            convergence_hold_updates=hold,
+        )
+
+    # Objective 1: remove lateral impulse and the circular racket precursor.
+    # The bridge starts just below the measured 0.13 m/s DR baseline; the
+    # strict stage then requires both low mean and low RMS so rare large
+    # horizontal kicks cannot hide behind an average.
+    cfg_vxy_bridge = replace(
+        base.cfg,
+        ball_base_vxy_penalty_weight=max(0.35, float(base.cfg.ball_base_vxy_penalty_weight)),
+        ball_vxy_penalty_weight=max(0.30, float(base.cfg.ball_vxy_penalty_weight)),
+        post_hit_ball_vxy_penalty_weight=max(0.65, float(base.cfg.post_hit_ball_vxy_penalty_weight)),
+        ball_view_vxy_soft_limit_m_s=0.20,
+        ball_view_vxy_excess_penalty_weight=max(0.45, float(base.cfg.ball_view_vxy_excess_penalty_weight)),
+        hit_vxy_soft_limit_m_s=0.08,
+        hit_vxy_penalty_weight=0.35,
+        hit_vxy_penalty_scale_m_s=0.05,
+        hit_racket_vxy_soft_limit_m_s=0.14,
+        hit_racket_vxy_penalty_weight=0.20,
+        hit_racket_vxy_penalty_scale_m_s=0.12,
+        # Retain only modest causal landing shaping in the first stage.  View
+        # centering is deliberately not tightened until deploy05.
+        hit_next_contact_anchor_penalty_weight=max(0.20, float(base.cfg.hit_next_contact_anchor_penalty_weight)),
+    )
+    cfg_vxy_strict = replace(
+        cfg_vxy_bridge,
+        ball_base_vxy_penalty_weight=0.55,
+        ball_vxy_penalty_weight=0.55,
+        post_hit_ball_vxy_penalty_weight=1.00,
+        ball_view_vxy_soft_limit_m_s=0.12,
+        ball_view_vxy_excess_penalty_weight=0.80,
+        hit_vxy_soft_limit_m_s=0.03,
+        hit_vxy_penalty_weight=0.55,
+        hit_vxy_penalty_scale_m_s=0.04,
+        hit_racket_vxy_soft_limit_m_s=0.08,
+        hit_racket_vxy_penalty_weight=0.30,
+        hit_racket_vxy_penalty_scale_m_s=0.10,
+        hit_next_contact_anchor_penalty_weight=0.70,
+        hit_apex_view_center_penalty_weight=0.30,
+    )
+
+    if pure_vxy_first:
+        # Zero outgoing horizontal speed is incompatible with simultaneously
+        # commanding a ballistic correction toward a different apex/landing
+        # point.  It is also wrong to suppress the small lateral racket motion
+        # needed to cancel incoming momentum through the delayed actuator.
+        # Keep one normalized dense ball-speed objective plus a bounded event
+        # loss, and use only impact flatness/stability as causal precursors.
+        cfg_vxy_bridge = replace(
+            cfg_vxy_bridge,
+            ball_base_vxy_penalty_weight=0.0,
+            ball_vxy_penalty_weight=0.08,
+            ball_vxy_penalty_scale_m_s=0.10,
+            post_hit_ball_vxy_penalty_weight=0.0,
+            ball_view_vxy_excess_penalty_weight=0.0,
+            hit_vxy_soft_limit_m_s=0.02,
+            hit_vxy_penalty_weight=0.45,
+            hit_vxy_penalty_scale_m_s=0.05,
+            hit_vxy_penalty_loss="pseudo_huber",
+            hit_racket_vxy_penalty_weight=0.0,
+            hit_next_contact_anchor_penalty_weight=0.0,
+            hit_apex_view_center_penalty_weight=0.0,
+            ball_view_xy_center_penalty_weight=0.0,
+            racket_flatness_penalty_weight=max(
+                0.12, float(base.cfg.racket_flatness_penalty_weight)
+            ),
+            racket_flatness_target_cos=max(
+                0.990, float(base.cfg.racket_flatness_target_cos)
+            ),
+            hit_flatness_target_cos=max(
+                0.993, float(base.cfg.hit_flatness_target_cos)
+            ),
+            hit_flatness_excess_penalty_weight=max(
+                1.8, float(base.cfg.hit_flatness_excess_penalty_weight)
+            ),
+            hit_racket_angular_speed_penalty_weight=0.35,
+            hit_racket_angular_speed_soft_limit_rad_s=0.70,
+            hit_racket_angular_speed_scale_rad_s=0.90,
+        )
+        cfg_vxy_strict = replace(
+            cfg_vxy_bridge,
+            ball_vxy_penalty_weight=0.10,
+            ball_vxy_penalty_scale_m_s=0.08,
+            hit_vxy_soft_limit_m_s=0.01,
+            hit_vxy_penalty_weight=0.60,
+            hit_vxy_penalty_scale_m_s=0.04,
+            hit_vxy_zero_reward_weight=1.50,
+            hit_vxy_zero_reward_sigma_m_s=0.05,
+            hit_flatness_target_cos=0.995,
+            hit_flatness_excess_penalty_weight=2.2,
+            hit_racket_angular_speed_penalty_weight=0.50,
+            hit_racket_angular_speed_soft_limit_rad_s=0.60,
+            hit_racket_angular_speed_scale_rad_s=0.80,
+        )
+
+    vxy_stages: list[CurriculumStage]
+    if observation_vxy_curriculum:
+        # The completed-policy ablation measured 0.051 m/s with physical and
+        # contact DR intact but exact 60 Hz ball observations, versus about
+        # 0.114 m/s with the checkpoint's 0.07 m/s velocity-observation
+        # noise.  Learn the constraint while it is observable, then restore
+        # the same sensor uncertainty in one intermediate step.  Physics,
+        # actuator and contact DR remain enabled throughout.
+        cfg_vxy_obs_clean = replace(
+            cfg_vxy_strict,
+            ball_obs_pos_noise_std=0.0,
+            ball_obs_vel_noise_std=0.0,
+            ball_obs_nominal_pos_bias_base=(0.0, 0.0, 0.0),
+            ball_obs_nominal_vel_bias_base=(0.0, 0.0, 0.0),
+            dr_randomize_ball_obs_frame=False,
+            dr_ball_obs_pos_bias_base_m=(0.0, 0.0, 0.0),
+            dr_ball_obs_rot_bias_deg=(0.0, 0.0, 0.0),
+            dr_ball_obs_vel_bias_base_m_s=(0.0, 0.0, 0.0),
+            dr_ball_obs_scale_range=(1.0, 1.0),
+            hit_vxy_penalty_weight=0.80,
+            hit_vxy_zero_reward_weight=1.00,
+        )
+        cfg_vxy_obs_half = replace(
+            cfg_vxy_strict,
+            ball_obs_pos_noise_std=0.5 * float(cfg_vxy_strict.ball_obs_pos_noise_std),
+            ball_obs_vel_noise_std=0.5 * float(cfg_vxy_strict.ball_obs_vel_noise_std),
+            dr_ball_obs_pos_bias_base_m=tuple(
+                0.5 * float(v) for v in cfg_vxy_strict.dr_ball_obs_pos_bias_base_m
+            ),
+            dr_ball_obs_rot_bias_deg=tuple(
+                0.5 * float(v) for v in cfg_vxy_strict.dr_ball_obs_rot_bias_deg
+            ),
+            dr_ball_obs_vel_bias_base_m_s=tuple(
+                0.5 * float(v) for v in cfg_vxy_strict.dr_ball_obs_vel_bias_base_m_s
+            ),
+            dr_ball_obs_scale_range=tuple(
+                1.0 + 0.5 * (float(v) - 1.0)
+                for v in cfg_vxy_strict.dr_ball_obs_scale_range
+            ),
+            hit_vxy_penalty_weight=0.75,
+            hit_vxy_zero_reward_weight=1.25,
+        )
+        vxy_stages = [
+            gate(
+                "deploy00_vxy_exact_observation_lock",
+                cfg_vxy_obs_clean,
+                "Lock near-zero outgoing horizontal speed with exact refreshed ball state while preserving actuator, ball-physics, and contact DR.",
+                mean_hits=12.0, len_frac=0.86, hit12=0.68, hits_ge3=12.5,
+                full=0.78, mean_vxy=0.070, rms_vxy=0.090, next_contact=0.120,
+                min_updates=24, hold=8,
+                best_vxy_mean_weight=700.0, best_vxy_rms_weight=500.0,
+            ),
+            gate(
+                "deploy01_vxy_half_observation_bridge",
+                cfg_vxy_obs_half,
+                "Restore half of measured ball observation noise/bias without relaxing the zero-speed reward.",
+                mean_hits=12.0, len_frac=0.86, hit12=0.68, hits_ge3=12.5,
+                full=0.78, mean_vxy=0.075, rms_vxy=0.100, next_contact=0.115,
+                min_updates=36, hold=10,
+                best_vxy_mean_weight=700.0, best_vxy_rms_weight=500.0,
+            ),
+            gate(
+                "deploy02_vxy_full_observation_strict",
+                cfg_vxy_strict,
+                "Restore full measured observation DR; mean and RMS gates prevent averaging away rare horizontal kicks.",
+                mean_hits=12.1, len_frac=0.88, hit12=0.70, hits_ge3=12.7,
+                full=0.80, mean_vxy=0.075, rms_vxy=0.100, next_contact=0.105,
+                min_updates=60, hold=12,
+                best_vxy_mean_weight=800.0, best_vxy_rms_weight=600.0,
+            ),
+        ]
+    else:
+        vxy_stages = [
+            gate(
+                "deploy01_vxy_bridge",
+                cfg_vxy_bridge,
+                "First remove horizontal ball impulse and its lateral-racket precursor; height and view objectives are not tightened yet.",
+                mean_hits=12.5, len_frac=0.88, hit12=0.72, hits_ge3=13.0,
+                full=0.80, mean_vxy=0.115, rms_vxy=0.155, next_contact=0.115,
+                min_updates=50, hold=10,
+                best_vxy_mean_weight=500.0, best_vxy_rms_weight=350.0,
+            ),
+            gate(
+                "deploy02_vxy_strict",
+                cfg_vxy_strict,
+                "Strict horizontal-motion stage: require near-zero mean and bounded RMS hit vxy before changing height.",
+                mean_hits=12.7, len_frac=0.90, hit12=0.76, hits_ge3=13.2,
+                full=0.84, mean_vxy=0.070, rms_vxy=0.095, next_contact=0.095,
+                min_updates=70, hold=14,
+                best_vxy_mean_weight=600.0, best_vxy_rms_weight=450.0,
+            ),
+        ]
+
+    # Objective 2: keep counted contact below world z=1.20 m.  The one-sided
+    # absolute barrier is separate from the lower predicted-apex target, which
+    # supplies a smooth gradient before the hard 1.20 m boundary is reached.
+    cfg_height_bridge = replace(
+        cfg_vxy_strict,
+        target_height=0.20,
+        rel_height_center=0.16,
+        hit_height_center=0.20,
+        hit_height_tolerance=0.035,
+        hit_height_penalty_weight=max(8.0, float(cfg_vxy_strict.hit_height_penalty_weight)),
+        hit_contact_z_soft_limit_m=1.20,
+        hit_contact_z_penalty_weight=100.0,
+    )
+    cfg_height_strict = replace(
+        cfg_height_bridge,
+        target_height=0.18,
+        rel_height_center=0.145,
+        hit_height_center=0.18,
+        hit_height_tolerance=0.025,
+        hit_height_penalty_weight=14.0,
+        hit_contact_z_penalty_weight=250.0,
+    )
+
+    # Objective 3: first add dense center/landing credit, then make lateral
+    # view escape terminal.  Observation dropout remains unchanged: this stage
+    # teaches the controllable cause (outgoing trajectory), not blind motion.
+    cfg_view_bridge = replace(
+        cfg_height_strict,
+        ball_anchor_xy_penalty_weight=max(1.0, float(cfg_height_strict.ball_anchor_xy_penalty_weight)),
+        ball_view_xy_center_penalty_weight=max(0.30, float(cfg_height_strict.ball_view_xy_center_penalty_weight)),
+        ball_view_bounds_penalty_weight=max(8.0, float(cfg_height_strict.ball_view_bounds_penalty_weight)),
+        ball_view_out_of_bounds_penalty_weight=max(2.0, float(cfg_height_strict.ball_view_out_of_bounds_penalty_weight)),
+        hit_apex_view_center_penalty_weight=0.80,
+        hit_next_contact_anchor_penalty_weight=1.20,
+        hit_camera_reward_weight=max(0.60, float(cfg_height_strict.hit_camera_reward_weight)),
+        hit_camera_out_of_band_penalty_weight=max(0.60, float(cfg_height_strict.hit_camera_out_of_band_penalty_weight)),
+        terminate_on_ball_view_bounds=False,
+    )
+    cfg_view_strict = replace(
+        cfg_view_bridge,
+        ball_anchor_xy_penalty_weight=1.35,
+        ball_view_xy_center_penalty_weight=0.45,
+        ball_view_out_of_bounds_penalty_weight=3.0,
+        hit_apex_view_center_penalty_weight=1.10,
+        hit_next_contact_anchor_penalty_weight=1.60,
+        hit_camera_reward_weight=0.80,
+        hit_camera_out_of_band_penalty_weight=0.90,
+        terminate_on_ball_view_bounds=True,
+        terminate_on_ball_view_x_bounds=True,
+        terminate_on_ball_view_y_bounds=True,
+        terminate_on_ball_view_z_low=True,
+        terminate_on_ball_view_z_high=False,
+    )
+
+    return [
+        *vxy_stages,
+        gate(
+            "deploy03_height_bridge",
+            cfg_height_bridge,
+            "Lower predicted apex and activate the absolute 1.20 m contact-height barrier while retaining strict vxy gates.",
+            mean_hits=12.4, len_frac=0.88, hit12=0.70, hits_ge3=12.9,
+            full=0.80, mean_vxy=0.075, rms_vxy=0.100, next_contact=0.095,
+            mean_hit_z=1.190, z_over_rate=0.030, min_updates=60, hold=12,
+        ),
+        gate(
+            "deploy04_height_strict",
+            cfg_height_strict,
+            "Strict height stage: counted contacts remain below 1.20 m across the DR rollout, without regressing horizontal motion.",
+            mean_hits=12.5, len_frac=0.90, hit12=0.73, hits_ge3=13.0,
+            full=0.83, mean_vxy=0.070, rms_vxy=0.095, next_contact=0.090,
+            mean_hit_z=1.180, z_over_rate=0.010, min_updates=75, hold=14,
+        ),
+        gate(
+            "deploy05_view_bridge",
+            cfg_view_bridge,
+            "Add dense D455 center, predicted-apex, and next-contact shaping before enabling hard view termination.",
+            mean_hits=12.3, len_frac=0.88, hit12=0.69, hits_ge3=12.8,
+            full=0.80, mean_vxy=0.070, rms_vxy=0.095, next_contact=0.075,
+            mean_hit_z=1.180, z_over_rate=0.010, view=0.950, z_ideal=0.95,
+            hit_band=0.95, min_updates=70, hold=14,
+        ),
+        gate(
+            "deploy06_view_strict_final",
+            cfg_view_strict,
+            "Final deployment gate: lateral view escape terminates and all vxy, height, view, survival, flatness, and count requirements must hold together.",
+            mean_hits=12.5, len_frac=0.91, hit12=0.72, hits_ge3=13.0,
+            full=0.84, mean_vxy=0.060, rms_vxy=0.085, next_contact=0.065,
+            mean_hit_z=1.180, z_over_rate=0.005, view=0.970, z_ideal=0.96,
+            camera=0.997, hit_camera=0.997, hit_band=0.96,
+            min_updates=90, hold=16,
+        ),
+    ]
+
+
+def _sport_taskspace_racket_xy_polish_v1_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Remove impact-time racket vxy and inter-hit XY loops before height/view.
+
+    The input is the seven-stage observation-vxy deploy course.  Preserve its
+    exact -> half -> full ball-observation homotopy, but split the first goal
+    into independently observable impact-speed and cycle-shape objectives.
+    """
+
+    if len(stages) != 7:
+        raise ValueError("racket XY polish expects the seven-stage deploy-v3 course")
+
+    clean, half, full = stages[:3]
+    impact_cfg = replace(
+        clean.cfg,
+        hit_racket_vxy_soft_limit_m_s=0.040,
+        hit_racket_vxy_penalty_weight=0.80,
+        hit_racket_vxy_penalty_scale_m_s=0.080,
+        hit_racket_vxy_apply_from_first_hit=True,
+        racket_cycle_vxy_penalty_weight=0.0,
+        hit_cycle_racket_xy_path_penalty_weight=0.0,
+        hit_cycle_racket_xy_area_penalty_weight=0.0,
+    )
+    loop_cfg = replace(
+        impact_cfg,
+        hit_racket_vxy_soft_limit_m_s=0.030,
+        hit_racket_vxy_penalty_weight=1.00,
+        racket_cycle_vxy_penalty_weight=0.50,
+        racket_cycle_vxy_soft_limit_m_s=0.060,
+        racket_cycle_vxy_penalty_scale_m_s=0.150,
+        hit_cycle_min_previous_hits=1,
+        hit_cycle_racket_xy_path_penalty_weight=1.00,
+        hit_cycle_racket_xy_path_deadband_m=0.012,
+        hit_cycle_racket_xy_path_scale_m=0.040,
+        hit_cycle_racket_xy_area_penalty_weight=0.50,
+        hit_cycle_racket_xy_area_deadband_m2=0.00015,
+        hit_cycle_racket_xy_area_scale_m2=0.00050,
+    )
+
+    def carry_cycle_objective(source: MjxJuggleConfig, *, strict: bool) -> MjxJuggleConfig:
+        return replace(
+            source,
+            hit_racket_vxy_soft_limit_m_s=0.025 if strict else 0.030,
+            hit_racket_vxy_penalty_weight=1.20 if strict else 1.00,
+            hit_racket_vxy_penalty_scale_m_s=0.070 if strict else 0.080,
+            hit_racket_vxy_apply_from_first_hit=True,
+            racket_cycle_vxy_penalty_weight=0.75 if strict else 0.60,
+            racket_cycle_vxy_soft_limit_m_s=0.050 if strict else 0.060,
+            racket_cycle_vxy_penalty_scale_m_s=0.130 if strict else 0.150,
+            hit_cycle_min_previous_hits=1,
+            hit_cycle_racket_xy_path_penalty_weight=1.20 if strict else 1.00,
+            hit_cycle_racket_xy_path_deadband_m=0.010 if strict else 0.012,
+            hit_cycle_racket_xy_path_scale_m=0.035 if strict else 0.040,
+            hit_cycle_racket_xy_area_penalty_weight=0.75 if strict else 0.50,
+            hit_cycle_racket_xy_area_deadband_m2=0.00010 if strict else 0.00015,
+            hit_cycle_racket_xy_area_scale_m2=0.00045 if strict else 0.00050,
+        )
+
+    half_cfg = carry_cycle_objective(half.cfg, strict=False)
+    full_cfg = carry_cycle_objective(full.cfg, strict=True)
+
+    impact = replace(
+        clean,
+        name="racketxy00_contact_vxy_lock",
+        cfg=impact_cfg,
+        notes=(
+            "Use the physical contact-edge racket velocity, not delayed hit "
+            "confirmation, and optimize this reward alone before cycle shaping."
+        ),
+        min_updates=36,
+        convergence_hold_updates=10,
+        max_recent_mean_hit_vxy=0.075,
+        max_recent_rms_hit_vxy=0.100,
+        max_recent_mean_hit_racket_vxy=0.075,
+        max_recent_rms_hit_racket_vxy=0.100,
+    )
+    loop = replace(
+        clean,
+        name="racketxy01_interhit_loop_suppression",
+        cfg=loop_cfg,
+        notes=(
+            "Retain contact-vxy shaping and add dense inter-hit racket vxy plus "
+            "task-space XY path-detour and enclosed-area penalties."
+        ),
+        min_updates=48,
+        convergence_hold_updates=12,
+        max_recent_mean_hit_vxy=0.075,
+        max_recent_rms_hit_vxy=0.100,
+        max_recent_mean_hit_racket_vxy=0.065,
+        max_recent_rms_hit_racket_vxy=0.090,
+        max_recent_hit_cycle_racket_xy_path_excess_m=0.030,
+        max_recent_hit_cycle_racket_xy_area_m2=0.00018,
+        max_recent_mean_racket_cycle_vxy=0.120,
+    )
+    half_stage = replace(
+        half,
+        name="racketxy02_half_observation_bridge",
+        cfg=half_cfg,
+        notes="Restore half ball-observation noise while preserving every racket XY constraint.",
+        min_updates=60,
+        convergence_hold_updates=12,
+        max_recent_mean_hit_racket_vxy=0.060,
+        max_recent_rms_hit_racket_vxy=0.085,
+        max_recent_hit_cycle_racket_xy_path_excess_m=0.025,
+        max_recent_hit_cycle_racket_xy_area_m2=0.00015,
+        max_recent_mean_racket_cycle_vxy=0.105,
+    )
+    full_stage = replace(
+        full,
+        name="racketxy03_full_observation_strict",
+        cfg=full_cfg,
+        notes="Full observation DR with strict impact-speed, path-detour, area, and cycle-speed gates.",
+        min_updates=80,
+        convergence_hold_updates=16,
+        max_recent_mean_hit_racket_vxy=0.050,
+        max_recent_rms_hit_racket_vxy=0.075,
+        max_recent_hit_cycle_racket_xy_path_excess_m=0.020,
+        max_recent_hit_cycle_racket_xy_area_m2=0.00012,
+        max_recent_mean_racket_cycle_vxy=0.090,
+    )
+
+    tail: list[CurriculumStage] = []
+    for stage in stages[3:]:
+        cfg = carry_cycle_objective(stage.cfg, strict=True)
+        tail.append(
+            replace(
+                stage,
+                cfg=cfg,
+                max_recent_mean_hit_racket_vxy=0.050,
+                max_recent_rms_hit_racket_vxy=0.075,
+                max_recent_hit_cycle_racket_xy_path_excess_m=0.020,
+                max_recent_hit_cycle_racket_xy_area_m2=0.00012,
+                max_recent_mean_racket_cycle_vxy=0.090,
+                notes=f"{stage.notes} Retain the completed racket-XY constraints.",
+            )
+        )
+    return [impact, loop, half_stage, full_stage, *tail]
+
+
+def _sport_taskspace_racket_xy_polish_v2_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Add dense, alignment-gated braking credit to the v1 impact objective."""
+
+    result = _sport_taskspace_racket_xy_polish_v1_stages(stages)
+    shaped: list[CurriculumStage] = []
+    for index, stage in enumerate(result):
+        strict = index >= 3
+        cfg = replace(
+            stage.cfg,
+            approach_racket_vxy_penalty_weight=4.50 if strict else 4.00,
+            approach_racket_vxy_time_window_s=0.12,
+            approach_racket_vxy_alignment_sigma_m=0.08,
+            approach_racket_vxy_soft_limit_m_s=(
+                0.025 if strict else (0.040 if index == 0 else 0.030)
+            ),
+            approach_racket_vxy_penalty_scale_m_s=(
+                0.070 if strict else 0.080
+            ),
+        )
+        notes = stage.notes
+        if index == 0:
+            notes = (
+                "Use the physical contact-edge racket velocity plus an "
+                "alignment-gated braking signal during the last 120 ms; "
+                "optimize contact braking before cycle shaping."
+            )
+        shaped.append(replace(stage, cfg=cfg, notes=notes))
+    return shaped
+
+
+def _sport_taskspace_racket_xy_polish_v3_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Break the impact-speed/cycle-motion dependency found in the v2 run.
+
+    Keep stage 1 primarily an impact-braking stage, but introduce half of the
+    stage-2 cycle shaping.  Without it, the policy can brake locally while
+    retaining an inter-hit XY loop that recreates horizontal impact speed.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v2_stages(stages)
+    impact = result[0]
+    impact_cfg = replace(
+        impact.cfg,
+        racket_cycle_vxy_penalty_weight=0.25,
+        racket_cycle_vxy_soft_limit_m_s=0.060,
+        racket_cycle_vxy_penalty_scale_m_s=0.150,
+        hit_cycle_min_previous_hits=1,
+        hit_cycle_racket_xy_path_penalty_weight=0.50,
+        hit_cycle_racket_xy_path_deadband_m=0.012,
+        hit_cycle_racket_xy_path_scale_m=0.040,
+        hit_cycle_racket_xy_area_penalty_weight=0.25,
+        hit_cycle_racket_xy_area_deadband_m2=0.00015,
+        hit_cycle_racket_xy_area_scale_m2=0.00050,
+    )
+    result[0] = replace(
+        impact,
+        cfg=impact_cfg,
+        notes=(
+            "Retain contact and final-120-ms braking rewards, and add half-"
+            "strength inter-hit XY speed/path/area shaping so a circular "
+            "recovery cannot recreate horizontal speed at the next impact."
+        ),
+    )
+    return result
+
+
+def _sport_taskspace_racket_xy_polish_v4_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Constrain the autonomous release hit without changing later strokes."""
+
+    result = _sport_taskspace_racket_xy_polish_v3_stages(stages)
+    shaped: list[CurriculumStage] = []
+    for index, stage in enumerate(result):
+        cfg = replace(stage.cfg, hit_vxy_apply_from_first_hit=True)
+        shaped.append(replace(stage, cfg=cfg))
+    impact = shaped[0]
+    shaped[0] = replace(
+        impact,
+        cfg=replace(
+            impact.cfg,
+            first_hit_stationary_penalty_weight=4.0,
+            first_hit_stationary_alignment_sigma_m=0.05,
+            first_hit_stationary_max_rel_height_m=0.16,
+            first_hit_stationary_soft_limit_m_s=0.030,
+            first_hit_stationary_penalty_scale_m_s=0.070,
+        ),
+        notes=(
+            "Retain weak cycle shaping; apply outgoing ball-vxy shaping from "
+            "the autonomous lift hit and keep a centered pre-lift racket "
+            "laterally stationary until the first hit is established."
+        ),
+    )
+    return shaped
+
+
+def _sport_taskspace_racket_xy_polish_v5_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Suppress the first three post-reset cycles without limiting steady state."""
+
+    result = _sport_taskspace_racket_xy_polish_v4_stages(stages)
+    shaped = [
+        replace(
+            stage,
+            cfg=replace(
+                stage.cfg,
+                early_cycle_penalty_hit_count=3,
+                early_cycle_penalty_multiplier=1.5,
+            ),
+        )
+        for stage in result
+    ]
+    shaped[0] = replace(
+        shaped[0],
+        cfg=replace(shaped[0].cfg, early_cycle_penalty_multiplier=2.0),
+        notes=(
+            "Retain first-hit and weak cycle shaping; double only the cycle "
+            "speed/path/area penalties during the first three post-reset "
+            "cycles, then return exactly to the steady-state weights."
+        ),
+    )
+    return shaped
+
+
+def _sport_taskspace_racket_xy_polish_v6_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Match the real release gate by settling policy/actuator state first."""
+
+    result = _sport_taskspace_racket_xy_polish_v5_stages(stages)
+    return [
+        replace(
+            stage,
+            cfg=replace(stage.cfg, racket_launch_hold_time_s=0.30),
+            notes=(
+                stage.notes
+                + " Hold the centered launch ball on the moving racket for "
+                "0.30 s before release so delayed actuator and history state "
+                "reach the same settled condition as the real release gate."
+            ),
+        )
+        for stage in result
+    ]
+
+
+def _sport_taskspace_racket_xy_polish_v7_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Reject unsafe contact events without changing the launch dynamics."""
+
+    result = _sport_taskspace_racket_xy_polish_v5_stages(stages)
+    shaped: list[CurriculumStage] = []
+    for stage_index, stage in enumerate(result):
+        if stage_index == 0:
+            threshold = 0.16
+            min_previous_hits = 1
+            note = (
+                " Terminate recurrent hits above 0.16 m/s physical racket XY "
+                "speed; keep the autonomous lift exempt until acquisition is "
+                "stable, while its existing first-hit reward remains active."
+            )
+        elif stage_index == 1:
+            threshold = 0.12
+            min_previous_hits = 0
+            note = (
+                " Tighten the contact-event constraint to 0.12 m/s and apply "
+                "it to every hit after the low-vxy acquisition stage passes."
+            )
+        else:
+            threshold = 0.10
+            min_previous_hits = 0
+            note = (
+                " Keep a 0.10 m/s per-hit contact safety ceiling while later "
+                "height and view objectives are introduced."
+            )
+        shaped.append(
+            replace(
+                stage,
+                cfg=replace(
+                    stage.cfg,
+                    racket_launch_hold_time_s=0.0,
+                    hit_racket_vxy_constraint_threshold_m_s=threshold,
+                    hit_racket_vxy_constraint_min_previous_hits=min_previous_hits,
+                    hit_racket_vxy_constraint_penalty=12.0,
+                ),
+                notes=stage.notes + note,
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_racket_xy_polish_v8_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Brake earlier on descent without turning bad contacts into sparse failure."""
+
+    result = _sport_taskspace_racket_xy_polish_v5_stages(stages)
+    shaped: list[CurriculumStage] = []
+    for stage_index, stage in enumerate(result):
+        strict = stage_index >= 3
+        shaped.append(
+            replace(
+                stage,
+                cfg=replace(
+                    stage.cfg,
+                    racket_launch_hold_time_s=0.0,
+                    hit_racket_vxy_constraint_threshold_m_s=0.0,
+                    hit_racket_vxy_constraint_penalty=0.0,
+                    approach_racket_vxy_penalty_weight=3.0,
+                    approach_racket_vxy_time_window_s=0.24,
+                    approach_racket_vxy_alignment_sigma_m=0.18,
+                    approach_racket_vxy_soft_limit_m_s=(
+                        0.025 if strict else (0.035 if stage_index == 0 else 0.030)
+                    ),
+                    approach_racket_vxy_penalty_scale_m_s=0.070,
+                ),
+                notes=(
+                    stage.notes
+                    + " Replace sparse contact termination with a continuous "
+                    "descent-phase XY-speed barrier over the final 240 ms. "
+                    "The wider 0.18 m alignment kernel preserves corrective "
+                    "gradient before the 40--55 ms delayed actuator can brake."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_racket_xy_polish_v9_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Concentrate the validated descent barrier on reset-transient hits."""
+
+    result = _sport_taskspace_racket_xy_polish_v8_stages(stages)
+    return [
+        replace(
+            stage,
+            cfg=replace(
+                stage.cfg,
+                early_approach_penalty_hit_count=3,
+                early_approach_penalty_multiplier=3.0,
+            ),
+            notes=(
+                stage.notes
+                + " Triple only the descent-phase braking barrier before the "
+                "first three counted hits; restore nominal weight afterward."
+            ),
+        )
+        for stage in result
+    ]
+
+
+def _sport_taskspace_racket_xy_polish_v10_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Keep approach-braking gradient beyond the old quadratic cap."""
+
+    result = _sport_taskspace_racket_xy_polish_v9_stages(stages)
+    return [
+        replace(
+            stage,
+            cfg=replace(stage.cfg, approach_racket_vxy_linear_tail=True),
+            notes=(
+                stage.notes
+                + " Use a C1-continuous linear tail beyond normalized excess "
+                "2 so reset-transient speeds above about 0.175 m/s retain "
+                "corrective gradient instead of saturating."
+            ),
+        )
+        for stage in result
+    ]
+
+
+def _sport_taskspace_racket_xy_polish_v11_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Remove the two remaining launch00 loopholes found by DR validation.
+
+    The autonomous lift hit never enters the descent-only approach barrier,
+    and its dedicated stationary penalty historically saturated.  Give that
+    term the same non-saturating tail as v10's approach barrier.  Also use the
+    already-planned full cycle objective in launch00 and gate progression on
+    path/area/cycle speed, so contact braking cannot coexist with an XY loop.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v10_stages(stages)
+    impact = result[0]
+    impact_cfg = replace(
+        impact.cfg,
+        first_hit_stationary_linear_tail=True,
+        racket_cycle_vxy_penalty_weight=0.50,
+        hit_cycle_racket_xy_path_penalty_weight=1.00,
+        hit_cycle_racket_xy_area_penalty_weight=0.50,
+    )
+    result[0] = replace(
+        impact,
+        cfg=impact_cfg,
+        max_recent_hit_cycle_racket_xy_path_excess_m=0.030,
+        max_recent_hit_cycle_racket_xy_area_m2=0.00018,
+        max_recent_mean_racket_cycle_vxy=0.120,
+        notes=(
+            impact.notes
+            + " Keep corrective gradient on the autonomous first lift above "
+            "0.17 m/s; use full cycle speed/path/area shaping immediately and "
+            "require those constraints before leaving launch00."
+        ),
+    )
+    return result
+
+
+def _sport_taskspace_racket_xy_polish_v12_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Strengthen the near-target gradient on inter-hit XY motion.
+
+    Deterministic DR validation after 40 v11 updates passed impact-speed gates
+    but plateaued just above the path, area, and cycle-speed gates.  The old
+    cycle scale and area deadband made their gradient weak exactly around those
+    thresholds.  Keep the same curriculum and objectives while sharpening the
+    continuous barrier, and carry it through every later stage to prevent
+    regression when observation, height, and view difficulty are introduced.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v11_stages(stages)
+    shaped: list[CurriculumStage] = []
+    for stage in result:
+        cfg = replace(
+            stage.cfg,
+            racket_cycle_vxy_penalty_weight=max(
+                0.75, float(stage.cfg.racket_cycle_vxy_penalty_weight)
+            ),
+            racket_cycle_vxy_soft_limit_m_s=min(
+                0.040, float(stage.cfg.racket_cycle_vxy_soft_limit_m_s)
+            ),
+            racket_cycle_vxy_penalty_scale_m_s=min(
+                0.100, float(stage.cfg.racket_cycle_vxy_penalty_scale_m_s)
+            ),
+            hit_cycle_racket_xy_path_penalty_weight=max(
+                1.25, float(stage.cfg.hit_cycle_racket_xy_path_penalty_weight)
+            ),
+            hit_cycle_racket_xy_path_deadband_m=min(
+                0.008, float(stage.cfg.hit_cycle_racket_xy_path_deadband_m)
+            ),
+            hit_cycle_racket_xy_path_scale_m=min(
+                0.030, float(stage.cfg.hit_cycle_racket_xy_path_scale_m)
+            ),
+            hit_cycle_racket_xy_area_penalty_weight=max(
+                0.75, float(stage.cfg.hit_cycle_racket_xy_area_penalty_weight)
+            ),
+            hit_cycle_racket_xy_area_deadband_m2=min(
+                0.00006, float(stage.cfg.hit_cycle_racket_xy_area_deadband_m2)
+            ),
+            hit_cycle_racket_xy_area_scale_m2=min(
+                0.00030, float(stage.cfg.hit_cycle_racket_xy_area_scale_m2)
+            ),
+        )
+        shaped.append(
+            replace(
+                stage,
+                cfg=cfg,
+                notes=(
+                    stage.notes
+                    + " Sharpen the near-gate continuous cycle-speed, path, "
+                    "and enclosed-area barriers validated as too weak in v11."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_racket_xy_polish_v13_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Remove the reset-to-limit-cycle XY drift found by ordinal diagnosis.
+
+    With the original reset posture the deterministic policy takes roughly
+    eight hits to migrate 12 cm in racket x toward its stable limit cycle.
+    The historical Gaussian anchor objective is saturated throughout most of
+    that migration and therefore supplies almost no restoring gradient.  Add
+    a non-saturating, early-only task-space anchor barrier while preserving
+    the reset posture, full workspace, actuator model, and all later stages.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v12_stages(stages)
+    return [
+        replace(
+            stage,
+            cfg=replace(
+                stage.cfg,
+                early_racket_xy_anchor_penalty_weight=2.0,
+                early_racket_xy_anchor_hit_count=3,
+                early_racket_xy_anchor_deadband_m=0.015,
+                early_racket_xy_anchor_scale_m=0.040,
+            ),
+            notes=(
+                stage.notes
+                + " Keep a non-saturating task-space anchor gradient through "
+                "the first three hits so the reset posture cannot drift 12 cm "
+                "toward a distant limit cycle. This is reward-only and turns "
+                "off afterward, preserving unrestricted recovery motion."
+            ),
+        )
+        for stage in result
+    ]
+
+
+def _sport_taskspace_racket_xy_polish_v14_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Make positive hit credit conditional on low lateral impact speed.
+
+    Ordinal evaluation showed that the independent combo bonus remained much
+    larger than the low-vxy objective, so a sweeping hit was still valuable.
+    Preserve a ten-percent sparse-learning floor, but grant full hit/center/
+    height credit only as physical contact-edge racket vxy approaches zero.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v13_stages(stages)
+    return [
+        replace(
+            stage,
+            cfg=replace(
+                stage.cfg,
+                early_racket_xy_anchor_penalty_weight=1.0,
+                hit_racket_vxy_penalty_weight=max(
+                    1.0, float(stage.cfg.hit_racket_vxy_penalty_weight)
+                ),
+                hit_racket_vxy_quality_gate_sigma_m_s=0.10,
+                hit_racket_vxy_quality_gate_floor=0.10,
+            ),
+            notes=(
+                stage.notes
+                + " Gate positive hit, center, and height credit by the "
+                "physical contact-edge racket XY speed. Retain a 0.10 floor "
+                "for acquisition, but remove the quality-independent combo "
+                "loophole that made sweeping contacts locally optimal."
+            ),
+        )
+        for stage in result
+    ]
+
+
+def _sport_taskspace_racket_xy_polish_v15_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Use existing pre-height stages as a contact-speed constraint ladder.
+
+    Roughly 35 percent of the current DR cohort already produces a first hit
+    below 0.30 m/s, so this threshold retains a meaningful on-policy feasible
+    set while ending the long-return advantage of a sweeping contact.  The
+    next three already-existing low-vxy/observation stages tighten the ceiling;
+    no extra height or view stage is introduced before the first objective.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v14_stages(stages)
+    thresholds = (0.30, 0.20, 0.13, 0.10)
+    shaped: list[CurriculumStage] = []
+    for stage_index, stage in enumerate(result):
+        threshold = thresholds[min(stage_index, len(thresholds) - 1)]
+        shaped.append(
+            replace(
+                stage,
+                cfg=replace(
+                    stage.cfg,
+                    hit_racket_vxy_constraint_threshold_m_s=threshold,
+                    hit_racket_vxy_constraint_min_previous_hits=0,
+                    hit_racket_vxy_constraint_penalty=15.0,
+                ),
+                notes=(
+                    stage.notes
+                    + f" End a contact above {threshold:.2f} m/s physical "
+                    "racket XY speed, including the autonomous first hit. "
+                    "Retain the continuous penalties and quality gate so the "
+                    "constraint boundary has dense approach credit."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_racket_xy_polish_v16_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Turn the contact guard into an effective low-XY-speed curriculum.
+
+    Deterministic ordinal evaluation of v15 showed that its 0.30 m/s first
+    ceiling accepted 99.5 percent of contacts and therefore supplied almost
+    no selection pressure.  The second and third contacts remained the main
+    loophole, while the 0.10-floor quality gate still paid substantial hit
+    credit for a sweeping contact.  Start from a data-supported 0.20 m/s
+    feasible boundary, tighten it without adding stages, and make low-speed
+    motion dominate hit credit throughout the first three cycles.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v15_stages(stages)
+    thresholds = (0.20, 0.15, 0.12, 0.10)
+    shaped: list[CurriculumStage] = []
+    for stage_index, stage in enumerate(result):
+        threshold = thresholds[min(stage_index, len(thresholds) - 1)]
+        cfg = replace(
+            stage.cfg,
+            hit_racket_vxy_constraint_threshold_m_s=threshold,
+            hit_racket_vxy_constraint_penalty=25.0,
+            hit_racket_vxy_quality_gate_sigma_m_s=0.070,
+            hit_racket_vxy_quality_gate_floor=0.020,
+            hit_racket_vxy_soft_limit_m_s=min(
+                0.020, float(stage.cfg.hit_racket_vxy_soft_limit_m_s)
+            ),
+            hit_racket_vxy_penalty_weight=max(
+                2.0, float(stage.cfg.hit_racket_vxy_penalty_weight)
+            ),
+            hit_racket_vxy_penalty_scale_m_s=min(
+                0.070, float(stage.cfg.hit_racket_vxy_penalty_scale_m_s)
+            ),
+            racket_cycle_vxy_penalty_weight=max(
+                2.0, float(stage.cfg.racket_cycle_vxy_penalty_weight)
+            ),
+            racket_cycle_vxy_soft_limit_m_s=min(
+                0.025, float(stage.cfg.racket_cycle_vxy_soft_limit_m_s)
+            ),
+            racket_cycle_vxy_penalty_scale_m_s=min(
+                0.080, float(stage.cfg.racket_cycle_vxy_penalty_scale_m_s)
+            ),
+            early_cycle_penalty_hit_count=max(
+                3, int(stage.cfg.early_cycle_penalty_hit_count)
+            ),
+            early_cycle_penalty_multiplier=max(
+                3.0, float(stage.cfg.early_cycle_penalty_multiplier)
+            ),
+            hit_cycle_min_previous_hits=0,
+            hit_cycle_racket_xy_path_penalty_weight=max(
+                2.0, float(stage.cfg.hit_cycle_racket_xy_path_penalty_weight)
+            ),
+            hit_cycle_racket_xy_area_penalty_weight=max(
+                1.5, float(stage.cfg.hit_cycle_racket_xy_area_penalty_weight)
+            ),
+        )
+        shaped.append(
+            replace(
+                stage,
+                cfg=cfg,
+                notes=(
+                    stage.notes
+                    + f" Use the measured-feasible {threshold:.2f} m/s contact "
+                    "ceiling, nearly zero sweeping-hit credit, and dominant "
+                    "dense/path/area shaping from the first complete cycle."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_racket_xy_polish_v17_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Prevent the launch hits from creating the next lateral chase.
+
+    Deterministic v16 evaluation found that the second-hit racket speed stayed
+    at 0.158 m/s because the first two hits still launched the ball laterally
+    at roughly 0.13--0.15 m/s.  Positive hit credit was gated only by racket
+    speed, so a stationary but sideways-launching contact remained valuable.
+    Gate all positive hit-quality credit by outgoing ball vxy as well and
+    emphasize the first three hit-vxy objectives that seed the limit cycle.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v16_stages(stages)
+    return [
+        replace(
+            stage,
+            cfg=replace(
+                stage.cfg,
+                ball_vxy_penalty_weight=max(
+                    0.25, float(stage.cfg.ball_vxy_penalty_weight)
+                ),
+                hit_vxy_penalty_weight=max(
+                    1.20, float(stage.cfg.hit_vxy_penalty_weight)
+                ),
+                hit_vxy_zero_reward_weight=max(
+                    1.50, float(stage.cfg.hit_vxy_zero_reward_weight)
+                ),
+                hit_vxy_quality_gate_sigma_m_s=0.080,
+                hit_vxy_quality_gate_floor=0.050,
+                early_hit_vxy_penalty_hit_count=3,
+                early_hit_vxy_penalty_multiplier=3.0,
+                early_hit_vxy_zero_reward_multiplier=2.0,
+            ),
+            notes=(
+                stage.notes
+                + " Gate hit/center/height credit jointly by outgoing ball "
+                "and physical racket XY speed. Triple the first-three-hit "
+                "ball-vxy penalty and double their zero-vxy credit so the "
+                "policy removes the cause of the following lateral chase."
+            ),
+        )
+        for stage in result
+    ]
+
+
+def _sport_taskspace_racket_xy_polish_v18_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Bridge the reset workspace before restoring the full target range.
+
+    V16's first-contact speed is bimodal: about two thirds of deterministic
+    DR resets are already nearly stationary, while the high-speed branch is
+    concentrated at positive/high x-z reset targets.  Strengthening rewards
+    globally in v17 damaged survival without moving that branch.  Train the
+    existing correct central behavior first, then expand x/y/z support over
+    the next existing stages; no new task objective or controller is added.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v17_stages(stages)
+    thresholds = (0.20, 0.18, 0.15, 0.12, 0.10)
+    shaped: list[CurriculumStage] = []
+    for stage_index, stage in enumerate(result):
+        cfg = stage.cfg
+        if stage_index == 0:
+            cfg = replace(
+                cfg,
+                episode_target_x_range_m=(-0.030, 0.030),
+                episode_target_y_range_m=(-0.025, 0.025),
+                episode_racket_anchor_z_range_m=(-0.015, 0.000),
+            )
+        elif stage_index == 1:
+            cfg = replace(
+                cfg,
+                episode_target_x_range_m=(-0.060, 0.060),
+                episode_target_y_range_m=(-0.050, 0.050),
+                episode_racket_anchor_z_range_m=(-0.025, 0.020),
+            )
+        threshold = thresholds[min(stage_index, len(thresholds) - 1)]
+        cfg = replace(cfg, hit_racket_vxy_constraint_threshold_m_s=threshold)
+        shaped.append(
+            replace(
+                stage,
+                cfg=cfg,
+                notes=(
+                    stage.notes
+                    + " Use a measured reset-workspace bridge: central "
+                    "targets in stage 0, medium x/y/z support in stage 1, "
+                    "then the original full support. Tighten contact speed "
+                    f"to {threshold:.2f} m/s at this stage."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_racket_xy_polish_v19_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Train the recurrent falling-ball contact before autonomous launch.
+
+    V18 fixed much of the reset-to-first-hit transient but left the second
+    hit near 0.17 m/s.  That contact is the first true descending-ball
+    interception and receives weak on-policy coverage because failures end
+    immediately.  Reuse stage 0 as a centered zero-vxy falling-contact
+    curriculum, then restore racket launch in stage 1 and the original full
+    support in later stages.  This changes no controller and adds no stage.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v18_stages(stages)
+    first = result[0]
+    first_cfg = replace(
+        first.cfg,
+        ball_reset_mode="falling_contact",
+        falling_reset_time_to_contact_range_s=(0.18, 0.26),
+        falling_reset_apex_height_range_m=(0.18, 0.24),
+        falling_reset_vxy_max=0.0,
+        falling_reset_contact_xy_jitter=0.006,
+        falling_reset_contact_rel_height=0.065,
+        falling_reset_min_downward_speed=0.12,
+    )
+    result[0] = replace(
+        first,
+        name="racketxy00_falling_contact_lock",
+        cfg=first_cfg,
+        notes=(
+            first.notes
+            + " Start from a centered descending ball with zero horizontal "
+            "speed so the policy repeatedly trains the previously sparse "
+            "second-hit interception. Stage 1 restores autonomous launch."
+        ),
+    )
+    return result
+
+
+def _sport_taskspace_racket_xy_polish_v20_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Make the first low-vxy interception physically stationary.
+
+    V19 placed the nominal falling-ball contact at the episode target rather
+    than at the reset racket position.  Its +/-30 mm x and +/-25 mm y target
+    range therefore required a lateral chase within 0.18--0.26 s, directly
+    conflicting with the contact-vxy objective.  Start with an exactly
+    centered vertical descent and use the measured-feasible 0.14 m/s contact
+    ceiling; later existing stages restore the workspace curriculum.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v19_stages(stages)
+    first = result[0]
+    first_cfg = replace(
+        first.cfg,
+        episode_target_x_range_m=(0.0, 0.0),
+        episode_target_y_range_m=(0.0, 0.0),
+        falling_reset_contact_xy_jitter=0.0,
+        falling_reset_vxy_max=0.0,
+        hit_racket_vxy_constraint_threshold_m_s=0.14,
+        approach_racket_vxy_penalty_weight=max(
+            6.0, float(first.cfg.approach_racket_vxy_penalty_weight)
+        ),
+        first_hit_stationary_penalty_weight=max(
+            8.0, float(first.cfg.first_hit_stationary_penalty_weight)
+        ),
+    )
+    result[0] = replace(
+        first,
+        name="racketxy00_vertical_contact_lock",
+        cfg=first_cfg,
+        notes=(
+            first.notes
+            + " Remove the contradictory target-offset chase: the first "
+            "falling contact is exactly above the current racket with zero "
+            "horizontal ball speed. Terminate above the empirically feasible "
+            "0.14 m/s contact ceiling and strengthen only the existing dense "
+            "approach/stationary penalties."
+        ),
+    )
+    return result
+
+
+def _sport_taskspace_racket_xy_polish_v21_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Reject contacts that create the next horizontal chase.
+
+    V20 reduced first-contact racket speed by removing the contradictory
+    target offset, but a roughly 0.12 m/s racket contact still launched the
+    ball at about 0.12 m/s and the next hit at 0.38 m/s.  Continuous shaping
+    did not move this fixed point.  Use event feasibility boundaries for both
+    sides of the contact while retaining the existing dense approach reward.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v20_stages(stages)
+    racket_thresholds = (0.10, 0.12, 0.10, 0.08, 0.06)
+    ball_thresholds = (0.15, 0.12, 0.10, 0.08, 0.06)
+    shaped: list[CurriculumStage] = []
+    for stage_index, stage in enumerate(result):
+        racket_threshold = racket_thresholds[
+            min(stage_index, len(racket_thresholds) - 1)
+        ]
+        ball_threshold = ball_thresholds[
+            min(stage_index, len(ball_thresholds) - 1)
+        ]
+        cfg = replace(
+            stage.cfg,
+            hit_racket_vxy_constraint_threshold_m_s=racket_threshold,
+            hit_vxy_constraint_threshold_m_s=ball_threshold,
+            hit_vxy_constraint_min_previous_hits=0,
+            hit_vxy_constraint_penalty=25.0,
+        )
+        shaped.append(
+            replace(
+                stage,
+                cfg=cfg,
+                notes=(
+                    stage.notes
+                    + f" Reject a contact above {racket_threshold:.2f} m/s "
+                    "physical racket XY speed or above "
+                    f"{ball_threshold:.2f} m/s outgoing ball XY speed. "
+                    "These are training-time event boundaries only; dense "
+                    "low-vxy rewards remain active on the feasible side."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_racket_xy_polish_v22_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Use physical-contact pose and a feasible constraint homotopy.
+
+    Contact-edge diagnosis found that second-hit outgoing ball vxy correlates
+    0.87 with true impact tilt.  The historical sparse pose terms were
+    measured at delayed hit confirmation, after the racket had reoriented.
+    V21 also imposed a 0.15 m/s ball ceiling when no second-hit sample jointly
+    satisfied it, eliminating the trajectories needed to learn.  Start from
+    empirically feasible pose/motion boundaries and tighten them in the
+    existing stages without adding a controller or deployment limiter.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v20_stages(stages)
+    racket_thresholds = (0.12, 0.10, 0.08, 0.07, 0.06)
+    ball_thresholds = (0.30, 0.22, 0.15, 0.10, 0.06)
+    tilt_limits_deg = (5.0, 4.0, 3.5, 3.0, 2.5)
+    angular_gate_sigmas = (1.50, 1.25, 1.00, 0.80, 0.60)
+    shaped: list[CurriculumStage] = []
+    for stage_index, stage in enumerate(result):
+        ladder_index = min(stage_index, len(ball_thresholds) - 1)
+        racket_threshold = racket_thresholds[ladder_index]
+        ball_threshold = ball_thresholds[ladder_index]
+        tilt_limit_deg = tilt_limits_deg[ladder_index]
+        tilt_target_deg = max(1.5, tilt_limit_deg - 1.0)
+        cfg = replace(
+            stage.cfg,
+            hit_racket_vxy_constraint_threshold_m_s=racket_threshold,
+            hit_vxy_constraint_threshold_m_s=ball_threshold,
+            hit_vxy_constraint_min_previous_hits=0,
+            hit_vxy_constraint_penalty=25.0,
+            hit_racket_up_cos_constraint_min=float(
+                np.cos(np.deg2rad(tilt_limit_deg))
+            ),
+            hit_racket_up_cos_constraint_penalty=20.0,
+            hit_flatness_target_cos=float(
+                np.cos(np.deg2rad(tilt_target_deg))
+            ),
+            hit_flatness_sigma=0.0015,
+            hit_flatness_excess_penalty_weight=max(
+                5.0, float(stage.cfg.hit_flatness_excess_penalty_weight)
+            ),
+            contact_flatness_penalty_weight=max(
+                2.0, float(stage.cfg.contact_flatness_penalty_weight)
+            ),
+            hit_racket_angular_speed_penalty_weight=max(
+                1.5,
+                float(stage.cfg.hit_racket_angular_speed_penalty_weight),
+            ),
+            hit_racket_angular_speed_soft_limit_rad_s=min(
+                0.90,
+                float(stage.cfg.hit_racket_angular_speed_soft_limit_rad_s),
+            ),
+            hit_racket_angular_speed_scale_rad_s=min(
+                0.80,
+                float(stage.cfg.hit_racket_angular_speed_scale_rad_s),
+            ),
+            hit_pose_quality_gate_floor=0.05,
+            hit_angular_speed_quality_gate_sigma_rad_s=(
+                angular_gate_sigmas[ladder_index]
+            ),
+        )
+        shaped.append(
+            replace(
+                stage,
+                cfg=cfg,
+                notes=(
+                    stage.notes
+                    + " Evaluate flatness, angular speed, center offset, and "
+                    "racket vxy at the physical contact edge. Gate positive "
+                    "credit by contact pose quality. Use feasible stage "
+                    f"limits: racket {racket_threshold:.2f} m/s, outgoing "
+                    f"ball {ball_threshold:.2f} m/s, tilt {tilt_limit_deg:.1f} "
+                    "deg, then tighten in later existing stages."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_racket_xy_polish_v23_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Restore early braking credit without dropping pose/cycle quality.
+
+    V22 reduced true contact tilt and cycle path/area, but first-hit racket
+    vxy rose because the late sparse pose/cycle terms outweighed the short
+    stationary window.  Extend and strengthen the existing dense first-hit
+    and descending-approach barriers so the delayed actuator receives a
+    braking gradient before contact.  Keep every physical contact gate and
+    circle penalty from V22 unchanged.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v22_stages(stages)
+    shaped: list[CurriculumStage] = []
+    for stage_index, stage in enumerate(result):
+        early_scale = 1.0 if stage_index == 0 else 0.65
+        cfg = replace(
+            stage.cfg,
+            first_hit_stationary_penalty_weight=max(
+                32.0 * early_scale,
+                float(stage.cfg.first_hit_stationary_penalty_weight),
+            ),
+            first_hit_stationary_max_rel_height_m=max(
+                0.35,
+                float(stage.cfg.first_hit_stationary_max_rel_height_m),
+            ),
+            first_hit_stationary_soft_limit_m_s=min(
+                0.020,
+                float(stage.cfg.first_hit_stationary_soft_limit_m_s),
+            ),
+            first_hit_stationary_penalty_scale_m_s=min(
+                0.050,
+                float(stage.cfg.first_hit_stationary_penalty_scale_m_s),
+            ),
+            approach_racket_vxy_penalty_weight=max(
+                12.0 * early_scale,
+                float(stage.cfg.approach_racket_vxy_penalty_weight),
+            ),
+            approach_racket_vxy_time_window_s=max(
+                0.35,
+                float(stage.cfg.approach_racket_vxy_time_window_s),
+            ),
+        )
+        shaped.append(
+            replace(
+                stage,
+                cfg=cfg,
+                notes=(
+                    stage.notes
+                    + " Start the dense first-contact XY braking objective "
+                    "at 0.35 m relative height and raise it to the measured "
+                    "pose/cycle reward scale. Preserve all true-contact pose, "
+                    "outgoing-ball, path, and area constraints from V22."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_racket_xy_polish_v24_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Separate first-contact learning from recurrent juggling returns.
+
+    V22/V23 experiments showed that a joint first-hit/cycle objective reduces
+    later cycle path and tilt by sacrificing first-contact XY speed.  End the
+    first stage successfully after one counted hit so later survival reward
+    cannot compensate for a horizontally moving first contact.  Reuse stage 1
+    for recurrent centered falling-ball contacts and restore autonomous launch
+    from stage 2 onward; no deployment controller or task-space limiter is
+    introduced.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v22_stages(stages)
+    first = result[0]
+    first_cfg = replace(
+        first.cfg,
+        terminate_after_confirmed_hits=1,
+        hit_racket_vxy_constraint_threshold_m_s=0.14,
+        hit_vxy_constraint_threshold_m_s=0.14,
+        hit_racket_up_cos_constraint_min=float(np.cos(np.deg2rad(6.0))),
+        first_hit_stationary_penalty_weight=max(
+            32.0, float(first.cfg.first_hit_stationary_penalty_weight)
+        ),
+        first_hit_stationary_max_rel_height_m=max(
+            0.35, float(first.cfg.first_hit_stationary_max_rel_height_m)
+        ),
+        approach_racket_vxy_penalty_weight=max(
+            12.0, float(first.cfg.approach_racket_vxy_penalty_weight)
+        ),
+        approach_racket_vxy_time_window_s=max(
+            0.35, float(first.cfg.approach_racket_vxy_time_window_s)
+        ),
+    )
+    result[0] = replace(
+        first,
+        name="racketxy00_first_contact_only",
+        cfg=first_cfg,
+        target_mean_hits=0.90,
+        target_mean_len_frac=0.0,
+        target_hit1_rate=0.90,
+        target_hit3_rate=None,
+        target_hit12_rate=None,
+        target_mean_hits_ge3=None,
+        target_min_hit_interval_s=None,
+        target_max_hit_interval_s=None,
+        target_episode_truncation_rate=None,
+        max_recent_mean_hit_vxy=0.09,
+        max_recent_rms_hit_vxy=0.11,
+        max_recent_mean_hit_racket_vxy=0.08,
+        max_recent_rms_hit_racket_vxy=0.10,
+        target_racket_up_cos=float(np.cos(np.deg2rad(4.0))),
+        max_recent_hit_racket_angular_speed_rad_s=1.25,
+        notes=(
+            first.notes
+            + " End successfully after one confirmed hit. Advance only when "
+            "the isolated first contact has <=0.08 m/s mean physical racket "
+            "XY speed, <=0.09 m/s mean outgoing ball XY speed, <=4 deg mean "
+            "tilt, and <=1.25 rad/s mean impact angular speed."
+        ),
+    )
+
+    if len(result) > 1:
+        second = result[1]
+        second_cfg = replace(
+            second.cfg,
+            ball_reset_mode="falling_contact",
+            episode_target_x_range_m=(0.0, 0.0),
+            episode_target_y_range_m=(0.0, 0.0),
+            falling_reset_time_to_contact_range_s=(0.18, 0.26),
+            falling_reset_apex_height_range_m=(0.18, 0.24),
+            falling_reset_vxy_max=0.0,
+            falling_reset_contact_xy_jitter=0.0,
+            falling_reset_contact_rel_height=0.065,
+            terminate_after_confirmed_hits=0,
+        )
+        result[1] = replace(
+            second,
+            name="racketxy01_recurrent_vertical_contact",
+            cfg=second_cfg,
+            notes=(
+                second.notes
+                + " Restore recurrent multi-hit credit on centered vertical "
+                "falling resets. Autonomous racket launch resumes in stage 2."
+            ),
+        )
+    return result
+
+
+def _sport_taskspace_racket_xy_polish_v25_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Remove the contact-pose dead zone exposed by the V24 experiment.
+
+    V24 isolated first-contact credit and reduced racket translation, but its
+    inherited four-degree flatness target and 0.9 rad/s angular-speed soft
+    threshold let the policy settle near 4.3 degrees and 1.30 rad/s.  That
+    pose creates horizontal outgoing velocity even as racket XY translation
+    falls.  Tighten only physical-contact pose shaping in the isolated stage;
+    keep its reset geometry, translation constraints, optimizer, and plant.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v24_stages(stages)
+    first = result[0]
+    first_cfg = replace(
+        first.cfg,
+        hit_racket_up_cos_constraint_min=float(np.cos(np.deg2rad(4.5))),
+        hit_flatness_target_cos=float(np.cos(np.deg2rad(1.5))),
+        hit_flatness_sigma=0.0015,
+        hit_flatness_excess_penalty_weight=max(
+            8.0, float(first.cfg.hit_flatness_excess_penalty_weight)
+        ),
+        contact_flatness_penalty_weight=max(
+            3.0, float(first.cfg.contact_flatness_penalty_weight)
+        ),
+        hit_racket_angular_speed_penalty_weight=max(
+            4.0, float(first.cfg.hit_racket_angular_speed_penalty_weight)
+        ),
+        hit_racket_angular_speed_soft_limit_rad_s=0.35,
+        hit_racket_angular_speed_scale_rad_s=0.60,
+        hit_angular_speed_quality_gate_sigma_rad_s=0.80,
+        racket_flatness_penalty_weight=max(
+            0.8, float(first.cfg.racket_flatness_penalty_weight)
+        ),
+        racket_flatness_target_cos=float(np.cos(np.deg2rad(2.0))),
+        racket_flatness_sigma=0.010,
+    )
+    result[0] = replace(
+        first,
+        name="racketxy00_first_contact_pose_lock",
+        cfg=first_cfg,
+        notes=(
+            first.notes
+            + " Remove the inherited contact-pose dead zone: shape toward "
+            "1.5 deg at physical impact, terminate above 4.5 deg, penalize "
+            "impact angular speed above 0.35 rad/s, and maintain a weak "
+            "dense two-degree flatness target before contact."
+        ),
+    )
+    return result
+
+
+def _sport_taskspace_racket_xy_polish_v26_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Deliver contact-pose gradients at the physical edge, not only later.
+
+    V25's deterministic improvement was real but small because its sparse
+    pose and racket-speed losses still arrive at delayed upward-hit
+    confirmation.  Duplicate those physical-edge losses at the contact edge;
+    confirmation rewards and hard feasibility boundaries remain unchanged.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v25_stages(stages)
+    first = result[0]
+    first_cfg = replace(
+        first.cfg,
+        contact_edge_pose_penalty_multiplier=1.5,
+        contact_edge_racket_vxy_penalty_multiplier=1.0,
+    )
+    result[0] = replace(
+        first,
+        name="racketxy00_first_contact_edge_credit",
+        cfg=first_cfg,
+        notes=(
+            first.notes
+            + " Apply 1.5x pose and 1.0x racket-XY copies immediately at "
+            "the physical contact edge, while retaining confirmation-time "
+            "quality rewards and event constraints."
+        ),
+    )
+    return result
+
+
+def _sport_taskspace_racket_xy_polish_v27_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Teach coordinated near-pure translation before physical contact.
+
+    Contact Jacobian analysis found large opposing J3/J6 velocities that
+    create the needed vertical stroke but leave substantial tilt angular
+    velocity and horizontal translation.  Sparse impact losses do not teach
+    the required coordination soon enough.  Add a continuous tilt-axis
+    angular-speed loss throughout the centered falling-contact episode while
+    retaining V25's feasible event constraints and no V26 edge duplicates.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v25_stages(stages)
+    first = result[0]
+    first_cfg = replace(
+        first.cfg,
+        racket_tilt_angular_speed_penalty_weight=max(
+            2.0, float(first.cfg.racket_tilt_angular_speed_penalty_weight)
+        ),
+        racket_tilt_angular_speed_soft_limit_rad_s=0.20,
+        racket_tilt_angular_speed_scale_rad_s=0.70,
+        contact_edge_pose_penalty_multiplier=0.0,
+        contact_edge_racket_vxy_penalty_multiplier=0.0,
+    )
+    result[0] = replace(
+        first,
+        name="racketxy00_vertical_translation_coordination",
+        cfg=first_cfg,
+        notes=(
+            first.notes
+            + " Add a dense tilt-axis angular-speed loss above 0.20 rad/s "
+            "during the centered approach so J3/J6 learn a near-pure "
+            "vertical task-space stroke instead of a rotating sweep."
+        ),
+    )
+    return result
+
+
+def _sport_taskspace_racket_xy_polish_v28_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Tighten first-contact feasibility only within measured support.
+
+    Deterministic V25 rollouts show that 43% of existing samples already meet
+    racket <=0.12 m/s and outgoing ball <=0.11 m/s jointly.  This provides a
+    feasible event-selection curriculum, unlike the earlier recurrent-hit
+    constraint that removed nearly all successful trajectories.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v25_stages(stages)
+    first = result[0]
+    first_cfg = replace(
+        first.cfg,
+        hit_racket_vxy_constraint_threshold_m_s=0.12,
+        hit_vxy_constraint_threshold_m_s=0.11,
+        hit_vxy_constraint_penalty=30.0,
+    )
+    result[0] = replace(
+        first,
+        name="racketxy00_measured_feasible_vxy_gate",
+        cfg=first_cfg,
+        notes=(
+            first.notes
+            + " Tighten to the measured-feasible first-contact boundary: "
+            "racket <=0.12 m/s and outgoing ball <=0.11 m/s; 43% of the V25 "
+            "deterministic population already satisfies both."
+        ),
+    )
+    return result
+
+
+def _sport_taskspace_racket_xy_polish_v29_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Prevent the V28 policy from trading racket translation for ball Vxy.
+
+    In deterministic V28 rollouts, 29.7% of first-hit samples already satisfy
+    racket <=0.11 m/s and outgoing ball <=0.09 m/s jointly.  Retaining this
+    measured support makes the tighter event gate a feasible continuation.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v28_stages(stages)
+    first = result[0]
+    first_cfg = replace(
+        first.cfg,
+        hit_racket_vxy_constraint_threshold_m_s=0.11,
+        hit_vxy_constraint_threshold_m_s=0.09,
+        hit_vxy_constraint_penalty=35.0,
+    )
+    result[0] = replace(
+        first,
+        name="racketxy00_joint_vxy_gate_tight",
+        cfg=first_cfg,
+        notes=(
+            first.notes
+            + " Close the observed V28 tradeoff by requiring racket <=0.11 "
+            "m/s and outgoing ball <=0.09 m/s; 29.7% of deterministic V28 "
+            "first-hit samples already satisfy both."
+        ),
+    )
+    return result
+
+
+def _sport_taskspace_racket_xy_polish_v30_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Constrain the tilted-contact mechanism behind outgoing ball Vxy.
+
+    V29 reduced racket translation but increased outgoing ball Vxy while the
+    contact tilt moved onto the inherited 4.5-degree boundary.  Deterministic
+    V28 data show 26.0% joint feasibility at the V28 speed limits plus a
+    3.5-degree contact limit, so this directly constrains the causal escape
+    route without removing the policy's successful support.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v28_stages(stages)
+    first = result[0]
+    first_cfg = replace(
+        first.cfg,
+        hit_racket_up_cos_constraint_min=float(np.cos(np.deg2rad(3.5))),
+        hit_racket_up_cos_constraint_penalty=30.0,
+    )
+    result[0] = replace(
+        first,
+        name="racketxy00_flat_contact_hard_gate",
+        cfg=first_cfg,
+        target_racket_up_cos=float(np.cos(np.deg2rad(3.0))),
+        notes=(
+            first.notes
+            + " Prevent the tilted-normal horizontal-impulse escape: hard "
+            "contact tilt <=3.5 deg and require <=3.0 deg before advance; "
+            "26.0% of deterministic V28 samples already satisfy this and "
+            "the retained V28 speed constraints jointly."
+        ),
+    )
+    return result
+
+
+def _sport_taskspace_racket_xy_polish_v31_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Move flat-contact credit into the delayed actuator's causal window.
+
+    V30's hard event terms contributed roughly -60 to -70 return per episode
+    while the continuous pre-contact flatness loss was below -0.1.  PPO clip
+    fractions repeatedly exceeded 0.5 and neither violation rate nor contact
+    tilt improved.  Keep every physical event boundary, but use bounded event
+    costs and deliver pose/tilt-speed gradients throughout the final approach.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v30_stages(stages)
+    first = result[0]
+    first_cfg = replace(
+        first.cfg,
+        hit_racket_vxy_constraint_penalty=8.0,
+        hit_vxy_constraint_penalty=8.0,
+        hit_racket_up_cos_constraint_penalty=8.0,
+        hit_flatness_excess_penalty_weight=2.0,
+        hit_racket_angular_speed_penalty_weight=1.0,
+        racket_flatness_penalty_weight=0.20,
+        racket_flatness_sigma=0.0025,
+        racket_tilt_angular_speed_soft_limit_rad_s=0.35,
+        racket_tilt_angular_speed_scale_rad_s=0.60,
+        approach_racket_flatness_penalty_weight=5.0,
+        approach_racket_tilt_speed_penalty_weight=2.0,
+    )
+    result[0] = replace(
+        first,
+        name="racketxy00_causal_flat_approach",
+        cfg=first_cfg,
+        notes=(
+            first.notes
+            + " Preserve all hard contact boundaries but cap each event cost "
+            "at a PPO-compatible scale. During the aligned final approach, "
+            "continuously penalize physical face tilt and tilt-axis angular "
+            "speed so the delayed action that causes impact receives credit."
+        ),
+    )
+    return result
+
+
+def _sport_taskspace_racket_xy_polish_v32_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Scale the verified approach terms to an episode-relevant magnitude.
+
+    V31 showed that both causal terms trigger correctly, but each averaged
+    only about -0.001 per environment step (-0.05 per episode).  A 20x scale
+    keeps their combined episode cost around -2 while leaving the event
+    boundaries, reset distribution, plant, and PPO settings unchanged.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v31_stages(stages)
+    first = result[0]
+    first_cfg = replace(
+        first.cfg,
+        approach_racket_flatness_penalty_weight=100.0,
+        approach_racket_tilt_speed_penalty_weight=40.0,
+    )
+    result[0] = replace(
+        first,
+        name="racketxy00_causal_flat_approach_scaled",
+        cfg=first_cfg,
+        notes=(
+            first.notes
+            + " Scale only the two measured causal approach terms by 20x, "
+            "from roughly -0.1 to roughly -2 combined return per episode."
+        ),
+    )
+    return result
+
+
+def _sport_taskspace_racket_xy_polish_v33_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Constrain physical contact-point speed rather than the racket center."""
+
+    result = _sport_taskspace_racket_xy_polish_v32_stages(stages)
+    first = result[0]
+    first_cfg = replace(
+        first.cfg,
+        hit_racket_vxy_measurement_mode="contact_point",
+        hit_racket_vxy_constraint_threshold_m_s=0.10,
+    )
+    result[0] = replace(
+        first,
+        name="racketxy00_contact_point_vxy",
+        cfg=first_cfg,
+        notes=(
+            first.notes
+            + " Measure and constrain horizontal speed at the projected "
+            "physical contact point, including omega cross r. Use a 0.10 m/s "
+            "hard boundary already met by 84.4% of deterministic V32 hits."
+        ),
+    )
+    return result
+
+
+def _sport_taskspace_racket_xy_polish_v34_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Remove the recurrent -X/+X racket loop without erasing juggling.
+
+    V33 optimized an isolated first contact for more than 1500 updates.  It
+    therefore had no on-policy signal for the inter-hit retreat/return motion
+    seen on the robot, and ``hits == 1`` made its cycle path and area terms
+    ineffective.  V34 returns to recurrent racket-launch episodes and applies
+    a four-step homotopy: nominal-observation retention, stronger loop
+    suppression, half observation noise, then full observation noise.
+
+    The first stage deliberately stays inside the measured support of the
+    deployed policy.  There are no contact-time termination constraints in
+    the bridge: excessive horizontal motion loses bounded dense/event credit
+    while successful multi-hit trajectories remain available to PPO.
+    """
+
+    result = _sport_taskspace_racket_xy_polish_v1_stages(stages)
+
+    schedules = (
+        dict(
+            name="racketxy00_recurrent_nominal_retention",
+            ball_weight=0.04, ball_scale=0.15, post_weight=0.08,
+            hit_weight=0.20, hit_limit=0.08, hit_scale=0.10,
+            zero_weight=0.25, zero_sigma=0.08,
+            contact_weight=0.10, contact_limit=0.18, contact_scale=0.15,
+            cycle_weight=0.08, cycle_limit=0.20, cycle_scale=0.20,
+            path_weight=0.10, path_deadband=0.060, path_scale=0.080,
+            area_weight=0.05, area_deadband=0.00150, area_scale=0.00200,
+            approach_weight=0.15, approach_limit=0.15,
+            early_multiplier=1.00,
+            hits=10.5, hge3=11.0, full=0.60,
+            mean_vxy=0.140, rms_vxy=0.180,
+            mean_contact=0.250, rms_contact=0.320,
+            path_gate=0.090, area_gate=0.00150, cycle_gate=0.350,
+            min_updates=40, hold=8, best_mean=180.0, best_rms=120.0,
+        ),
+        dict(
+            name="racketxy01_recurrent_loop_bridge",
+            ball_weight=0.06, ball_scale=0.12, post_weight=0.12,
+            hit_weight=0.30, hit_limit=0.06, hit_scale=0.08,
+            zero_weight=0.40, zero_sigma=0.07,
+            contact_weight=0.15, contact_limit=0.15, contact_scale=0.12,
+            cycle_weight=0.15, cycle_limit=0.16, cycle_scale=0.18,
+            path_weight=0.20, path_deadband=0.050, path_scale=0.070,
+            area_weight=0.10, area_deadband=0.00100, area_scale=0.00150,
+            approach_weight=0.30, approach_limit=0.12,
+            early_multiplier=1.25,
+            hits=11.0, hge3=11.5, full=0.68,
+            mean_vxy=0.110, rms_vxy=0.150,
+            mean_contact=0.200, rms_contact=0.280,
+            path_gate=0.070, area_gate=0.00100, cycle_gate=0.280,
+            min_updates=48, hold=10, best_mean=260.0, best_rms=180.0,
+        ),
+        dict(
+            name="racketxy02_half_obs_loop_bridge",
+            ball_weight=0.08, ball_scale=0.10, post_weight=0.18,
+            hit_weight=0.45, hit_limit=0.045, hit_scale=0.07,
+            zero_weight=0.65, zero_sigma=0.06,
+            contact_weight=0.20, contact_limit=0.12, contact_scale=0.10,
+            cycle_weight=0.25, cycle_limit=0.13, cycle_scale=0.16,
+            path_weight=0.35, path_deadband=0.040, path_scale=0.060,
+            area_weight=0.20, area_deadband=0.00070, area_scale=0.00120,
+            approach_weight=0.50, approach_limit=0.10,
+            early_multiplier=1.50,
+            hits=11.3, hge3=11.8, full=0.72,
+            mean_vxy=0.095, rms_vxy=0.130,
+            mean_contact=0.160, rms_contact=0.230,
+            path_gate=0.055, area_gate=0.00070, cycle_gate=0.220,
+            min_updates=60, hold=12, best_mean=360.0, best_rms=250.0,
+        ),
+        dict(
+            name="racketxy03_full_obs_zero_drift_strict",
+            ball_weight=0.12, ball_scale=0.08, post_weight=0.25,
+            hit_weight=0.70, hit_limit=0.03, hit_scale=0.06,
+            zero_weight=1.00, zero_sigma=0.05,
+            contact_weight=0.30, contact_limit=0.10, contact_scale=0.09,
+            cycle_weight=0.40, cycle_limit=0.10, cycle_scale=0.14,
+            path_weight=0.60, path_deadband=0.025, path_scale=0.050,
+            area_weight=0.35, area_deadband=0.00040, area_scale=0.00100,
+            approach_weight=0.80, approach_limit=0.08,
+            early_multiplier=1.75,
+            hits=11.6, hge3=12.0, full=0.75,
+            mean_vxy=0.080, rms_vxy=0.110,
+            mean_contact=0.130, rms_contact=0.190,
+            path_gate=0.040, area_gate=0.00045, cycle_gate=0.180,
+            min_updates=72, hold=14, best_mean=500.0, best_rms=350.0,
+        ),
+    )
+
+    shaped: list[CurriculumStage] = []
+    for index, stage in enumerate(result):
+        if index >= len(schedules):
+            shaped.append(
+                replace(
+                    stage,
+                    cfg=replace(
+                        stage.cfg,
+                        hit_racket_vxy_measurement_mode="contact_point",
+                        hit_racket_vxy_constraint_threshold_m_s=0.0,
+                        hit_racket_vxy_constraint_penalty=0.0,
+                        hit_vxy_constraint_threshold_m_s=0.0,
+                        hit_vxy_constraint_penalty=0.0,
+                        hit_racket_up_cos_constraint_min=0.0,
+                        hit_racket_up_cos_constraint_penalty=0.0,
+                    ),
+                    notes=(
+                        stage.notes
+                        + " Retain the completed recurrent zero-drift and "
+                        "contact-point cycle objectives without hard event "
+                        "termination."
+                    ),
+                )
+            )
+            continue
+
+        spec = schedules[index]
+        cfg = replace(
+            stage.cfg,
+            terminate_after_confirmed_hits=0,
+            hit_racket_vxy_measurement_mode="contact_point",
+            hit_racket_vxy_constraint_threshold_m_s=0.0,
+            hit_racket_vxy_constraint_penalty=0.0,
+            hit_vxy_constraint_threshold_m_s=0.0,
+            hit_vxy_constraint_penalty=0.0,
+            hit_racket_up_cos_constraint_min=0.0,
+            hit_racket_up_cos_constraint_penalty=0.0,
+            ball_vxy_penalty_weight=spec["ball_weight"],
+            ball_vxy_penalty_scale_m_s=spec["ball_scale"],
+            post_hit_ball_vxy_penalty_weight=spec["post_weight"],
+            hit_vxy_penalty_weight=spec["hit_weight"],
+            hit_vxy_soft_limit_m_s=spec["hit_limit"],
+            hit_vxy_penalty_scale_m_s=spec["hit_scale"],
+            hit_vxy_penalty_loss="pseudo_huber",
+            hit_vxy_apply_from_first_hit=True,
+            hit_vxy_zero_reward_weight=spec["zero_weight"],
+            hit_vxy_zero_reward_sigma_m_s=spec["zero_sigma"],
+            hit_racket_vxy_penalty_weight=spec["contact_weight"],
+            hit_racket_vxy_soft_limit_m_s=spec["contact_limit"],
+            hit_racket_vxy_penalty_scale_m_s=spec["contact_scale"],
+            hit_racket_vxy_apply_from_first_hit=True,
+            racket_cycle_vxy_penalty_weight=spec["cycle_weight"],
+            racket_cycle_vxy_soft_limit_m_s=spec["cycle_limit"],
+            racket_cycle_vxy_penalty_scale_m_s=spec["cycle_scale"],
+            hit_cycle_min_previous_hits=1,
+            hit_cycle_racket_xy_path_penalty_weight=spec["path_weight"],
+            hit_cycle_racket_xy_path_deadband_m=spec["path_deadband"],
+            hit_cycle_racket_xy_path_scale_m=spec["path_scale"],
+            hit_cycle_racket_xy_path_linear_tail=True,
+            hit_cycle_racket_xy_area_penalty_weight=spec["area_weight"],
+            hit_cycle_racket_xy_area_deadband_m2=spec["area_deadband"],
+            hit_cycle_racket_xy_area_scale_m2=spec["area_scale"],
+            hit_cycle_racket_xy_area_linear_tail=True,
+            racket_cycle_vxy_linear_tail=True,
+            approach_racket_vxy_penalty_weight=spec["approach_weight"],
+            approach_racket_vxy_time_window_s=0.20,
+            approach_racket_vxy_alignment_sigma_m=0.14,
+            approach_racket_vxy_soft_limit_m_s=spec["approach_limit"],
+            approach_racket_vxy_penalty_scale_m_s=0.10,
+            approach_racket_vxy_linear_tail=True,
+            early_cycle_penalty_hit_count=3,
+            early_cycle_penalty_multiplier=spec["early_multiplier"],
+            # Keep the ballistic apex inside the calibrated D455 vertical
+            # range.  This shapes the outgoing vertical impulse at contact;
+            # it does not penalize the racket's necessary Z velocity.
+            hit_height_penalty_weight=max(
+                5.0, float(stage.cfg.hit_height_penalty_weight)
+            ),
+            apex_soft_penalty_weight=max(
+                5.0, float(stage.cfg.apex_soft_penalty_weight)
+            ),
+        )
+        shaped.append(
+            replace(
+                stage,
+                name=spec["name"],
+                cfg=cfg,
+                target_mean_hits=spec["hits"],
+                target_mean_hits_ge3=spec["hge3"],
+                target_episode_truncation_rate=spec["full"],
+                # Progressively tighten the valid ballistic flight period.
+                # Stage 0 accepts the measured safe 0.53 s cycle instead of
+                # stalling forever at an inherited 0.50 s gate.
+                target_min_hit_interval_s=0.40,
+                target_max_hit_interval_s=0.54 - 0.01 * index,
+                max_recent_mean_hit_vxy=spec["mean_vxy"],
+                max_recent_rms_hit_vxy=spec["rms_vxy"],
+                max_recent_mean_hit_racket_vxy=spec["mean_contact"],
+                max_recent_rms_hit_racket_vxy=spec["rms_contact"],
+                max_recent_hit_cycle_racket_xy_path_excess_m=spec["path_gate"],
+                max_recent_hit_cycle_racket_xy_area_m2=spec["area_gate"],
+                max_recent_mean_racket_cycle_vxy=spec["cycle_gate"],
+                min_updates=spec["min_updates"],
+                convergence_hold_updates=spec["hold"],
+                best_checkpoint_mean_hit_vxy_weight=spec["best_mean"],
+                best_checkpoint_rms_hit_vxy_weight=spec["best_rms"],
+                notes=(
+                    "Keep recurrent autonomous juggling active while "
+                    "progressively suppressing the measured post-hit -X "
+                    "retreat, +X return, XY path detour, loop area, and "
+                    "outgoing ball horizontal speed. No compensation, "
+                    "planner, velocity clamp, or hard contact termination."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_racket_xy_polish_v35_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Learn the missing fixed-ball invariant through the deployed plant.
+
+    V34 never visits the user's diagnostic condition on-policy and its
+    one-step Jacobian labels omit the delayed position-actuator dynamics.
+    Prepend a world-fixed-ball phase that directly optimizes racket alignment
+    and horizontal stationarity, then retain all recurrent V34 stages.
+    """
+
+    recurrent = _sport_taskspace_racket_xy_polish_v34_stages(stages)
+    source = recurrent[0]
+    stationary_cfg = replace(
+        source.cfg,
+        stationary_ball_training=True,
+        domain_randomization=False,
+        ball_spawn_xy_jitter=0.04,
+        ball_spawn_z_jitter=0.0,
+        ball_init_vxy_max=0.0,
+        stationary_racket_alignment_reward_weight=0.5,
+        stationary_racket_xy_penalty_weight=1.0,
+        stationary_racket_xy_deadband_m=0.005,
+        stationary_racket_xy_scale_m=0.030,
+        stationary_racket_vxy_penalty_weight=0.75,
+        stationary_racket_vxy_soft_limit_m_s=0.02,
+        stationary_racket_vxy_scale_m_s=0.08,
+        racket_xy_gauss_reward_weight=0.0,
+        racket_xy_gauss_penalty_weight=0.0,
+    )
+    stationary = replace(
+        source,
+        name="racketxy_fixed_world_stabilization",
+        total_steps=4_000_000,
+        cfg=stationary_cfg,
+        target_mean_hits=0.0,
+        target_mean_hits_ge3=None,
+        target_mean_len_frac=0.95,
+        target_episode_truncation_rate=0.95,
+        target_hit1_rate=None,
+        target_hit3_rate=None,
+        target_hit12_rate=None,
+        target_hit_camera_visible_rate=None,
+        target_hit_camera_lower_band_rate=None,
+        target_camera_visible=None,
+        target_ball_view_in_bounds=None,
+        target_ball_view_z_ideal=None,
+        max_recent_mean_hit_vxy=None,
+        max_recent_rms_hit_vxy=None,
+        max_recent_mean_hit_racket_vxy=None,
+        max_recent_rms_hit_racket_vxy=None,
+        max_recent_mean_hit_camera_v_frac=None,
+        max_recent_hit_cycle_racket_xy_path_excess_m=None,
+        max_recent_hit_cycle_racket_xy_area_m2=None,
+        max_recent_mean_racket_cycle_vxy=None,
+        max_recent_stationary_racket_vxy_m_s=0.020,
+        max_recent_stationary_racket_xy_error_m=0.010,
+        min_updates=200,
+        convergence_hold_updates=8,
+        notes=(
+            "Pin the physical ball in world coordinates and learn to move "
+            "under it once, brake XY velocity, and remain still through the "
+            "complete delayed actuator and inverse-MPC chain."
+        ),
+    )
+    return [stationary, *recurrent]
+
+
+def _sport_taskspace_racket_xy_polish_v36_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Isolate the fixed-ball invariant before returning to 60 Hz juggling."""
+
+    recurrent = _sport_taskspace_racket_xy_polish_v34_stages(stages)
+    source = recurrent[0]
+    stationary_cfg = replace(
+        source.cfg,
+        stationary_ball_training=True,
+        stationary_reward_only=True,
+        domain_randomization=False,
+        ball_obs_rate_hz=60.0,
+        ball_obs_fractional_rate=True,
+        ball_spawn_xy_jitter=0.04,
+        ball_spawn_z_jitter=0.0,
+        ball_init_vxy_max=0.0,
+        stationary_racket_alignment_reward_weight=2.0,
+        stationary_racket_xy_penalty_weight=2.0,
+        stationary_racket_xy_deadband_m=0.004,
+        stationary_racket_xy_scale_m=0.030,
+        stationary_racket_vxy_penalty_weight=2.0,
+        stationary_racket_vxy_soft_limit_m_s=0.015,
+        stationary_racket_vxy_scale_m_s=0.08,
+        # Fixed-ball data is an XY invariance diagnostic.  Do not suppress Z
+        # velocity here: the following recurrent stages need vertical racket
+        # motion to juggle.
+        stationary_racket_vz_penalty_weight=0.0,
+        racket_xy_gauss_reward_weight=0.0,
+        racket_xy_gauss_penalty_weight=0.0,
+    )
+    stationary = replace(
+        source,
+        name="racketxy_fixed_world_isolated_60hz",
+        total_steps=4_000_000,
+        cfg=stationary_cfg,
+        target_mean_hits=0.0,
+        target_mean_hits_ge3=None,
+        target_mean_len_frac=0.95,
+        target_episode_truncation_rate=0.95,
+        target_hit1_rate=None,
+        target_hit3_rate=None,
+        target_hit12_rate=None,
+        target_hit_camera_visible_rate=None,
+        target_hit_camera_lower_band_rate=None,
+        target_min_hit_interval_s=None,
+        target_max_hit_interval_s=None,
+        target_camera_visible=None,
+        target_ball_view_in_bounds=None,
+        target_ball_view_z_ideal=None,
+        max_recent_mean_hit_vxy=None,
+        max_recent_rms_hit_vxy=None,
+        max_recent_mean_hit_racket_vxy=None,
+        max_recent_rms_hit_racket_vxy=None,
+        max_recent_mean_hit_camera_v_frac=None,
+        max_recent_hit_racket_angular_speed_rad_s=None,
+        max_recent_hit_cycle_racket_xy_path_excess_m=None,
+        max_recent_hit_cycle_racket_xy_area_m2=None,
+        max_recent_mean_racket_cycle_vxy=None,
+        max_recent_stationary_racket_vxy_m_s=0.020,
+        max_recent_stationary_racket_xy_error_m=0.010,
+        min_updates=200,
+        convergence_hold_updates=8,
+        notes=(
+            "Exclusive fixed-ball 60 Hz objective: acquire XY once, brake XY, "
+            "and suppress horizontal circling through the deployed delayed actuator. "
+            "Racket Z velocity is deliberately unpenalized."
+        ),
+    )
+    return [stationary, *recurrent]
+
+
+def _sport_taskspace_racket_xy_polish_v37_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Suppress the measured recurrent pose sweep before tightening XY drift.
+
+    Across the 13 ``record_new2`` robot runs, the first 1.2 seconds have a
+    0.9847 tenth-percentile racket-up cosine and 1.82 rad/s local-XZ angular
+    speed at p90.  The racket also reaches 0.21--0.39 m/s horizontal speed
+    before the first 250 ms have elapsed.  V34's contact-only angular loss
+    plateaus because it does not credit the delayed action that initiated this
+    sweep.  Keep recurrent juggling and add bounded causal-window plus dense
+    local-XZ stability losses; local-Y rotation remains free for the vertical
+    stroke.
+    """
+
+    recurrent = _sport_taskspace_racket_xy_polish_v34_stages(stages)
+    names = (
+        "racketxy00_real90_pose_recenter",
+        "racketxy01_real90_loop_recenter",
+        "racketxy02_real90_half_obs_recovery",
+        "racketxy03_real90_full_obs_recovery",
+    )
+    mean_vxy_limits = (0.080, 0.070, 0.060, 0.050)
+    rms_vxy_limits = (0.110, 0.100, 0.090, 0.080)
+    up_cos_targets = (0.9925, 0.9930, 0.9935, 0.9940)
+    dense_angular_weights = (0.50, 0.65, 0.85, 1.00)
+    dense_flatness_weights = (1.00, 1.50, 2.00, 2.50)
+    approach_flatness_weights = (100.0, 150.0, 200.0, 250.0)
+    approach_tilt_weights = (8.0, 12.0, 16.0, 20.0)
+    shaped: list[CurriculumStage] = []
+    for index, stage in enumerate(recurrent):
+        ladder_index = min(index, len(names) - 1)
+        cfg = replace(
+            stage.cfg,
+            racket_stability_angular_speed_mode="local_xz",
+            racket_stability_angular_speed_penalty_weight=max(
+                dense_angular_weights[ladder_index],
+                float(stage.cfg.racket_stability_angular_speed_penalty_weight),
+            ),
+            racket_stability_angular_speed_soft_limit_rad_s=(
+                0.55 - 0.05 * ladder_index
+            ),
+            racket_stability_angular_speed_scale_rad_s=0.90,
+            racket_flatness_penalty_weight=max(
+                dense_flatness_weights[ladder_index],
+                float(stage.cfg.racket_flatness_penalty_weight),
+            ),
+            racket_flatness_target_cos=max(
+                0.997, float(stage.cfg.racket_flatness_target_cos)
+            ),
+            racket_flatness_sigma=min(
+                0.005, float(stage.cfg.racket_flatness_sigma)
+            ),
+            approach_racket_flatness_penalty_weight=max(
+                approach_flatness_weights[ladder_index],
+                float(stage.cfg.approach_racket_flatness_penalty_weight),
+            ),
+            approach_racket_tilt_speed_penalty_weight=max(
+                approach_tilt_weights[ladder_index],
+                float(stage.cfg.approach_racket_tilt_speed_penalty_weight),
+            ),
+            racket_tilt_angular_speed_soft_limit_rad_s=min(
+                0.35, float(stage.cfg.racket_tilt_angular_speed_soft_limit_rad_s)
+            ),
+            racket_tilt_angular_speed_scale_rad_s=min(
+                0.70, float(stage.cfg.racket_tilt_angular_speed_scale_rad_s)
+            ),
+            hit_racket_angular_speed_penalty_weight=max(
+                1.0 + 0.25 * ladder_index,
+                float(stage.cfg.hit_racket_angular_speed_penalty_weight),
+            ),
+            hit_racket_angular_speed_soft_limit_rad_s=min(
+                0.50 - 0.05 * ladder_index,
+                float(stage.cfg.hit_racket_angular_speed_soft_limit_rad_s),
+            ),
+            hit_racket_angular_speed_scale_rad_s=min(
+                0.70, float(stage.cfg.hit_racket_angular_speed_scale_rad_s)
+            ),
+        )
+        shaped.append(
+            replace(
+                stage,
+                name=names[ladder_index] if index < len(names) else stage.name,
+                cfg=cfg,
+                max_recent_mean_hit_vxy=(
+                    mean_vxy_limits[ladder_index]
+                    if index < len(names)
+                    else stage.max_recent_mean_hit_vxy
+                ),
+                max_recent_rms_hit_vxy=(
+                    rms_vxy_limits[ladder_index]
+                    if index < len(names)
+                    else stage.max_recent_rms_hit_vxy
+                ),
+                target_racket_up_cos=(
+                    up_cos_targets[ladder_index]
+                    if index < len(names)
+                    else stage.target_racket_up_cos
+                ),
+                notes=(
+                    stage.notes
+                    + " Penalize the measured local-XZ pose sweep densely and "
+                    "during the delayed pre-contact causal window. Pair PPO "
+                    "with 90/60 Hz real-prefix counterfactual recenter labels."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_racket_xy_polish_v38_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """GPU0 wide-range zero-vxy path without the V36 fixed-ball trap.
+
+    V36 spent 3000+ updates on an isolated fixed-ball stage that never met the
+    0.020 m/s stationary gate from the deployed actuator checkpoint.  GPU0
+    instead warm-starts from the recurrent V37 policy and pursues the user's
+    primary objective directly: suppress outgoing horizontal ball speed and
+    loop path/area under progressively wider spawn and initial-velocity DR.
+    Pair PPO with 90 Hz ``record_new2`` intercept-recenter counterfactual
+    labels that teach inward recovery when the ball already has lateral speed.
+    """
+
+    base = _sport_taskspace_racket_xy_polish_v37_stages(stages)
+    names = (
+        "racketxy00_wide_zero_vxy_nominal",
+        "racketxy01_wide_zero_vxy_loop_guard",
+        "racketxy02_wide_zero_vxy_half_obs",
+        "racketxy03_wide_zero_vxy_full_range",
+    )
+    mean_vxy_limits = (0.070, 0.055, 0.045, 0.035)
+    rms_vxy_limits = (0.095, 0.085, 0.075, 0.065)
+    spawn_xy_jitter = (0.028, 0.034, 0.040, 0.050)
+    spawn_z_jitter = (0.012, 0.016, 0.020, 0.028)
+    init_vxy_max = (0.006, 0.008, 0.010, 0.012)
+    zero_vxy_mult = (1.20, 1.35, 1.50, 1.75)
+    path_mult = (1.10, 1.25, 1.40, 1.60)
+    area_mult = (1.10, 1.25, 1.40, 1.60)
+    shaped: list[CurriculumStage] = []
+    for index, stage in enumerate(base[:4]):
+        ladder_index = min(index, len(names) - 1)
+        cfg = replace(
+            stage.cfg,
+            ball_spawn_xy_jitter=max(
+                spawn_xy_jitter[ladder_index],
+                float(stage.cfg.ball_spawn_xy_jitter),
+            ),
+            ball_spawn_z_jitter=max(
+                spawn_z_jitter[ladder_index],
+                float(stage.cfg.ball_spawn_z_jitter),
+            ),
+            ball_init_vxy_max=max(
+                init_vxy_max[ladder_index],
+                float(stage.cfg.ball_init_vxy_max),
+            ),
+            hit_vxy_zero_reward_weight=max(
+                zero_vxy_mult[ladder_index]
+                * float(stage.cfg.hit_vxy_zero_reward_weight),
+                float(stage.cfg.hit_vxy_zero_reward_weight) + 0.05 * ladder_index,
+            ),
+            hit_cycle_racket_xy_path_penalty_weight=max(
+                path_mult[ladder_index]
+                * float(stage.cfg.hit_cycle_racket_xy_path_penalty_weight),
+                float(stage.cfg.hit_cycle_racket_xy_path_penalty_weight),
+            ),
+            hit_cycle_racket_xy_area_penalty_weight=max(
+                area_mult[ladder_index]
+                * float(stage.cfg.hit_cycle_racket_xy_area_penalty_weight),
+                float(stage.cfg.hit_cycle_racket_xy_area_penalty_weight),
+            ),
+            post_hit_ball_vxy_penalty_weight=max(
+                0.15 + 0.05 * ladder_index,
+                float(stage.cfg.post_hit_ball_vxy_penalty_weight),
+            ),
+        )
+        shaped.append(
+            replace(
+                stage,
+                name=names[ladder_index],
+                cfg=cfg,
+                max_recent_mean_hit_vxy=mean_vxy_limits[ladder_index],
+                max_recent_rms_hit_vxy=rms_vxy_limits[ladder_index],
+                notes=(
+                    stage.notes
+                    + " GPU0 wide-range objective: tighten outgoing vxy while "
+                    "expanding spawn/initial lateral-speed DR for large-workspace "
+                    "juggling and inward recenter after off-center hits."
+                ),
+            )
+        )
+    return shaped + base[4:]
+
+
+def _sport_taskspace_racket_xy_polish_v39_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Break the measured ~0.074 m/s outgoing-vxy simulation floor.
+
+    V37/V38 suppressed loop path/area and pose sweep, but stage-2 vxy stalled
+    above 0.073 for 3000+ updates because graduation gates were tighter than the
+    reachable basin and contact-time vxy shaping was too weak relative to hit
+    count survival.  ``record_new2`` shows ball_vxy_p95 around 1.0 m/s on the
+    robot and positive outgoing-vxy / next-contact racket-speed coupling on
+    worsening trajectories.  Tighten pseudo-Huber hit-vxy, zero-vxy Gaussian,
+    approach racket-vxy, and in-flight ball-vxy losses while using achievable
+    graduation gates.  Pair with high-vxy ``intercept_recenter`` counterfactual
+    labels that teach inward recovery when lateral speed is already large.
+    """
+
+    base = _sport_taskspace_racket_xy_polish_v38_stages(stages)
+    names = (
+        "racketxy00_real90_vxy_floor_break",
+        "racketxy01_real90_vxy_inward_guard",
+        "racketxy02_real90_vxy_half_obs",
+        "racketxy03_real90_vxy_full_range",
+    )
+    mean_vxy_limits = (0.068, 0.058, 0.048, 0.038)
+    rms_vxy_limits = (0.088, 0.078, 0.068, 0.058)
+    hit_soft_limits = (0.050, 0.040, 0.032, 0.025)
+    zero_sigmas = (0.042, 0.038, 0.034, 0.030)
+    hit_weight_mult = (1.30, 1.45, 1.60, 1.75)
+    zero_weight_mult = (1.30, 1.50, 1.70, 2.00)
+    approach_mult = (1.25, 1.40, 1.55, 1.70)
+    racket_hit_mult = (1.15, 1.25, 1.35, 1.45)
+    shaped: list[CurriculumStage] = []
+    for index, stage in enumerate(base[:4]):
+        ladder_index = min(index, len(names) - 1)
+        cfg = replace(
+            stage.cfg,
+            hit_vxy_soft_limit_m_s=min(
+                hit_soft_limits[ladder_index],
+                float(stage.cfg.hit_vxy_soft_limit_m_s),
+            ),
+            hit_vxy_penalty_weight=max(
+                hit_weight_mult[ladder_index]
+                * float(stage.cfg.hit_vxy_penalty_weight),
+                float(stage.cfg.hit_vxy_penalty_weight) + 0.10 * ladder_index,
+            ),
+            hit_vxy_zero_reward_sigma_m_s=min(
+                zero_sigmas[ladder_index],
+                float(stage.cfg.hit_vxy_zero_reward_sigma_m_s),
+            ),
+            hit_vxy_zero_reward_weight=max(
+                zero_weight_mult[ladder_index]
+                * float(stage.cfg.hit_vxy_zero_reward_weight),
+                float(stage.cfg.hit_vxy_zero_reward_weight) + 0.08 * ladder_index,
+            ),
+            approach_racket_vxy_penalty_weight=max(
+                approach_mult[ladder_index]
+                * float(stage.cfg.approach_racket_vxy_penalty_weight),
+                float(stage.cfg.approach_racket_vxy_penalty_weight),
+            ),
+            hit_racket_vxy_penalty_weight=max(
+                racket_hit_mult[ladder_index]
+                * float(stage.cfg.hit_racket_vxy_penalty_weight),
+                float(stage.cfg.hit_racket_vxy_penalty_weight),
+            ),
+            ball_vxy_penalty_weight=max(
+                0.10 + 0.03 * ladder_index,
+                float(stage.cfg.ball_vxy_penalty_weight),
+            ),
+            post_hit_ball_vxy_penalty_weight=max(
+                0.22 + 0.06 * ladder_index,
+                float(stage.cfg.post_hit_ball_vxy_penalty_weight),
+            ),
+        )
+        shaped.append(
+            replace(
+                stage,
+                name=names[ladder_index],
+                cfg=cfg,
+                max_recent_mean_hit_vxy=mean_vxy_limits[ladder_index],
+                max_recent_rms_hit_vxy=rms_vxy_limits[ladder_index],
+                notes=(
+                    stage.notes
+                    + " V39: break the 0.074 m/s outgoing-vxy floor with tighter "
+                    "contact/approach/in-flight vxy shaping and achievable gates; "
+                    "pair with high-vxy intercept-recenter counterfactual labels."
+                ),
+            )
+        )
+    return shaped + base[4:]
+
+
+def _sport_taskspace_racket_xy_polish_v41_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Escape the ~0.074 m/s vxy plateau with contact guards and vxy-aware selection.
+
+    V39 tightened dense shaping but left ``hit_vxy_constraint_*`` at zero and
+    best-checkpoint scoring dominated by hit count, so online training kept a
+    high-vxy basin while path/loop metrics stayed good.  Re-enable progressive
+  contact feasibility boundaries (softer than V21), bias checkpoint selection
+  toward low outgoing vxy, and relax graduation gates to values just below the
+    measured floor so stage advancement can track real improvement.
+    """
+
+    base = _sport_taskspace_racket_xy_polish_v39_stages(stages)
+    names = (
+        "racketxy00_real90_vxy_contact_guard",
+        "racketxy01_real90_vxy_inward_anchor",
+        "racketxy02_real90_vxy_half_obs",
+        "racketxy03_real90_vxy_full_range",
+    )
+    mean_vxy_limits = (0.062, 0.052, 0.042, 0.032)
+    rms_vxy_limits = (0.082, 0.072, 0.062, 0.052)
+    # Above the measured ~0.074 m/s floor: constraint violations terminate the
+    # episode, so thresholds must start loose and tighten only after vxy drops.
+    constraint_thresholds = (0.150, 0.130, 0.120, 0.100)
+    constraint_penalties = (3.0, 4.0, 6.0, 10.0)
+    best_mean_weights = (300.0, 400.0, 500.0, 600.0)
+    best_rms_weights = (220.0, 300.0, 380.0, 460.0)
+    shaped: list[CurriculumStage] = []
+    for index, stage in enumerate(base[:4]):
+        ladder_index = min(index, len(names) - 1)
+        cfg = replace(
+            stage.cfg,
+            hit_vxy_constraint_threshold_m_s=constraint_thresholds[ladder_index],
+            hit_vxy_constraint_min_previous_hits=0,
+            hit_vxy_constraint_penalty=constraint_penalties[ladder_index],
+        )
+        shaped.append(
+            replace(
+                stage,
+                name=names[ladder_index],
+                cfg=cfg,
+                max_recent_mean_hit_vxy=mean_vxy_limits[ladder_index],
+                max_recent_rms_hit_vxy=rms_vxy_limits[ladder_index],
+                best_checkpoint_mean_hit_vxy_weight=best_mean_weights[ladder_index],
+                best_checkpoint_rms_hit_vxy_weight=best_rms_weights[ladder_index],
+                notes=(
+                    stage.notes
+                    + " V41: progressive contact vxy guards, vxy-weighted best "
+                    "checkpoint scoring, and achievable graduation gates."
+                ),
+            )
+        )
+    return shaped + base[4:]
+
+
+def _sport_taskspace_racket_xy_polish_v42_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Polish outgoing vxy without contact termination or stage-3 MDP jumps.
+
+    Root-cause rollouts showed V41 contact constraints collapse 14-hit episodes
+    even when evaluated with the V40 policy (mean_hits 1.3-4.9 for thresholds
+    0.08-0.15).  V42 keeps V39 dense shaping, disables hard
+    ``hit_vxy_constraint_*`` termination, biases best-checkpoint selection toward
+    low outgoing vxy, and uses a four-stage homotopy from stage 0 so the hit
+    manifold is preserved while vxy is tightened gradually.
+    """
+
+    base = _sport_taskspace_racket_xy_polish_v39_stages(stages)
+    names = (
+        "racketxy00_real90_vxy_dense_homotopy",
+        "racketxy01_real90_vxy_inward_dense",
+        "racketxy02_real90_vxy_half_obs_dense",
+        "racketxy03_real90_vxy_full_range_dense",
+    )
+    mean_vxy_limits = (0.072, 0.065, 0.055, 0.045)
+    rms_vxy_limits = (0.092, 0.085, 0.075, 0.065)
+    best_mean_weights = (200.0, 280.0, 360.0, 450.0)
+    best_rms_weights = (150.0, 210.0, 280.0, 350.0)
+    shaped: list[CurriculumStage] = []
+    for index, stage in enumerate(base[:4]):
+        ladder_index = min(index, len(names) - 1)
+        cfg = replace(
+            stage.cfg,
+            hit_vxy_constraint_threshold_m_s=0.0,
+            hit_vxy_constraint_min_previous_hits=0,
+            hit_vxy_constraint_penalty=0.0,
+        )
+        shaped.append(
+            replace(
+                stage,
+                name=names[ladder_index],
+                cfg=cfg,
+                max_recent_mean_hit_vxy=mean_vxy_limits[ladder_index],
+                max_recent_rms_hit_vxy=rms_vxy_limits[ladder_index],
+                best_checkpoint_mean_hit_vxy_weight=best_mean_weights[ladder_index],
+                best_checkpoint_rms_hit_vxy_weight=best_rms_weights[ladder_index],
+                notes=(
+                    stage.notes
+                    + " V42: V39 dense vxy shaping without contact termination, "
+                    "vxy-weighted best checkpoints, and stage-0 homotopy."
+                ),
+            )
+        )
+    return shaped + base[4:]
+
+
+def _sport_taskspace_racket_xy_polish_v43_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Hit-locked zero-vxy micro-tune after the V39-V42 methodology plateau.
+
+    V40 reaches ~14 hits but outgoing vxy stalls near 0.074 m/s.  V41 changed
+    the MDP with contact termination; V42 rewound the homotopy and still mixed
+    high-vxy failure prefixes into supervision.  V43 keeps the V39 stage-3
+    half-obs plant, disables ``hit_vxy_constraint_*`` termination, and runs a
+    short two-step vxy-only polish ladder while holding hit-count gates near
+  the measured V40 basin.  Pair with segmented real burst prefixes and mild
+    ``velocity_follow`` counterfactual teachers, not intercept-recenter labels.
+    """
+
+    v39 = _sport_taskspace_racket_xy_polish_v39_stages(stages)
+    anchor = v39[2]
+    specs = (
+        dict(
+            name="v43_hit_locked_vxy_polish",
+            mean_vxy=0.068,
+            rms_vxy=0.088,
+            hit_soft=0.042,
+            hit_scale=0.055,
+            zero_sigma=0.034,
+            zero_weight=2.20,
+            ball_weight=0.14,
+            post_weight=0.28,
+            best_mean=420.0,
+            best_rms=320.0,
+            hits=13.8,
+            hge3=13.5,
+            min_updates=80,
+        ),
+        dict(
+            name="v43_zero_vxy_target",
+            mean_vxy=0.052,
+            rms_vxy=0.068,
+            hit_soft=0.028,
+            hit_scale=0.045,
+            zero_sigma=0.028,
+            zero_weight=3.00,
+            ball_weight=0.18,
+            post_weight=0.35,
+            best_mean=560.0,
+            best_rms=420.0,
+            hits=13.5,
+            hge3=13.0,
+            min_updates=100,
+        ),
+    )
+    shaped: list[CurriculumStage] = []
+    for spec in specs:
+        cfg = replace(
+            anchor.cfg,
+            hit_vxy_constraint_threshold_m_s=0.0,
+            hit_vxy_constraint_min_previous_hits=0,
+            hit_vxy_constraint_penalty=0.0,
+            hit_vxy_soft_limit_m_s=spec["hit_soft"],
+            hit_vxy_penalty_scale_m_s=spec["hit_scale"],
+            hit_vxy_penalty_weight=max(
+                1.80,
+                float(anchor.cfg.hit_vxy_penalty_weight) * 1.40,
+            ),
+            hit_vxy_zero_reward_sigma_m_s=spec["zero_sigma"],
+            hit_vxy_zero_reward_weight=max(
+                spec["zero_weight"],
+                float(anchor.cfg.hit_vxy_zero_reward_weight) * 1.35,
+            ),
+            ball_vxy_penalty_weight=max(
+                spec["ball_weight"],
+                float(anchor.cfg.ball_vxy_penalty_weight),
+            ),
+            post_hit_ball_vxy_penalty_weight=max(
+                spec["post_weight"],
+                float(anchor.cfg.post_hit_ball_vxy_penalty_weight),
+            ),
+            approach_racket_vxy_penalty_weight=max(
+                1.20,
+                float(anchor.cfg.approach_racket_vxy_penalty_weight),
+            ),
+        )
+        shaped.append(
+            replace(
+                anchor,
+                name=spec["name"],
+                cfg=cfg,
+                target_mean_hits=spec["hits"],
+                target_mean_hits_ge3=spec["hge3"],
+                max_recent_mean_hit_vxy=spec["mean_vxy"],
+                max_recent_rms_hit_vxy=spec["rms_vxy"],
+                best_checkpoint_mean_hit_vxy_weight=spec["best_mean"],
+                best_checkpoint_rms_hit_vxy_weight=spec["best_rms"],
+                min_updates=spec["min_updates"],
+                notes=(
+                    anchor.notes
+                    + " V43: hit-locked vxy micro-tune without contact "
+                    "termination; use segmented real burst prefixes only."
+                ),
+            )
+        )
+    return shaped + v39[4:]
+
+
+def _sport_taskspace_vertical_strike_homotopy_v44_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Commit-style 21-stage homotopy with strict vertical-strike shaping.
+
+    Reuses the last-commit ``obsres2mm_nocomp_direct`` graduation contract and
+    layers dense contact-point racket translational/angular-speed penalties plus
+    outgoing ball-vxy shaping.  No ``hit_vxy_constraint`` termination: the
+    policy must discover low-lateral-energy juggling through reward gradients
+    and exploration rather than hard episode cuts.
+    """
+
+    if len(stages) != 21:
+        raise ValueError(
+            "vertical strike v44 expects the documented 21-stage sport course"
+        )
+    shaped: list[CurriculumStage] = []
+    acquisition_freeze_stages = 5
+    for index, stage in enumerate(stages):
+        if index < acquisition_freeze_stages:
+            shaped.append(
+                replace(
+                    stage,
+                    notes=(
+                        stage.notes
+                        + " V44: defer vertical-strike shaping until the homotopy "
+                        "reaches the full plant and launch00 can acquire first "
+                        "contact without lateral-motion penalties."
+                    ),
+                )
+            )
+            continue
+        progress = float(index - acquisition_freeze_stages) / float(
+            len(stages) - acquisition_freeze_stages - 1
+        )
+        racket_vxy_soft = 0.14 - 0.10 * progress
+        racket_vxy_weight = 0.15 + 1.05 * progress
+        angular_soft = 0.90 - 0.45 * progress
+        angular_weight = 0.20 + 0.80 * progress
+        stability_soft = 0.55 - 0.25 * progress
+        stability_weight = 0.30 + 0.70 * progress
+        hit_vxy_soft = 0.08 - 0.05 * progress
+        hit_vxy_weight = 0.30 + 0.50 * progress
+        cfg = replace(
+            stage.cfg,
+            hit_vxy_constraint_threshold_m_s=0.0,
+            hit_vxy_constraint_min_previous_hits=0,
+            hit_vxy_constraint_penalty=0.0,
+            hit_racket_vxy_constraint_threshold_m_s=0.0,
+            hit_racket_vxy_constraint_penalty=0.0,
+            hit_racket_vxy_measurement_mode="contact_point",
+            hit_racket_vxy_apply_from_first_hit=index >= 2,
+            hit_racket_vxy_soft_limit_m_s=racket_vxy_soft,
+            hit_racket_vxy_penalty_weight=racket_vxy_weight,
+            hit_racket_vxy_penalty_scale_m_s=max(0.06, 0.12 - 0.06 * progress),
+            hit_racket_angular_speed_penalty_weight=angular_weight,
+            hit_racket_angular_speed_soft_limit_rad_s=angular_soft,
+            hit_racket_angular_speed_scale_rad_s=max(0.50, angular_soft + 0.15),
+            racket_stability_angular_speed_mode="local_xz",
+            racket_stability_angular_speed_penalty_weight=stability_weight,
+            racket_stability_angular_speed_soft_limit_rad_s=stability_soft,
+            racket_stability_angular_speed_scale_rad_s=max(
+                0.45,
+                stability_soft + 0.15,
+            ),
+            hit_vxy_soft_limit_m_s=hit_vxy_soft,
+            hit_vxy_penalty_weight=hit_vxy_weight,
+            hit_vxy_penalty_scale_m_s=0.05,
+            hit_vxy_penalty_loss="pseudo_huber",
+            hit_vxy_zero_reward_weight=0.80 + 1.20 * progress,
+            hit_vxy_zero_reward_sigma_m_s=max(0.020, 0.040 - 0.015 * progress),
+            approach_racket_vxy_penalty_weight=max(0.80, 0.60 + 0.80 * progress),
+            approach_racket_vxy_soft_limit_m_s=max(0.05, 0.12 - 0.05 * progress),
+            approach_racket_vxy_penalty_scale_m_s=0.10,
+            ball_vxy_penalty_weight=max(0.10, 0.05 + 0.15 * progress),
+            post_hit_ball_vxy_penalty_weight=max(0.15, 0.10 + 0.25 * progress),
+            racket_flatness_penalty_weight=max(
+                0.12,
+                float(stage.cfg.racket_flatness_penalty_weight),
+            ),
+            hit_flatness_excess_penalty_weight=max(
+                1.60,
+                float(stage.cfg.hit_flatness_excess_penalty_weight),
+            ),
+        )
+        gate_racket_vxy = None if index < 10 else max(0.04, 0.12 - 0.08 * (index - 10) / 10.0)
+        gate_mean_vxy = None if index < 12 else max(0.045, 0.10 - 0.055 * (index - 12) / 8.0)
+        gate_angular = None if index < 10 else max(0.50, 1.00 - 0.50 * (index - 10) / 10.0)
+        shaped.append(
+            replace(
+                stage,
+                cfg=cfg,
+                max_recent_mean_hit_racket_vxy=gate_racket_vxy,
+                max_recent_rms_hit_racket_vxy=(
+                    None if gate_racket_vxy is None else gate_racket_vxy + 0.025
+                ),
+                max_recent_mean_hit_vxy=gate_mean_vxy,
+                max_recent_rms_hit_vxy=(
+                    None if gate_mean_vxy is None else gate_mean_vxy + 0.020
+                ),
+                max_recent_hit_racket_angular_speed_rad_s=gate_angular,
+                best_checkpoint_mean_hit_vxy_weight=120.0 + 180.0 * progress,
+                best_checkpoint_rms_hit_vxy_weight=90.0 + 140.0 * progress,
+                notes=(
+                    stage.notes
+                    + " V44: strict contact-point racket vxy/angular shaping "
+                    "for vertical-only strike discovery."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_racket_xy_polish_v44_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Fine-tune the deployed 14-hit policy toward zero outgoing vxy.
+
+    r3/r4 showed aggregate ``rms_hit_vxy`` and ``rms_hit_racket_vxy`` can move in
+    opposite directions because they average different hit indices (first-hit
+    ball vs recurrent racket).  Stage 1--2 therefore use split graduation gates
+    and decoupled reward scopes before stage 3 commits on aggregate metrics.
+    """
+
+    v39 = _sport_taskspace_racket_xy_polish_v39_stages(stages)
+    anchor = v39[2]
+    anchor_cfg = anchor.cfg
+
+    def scaled(field: str, mult: float, floor: float | None = None) -> float:
+        value = float(getattr(anchor_cfg, field)) * mult
+        if floor is not None:
+            value = max(value, floor)
+        return value
+
+    specs = (
+        dict(
+            name="v44_recurrent_retention",
+            # r7 ran this stage with mult=1.00/floor=None and no vxy gate, and
+            # vxy diverged instead of holding: over 47 updates recurrent racket
+            # RMS went 0.149 -> 0.268 (r5 baseline 0.143) and mean racket vxy
+            # 0.120 -> 0.209, while mean_hits fell 10.9 -> 9.6.  A stage the run
+            # sits in until graduation cannot be neutral on the quantity being
+            # minimised - with neither gradient nor gate, the policy trades
+            # lateral sweep for contacts.  Apply mild suppression here so the
+            # ladder is monotonic (1.15 -> 1.35 -> 1.75) rather than 1.00 flat.
+            hit_vxy_mult=1.15,
+            hit_vxy_floor=None,
+            racket_mult=1.25,
+            approach_mult=1.10,
+            zero_mult=1.05,
+            ball_mult=1.00,
+            post_ball_mult=1.00,
+            cycle_mult=1.30,
+            path_mult=1.15,
+            apply_racket_first=False,
+            ball_first_hit_only=True,
+            recoverability_min=2,
+            mean_vxy=None,
+            rms_vxy=None,
+            mean_racket_vxy=None,
+            rms_racket_vxy=None,
+            # Gates are compared against the convergence_window=12 ROLLING MEAN
+            # (_recent_mean over eligible[-window:]), not 12 consecutive raw
+            # passes, so per-update swings largely average out.  On r5's 245
+            # updates the rolling means sat at:
+            #   first-hit ball vxy      min 0.1060, p10 0.1105, mean 0.1143
+            #   recurrent racket RMS    min 0.1307, p10 0.1363, mean 0.1423
+            # r5's 0.112 first-hit gate was therefore reachable but ~2% too
+            # tight, which is why it stalled 245 updates instead of failing
+            # outright.  Set each gate just above the observed rolling floor: a
+            # real constraint that a converging run can satisfy.
+            first_hit_ball_gate=0.118,
+            recurrent_racket_rms_gate=0.140,
+            # Steady (hit>=N) racket RMS is newly emitted this run and has never
+            # been measured.  Observe it here, then gate on real numbers later.
+            steady_racket_rms_gate=None,
+            angular_gate=0.85,
+            hit_soft=0.048,
+            hit_scale=0.058,
+            zero_sigma=0.038,
+            racket_soft=0.105,
+            approach_soft=0.085,
+            angular_soft=0.75,
+            angular_weight=0.40,
+            # r5 measured mean_hits 13.398 against a 13.6 gate: the threshold sat
+            # above the policy's own mean, and the longest run under it was 11
+            # updates against convergence_hold_updates=12.  Ladder shifted down
+            # 0.4 (13.2/13.0/12.8) so the gate sits below the measured mean with
+            # noise headroom -- 13.2 sustained 53 consecutive updates in r5.
+            hits=13.2,
+            hge3=12.8,
+            # Start at ~45% of the measured hardware dq jitter so retention is
+            # graded against a perturbation the anchor can still survive.
+            dq_noise=0.25,
+            rv_noise=0.05,
+            noise_warmup=2560,
+            noise_ramp=7680,
+            min_updates=50,
+            best_mean=280.0,
+            best_rms=200.0,
+        ),
+        dict(
+            name="v44_recurrent_zero_bridge",
+            hit_vxy_mult=1.35,
+            hit_vxy_floor=1.05,
+            racket_mult=1.45,
+            approach_mult=1.30,
+            zero_mult=1.30,
+            ball_mult=1.10,
+            post_ball_mult=1.15,
+            cycle_mult=1.55,
+            path_mult=1.35,
+            apply_racket_first=True,
+            ball_first_hit_only=False,
+            recoverability_min=1,
+            mean_vxy=None,
+            rms_vxy=None,
+            mean_racket_vxy=None,
+            rms_racket_vxy=None,
+            # This stage carries the first real vxy pressure (mult 1.35 + floor
+            # 1.05), so its gates sit a step below stage 0's (0.118 / 0.140):
+            # entry here means stage 0's level was already held, and graduating
+            # requires the added pressure to have actually bought a reduction.
+            first_hit_ball_gate=0.104,
+            recurrent_racket_rms_gate=0.124,
+            # Steady (hit>=N) racket RMS is emitted for the first time this run
+            # and has never been measured; observe it before gating on it.
+            steady_racket_rms_gate=None,
+            angular_gate=0.72,
+            hit_soft=0.038,
+            hit_scale=0.050,
+            zero_sigma=0.032,
+            racket_soft=0.080,
+            approach_soft=0.072,
+            angular_soft=0.62,
+            angular_weight=0.65,
+            hits=13.0,
+            hge3=12.6,
+            dq_noise=0.42,
+            rv_noise=0.08,
+            noise_warmup=0,
+            noise_ramp=1,
+            min_updates=70,
+            best_mean=420.0,
+            best_rms=320.0,
+        ),
+        dict(
+            name="v44_vertical_commit",
+            hit_vxy_mult=1.75,
+            hit_vxy_floor=1.50,
+            racket_mult=1.65,
+            approach_mult=1.55,
+            zero_mult=1.55,
+            ball_mult=1.20,
+            post_ball_mult=1.25,
+            cycle_mult=1.80,
+            path_mult=1.55,
+            apply_racket_first=True,
+            ball_first_hit_only=False,
+            recoverability_min=1,
+            mean_vxy=0.048,
+            rms_vxy=0.068,
+            mean_racket_vxy=0.055,
+            rms_racket_vxy=0.070,
+            # Deliberately ungated on the split metrics: this final stage carries
+            # the strongest vxy reward (mult 1.75 + floor 1.50), and no run has
+            # ever reached it, so there is no measurement to justify a threshold.
+            # The aggregate mean/rms gates above stay as the "target met" signal;
+            # as the last stage they report success without blocking training.
+            first_hit_ball_gate=None,
+            recurrent_racket_rms_gate=None,
+            steady_racket_rms_gate=None,
+            angular_gate=0.55,
+            hit_soft=0.024,
+            hit_scale=0.040,
+            zero_sigma=0.024,
+            racket_soft=0.045,
+            approach_soft=0.050,
+            angular_soft=0.48,
+            angular_weight=1.00,
+            hits=12.8,
+            hge3=12.4,
+            # Full measured hardware jitter: the commit stage must hold the
+            # low-vxy gates under the real dq noise, not just a clean channel.
+            dq_noise=0.55,
+            rv_noise=0.11,
+            noise_warmup=0,
+            noise_ramp=1,
+            min_updates=90,
+            best_mean=560.0,
+            best_rms=420.0,
+        ),
+    )
+    shaped: list[CurriculumStage] = []
+    for spec in specs:
+        hit_vxy_weight = scaled(
+            "hit_vxy_penalty_weight",
+            spec["hit_vxy_mult"],
+            floor=spec["hit_vxy_floor"],
+        )
+        cfg = replace(
+            anchor_cfg,
+            hit_vxy_constraint_threshold_m_s=0.0,
+            hit_vxy_constraint_min_previous_hits=0,
+            hit_vxy_constraint_penalty=0.0,
+            hit_racket_vxy_constraint_threshold_m_s=0.0,
+            hit_racket_vxy_constraint_penalty=0.0,
+            hit_recoverability_min_count=spec["recoverability_min"],
+            hit_vxy_first_hit_only=spec["ball_first_hit_only"],
+            hit_vxy_apply_from_first_hit=not spec["ball_first_hit_only"],
+            hit_racket_vxy_measurement_mode="contact_point",
+            hit_racket_vxy_apply_from_first_hit=spec["apply_racket_first"],
+            hit_racket_vxy_soft_limit_m_s=spec["racket_soft"],
+            hit_racket_vxy_penalty_weight=scaled(
+                "hit_racket_vxy_penalty_weight",
+                spec["racket_mult"],
+            ),
+            hit_racket_vxy_penalty_scale_m_s=max(0.05, spec["racket_soft"] * 0.9),
+            # Hits 1..3 are the recovery transient after a reset: the racket is
+            # still catching the ball back onto the anchor, so a steady-state
+            # soft limit charges them for geometry they cannot avoid.  Give the
+            # early ordinals a looser limit and reserve the tight one for the
+            # steady regime the deployed policy actually runs in.
+            hit_racket_vxy_steady_min_count=STEADY_HIT_MIN_COUNT_INT,
+            hit_racket_vxy_recovery_soft_limit_m_s=max(
+                spec["racket_soft"] * 1.6,
+                spec["racket_soft"] + 0.10,
+            ),
+            # Break the shared episode phase so hit-ordinal composition stops
+            # beating against the rollout period (see r5 oscillation analysis).
+            episode_phase_stagger_min_frac=0.35,
+            hit_racket_angular_speed_penalty_weight=spec["angular_weight"],
+            hit_racket_angular_speed_soft_limit_rad_s=spec["angular_soft"],
+            hit_racket_angular_speed_scale_rad_s=max(
+                0.45,
+                spec["angular_soft"] + 0.12,
+            ),
+            racket_stability_angular_speed_mode="local_xz",
+            racket_stability_angular_speed_penalty_weight=max(
+                0.70,
+                spec["angular_weight"] * 0.85,
+            ),
+            racket_stability_angular_speed_soft_limit_rad_s=spec["angular_soft"],
+            hit_vxy_soft_limit_m_s=spec["hit_soft"],
+            hit_vxy_penalty_scale_m_s=spec["hit_scale"],
+            hit_vxy_penalty_weight=hit_vxy_weight,
+            hit_vxy_zero_reward_sigma_m_s=spec["zero_sigma"],
+            hit_vxy_zero_reward_weight=scaled(
+                "hit_vxy_zero_reward_weight",
+                spec["zero_mult"],
+            ),
+            ball_vxy_penalty_weight=scaled(
+                "ball_vxy_penalty_weight",
+                spec["ball_mult"],
+            ),
+            post_hit_ball_vxy_penalty_weight=scaled(
+                "post_hit_ball_vxy_penalty_weight",
+                spec["post_ball_mult"],
+            ),
+            approach_racket_vxy_penalty_weight=scaled(
+                "approach_racket_vxy_penalty_weight",
+                spec["approach_mult"],
+            ),
+            approach_racket_vxy_soft_limit_m_s=spec["approach_soft"],
+            approach_racket_vxy_penalty_scale_m_s=max(
+                0.06,
+                spec["approach_soft"] * 0.85,
+            ),
+            racket_cycle_vxy_penalty_weight=scaled(
+                "racket_cycle_vxy_penalty_weight",
+                spec["cycle_mult"],
+            ),
+            hit_cycle_racket_xy_path_penalty_weight=scaled(
+                "hit_cycle_racket_xy_path_penalty_weight",
+                spec["path_mult"],
+            ),
+            # Hardware dq telemetry (record_new2) carries ~0.55 rad/s of
+            # correlated jitter; sim trained on a clean dq channel, so the
+            # policy learned a high-gain response to it and chases the jitter
+            # as if it were motion.  A dq-noise probe reproduced the circling:
+            # clean 0.181 m/s racket vxy / 14.2 hits -> 0.457 m/s / 7.6 hits at
+            # 0.55 rad/s, matching the 4-6 hit real-robot regime.  Ramp the
+            # measured noise in across stages so the policy stops trusting the
+            # channel instead of amplifying it.
+            proprio_dq_obs_noise_std=spec["dq_noise"],
+            proprio_racket_vel_obs_noise_std=spec["rv_noise"],
+            proprio_obs_noise_rho=0.85,
+            # Stage 1 introduces the channel noise for the first time, so ramp it
+            # in over ~40 updates (256 per-env steps per update) to stay well
+            # inside min-stage-updates=50 - graduating mid-ramp would score the
+            # policy on noise it has not yet faced.  Later stages only raise an
+            # already-tolerated level, so they engage immediately.
+            proprio_obs_noise_warmup_env_steps=spec["noise_warmup"],
+            proprio_obs_noise_ramp_env_steps=spec["noise_ramp"],
+        )
+        shaped.append(
+            replace(
+                anchor,
+                name=spec["name"],
+                cfg=cfg,
+                target_mean_hits=spec["hits"],
+                target_mean_hits_ge3=spec["hge3"],
+                max_recent_mean_hit_vxy=spec["mean_vxy"],
+                max_recent_rms_hit_vxy=spec["rms_vxy"],
+                max_recent_mean_hit_racket_vxy=spec["mean_racket_vxy"],
+                max_recent_rms_hit_racket_vxy=spec["rms_racket_vxy"],
+                max_recent_mean_first_hit_ball_vxy=spec["first_hit_ball_gate"],
+                max_recent_rms_recurrent_hit_racket_vxy=spec["recurrent_racket_rms_gate"],
+                max_recent_rms_steady_hit_racket_vxy=spec["steady_racket_rms_gate"],
+                max_recent_hit_racket_angular_speed_rad_s=spec["angular_gate"],
+                best_checkpoint_mean_hit_vxy_weight=spec["best_mean"],
+                best_checkpoint_rms_hit_vxy_weight=spec["best_rms"],
+                min_updates=spec["min_updates"],
+                notes=(
+                    anchor.notes
+                    + " V44 FT: split first-hit ball / recurrent-racket gates, "
+                    "anchor-preserving penalty ramp, then aggregate commit."
+                ),
+            )
+        )
+    return shaped + v39[4:]
+
+
+def _sport_taskspace_noise_adapt_v46_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Let the v44 policy actually adapt to the hardware dq noise channel.
+
+    r8 ran 2386 updates on the v44 stage 0 spec and never graduated, ending at
+    7.16 mean hits from 13.71 at update 20.  The dq-sensitivity probe explains
+    why that number is a failure and not merely a hard task: the *unadapted*
+    source checkpoint scores 11.0 hits at dq=0.28 and 7.6 at dq=0.55.  So 2386
+    updates of training at dq=0.25 produced a policy worse than the one that
+    had never seen noise at all.  It did not adapt to the channel; it degraded
+    while being held in place.
+
+    Three settings jointly made adaptation impossible, and all three have to
+    move together -- relaxing any one alone leaves the other two binding:
+
+    1. The ramp outran the policy.  ``noise_warmup=2560`` / ``noise_ramp=7680``
+       are per-env steps, so at ``n_steps=256`` warmup ends at update 10 and
+       full noise lands at update 40.  The measured collapse sits exactly
+       there (13.15 at update 30 -> 9.84 at 40 -> 8.84 at 60).  The policy was
+       handed the full perturbation over 30 updates, before any adaptation
+       could form, and then spent 2300 updates stuck in the hole.
+    2. Exploration was pinned shut.  ``--max-log-std -3.8`` caps the action
+       std at e^-3.8 = 0.022 on a [-1, 1] range.  Measured entropy sat at
+       -16.79 for all 2386 updates (the analytic value for all 7 dims at the
+       cap is -16.67) and ``approx_kl`` stayed in 0.0013--0.0037 against
+       ``target_kl=0.012``.  The policy could not search for a noise-robust
+       gait; it could only re-tune the one it had.
+    3. The anchors pulled back toward the noise-naive teacher.  Actor-anchor
+       KL 0.006 plus replay-anchor KL 0.018 (0.024 total) plus counterfactual
+       supervision 0.05 all reference the clean-channel policy -- precisely
+       the high-gain dq response that the probe shows *causes* the circling.
+       Every step toward noise tolerance was penalised as drift.
+
+    This overlay changes only the noise schedule and the hits gates.  Every vxy
+    reward weight, soft limit, and vxy graduation gate is inherited from v44
+    untouched: low horizontal velocity is the objective and is not what failed.
+
+    Kept separate from v44 on purpose.  ``_sport_taskspace_fov_apex_v45_stages``
+    composes on top of the v44 builder, so a v44 edit would silently change the
+    live v45 run on its next memory-guard restart.
+    """
+
+    v44 = _sport_taskspace_racket_xy_polish_v44_stages(stages)
+    # dq ladder: enter at less than half the v44 level, and reach the measured
+    # hardware 0.55 rad/s only in the last stage.  Ramps are sized in updates
+    # (256 per-env steps each) and every stage now gets a real ramp -- v44 gave
+    # stages 1 and 2 warmup=0/ramp=1, i.e. an instant step onto a higher level.
+    # Stage 0 hits gate stays at v44's 13.2/12.8 (r8@upd25 proved reachable at
+    # this noise level).  The stage-0 *vxy* gates, however, must be
+    # re-referenced to the noise-on regime: r9 adapted for 2705 updates and
+    # plateaued at fh_ball 0.122-0.128 (0% of the last 800 updates under the
+    # v44 gate of 0.118) and rec_rms 0.149-0.174 (0% under 0.140), with slopes
+    # of -0.0001/-0.0005 per 100 updates -- years away from the old gates.
+    # The dq noise itself injects lateral motion the policy cannot remove at
+    # stage-0's weak 1.15x vxy pressure; the pressure that actually drives vxy
+    # down (1.35x/1.75x + floors) lives in stages 1-2, which the old gates
+    # blocked forever.  New stage-0 vxy gates sit at the observed adapted
+    # plateau's upper edge (100% pass in r9's last 800): they gate against
+    # regression, and hand the reduction job to the later stages.
+    # view drops 0.88 -> 0.85 for the same reason (r9 last-800 pass: 8% at
+    # 0.88, 38% at 0.85 with slope +0.003/100upd -- reachable, not free).
+    specs = [
+        {
+            "dq_noise": 0.12,
+            "noise_warmup": 256 * 50,
+            "noise_ramp": 256 * 150,
+            "hits": 13.20,
+            "hge3": 12.80,
+            "min_updates": 220,
+            "fh_ball_gate": 0.132,
+            "rec_rms_gate": 0.175,
+            "view_gate": 0.85,
+        },
+        {
+            "dq_noise": 0.28,
+            "noise_warmup": 256 * 10,
+            "noise_ramp": 256 * 90,
+            "hits": 12.20,
+            "hge3": 11.80,
+            "min_updates": 140,
+            # Stage 1 carries 1.35x vxy pressure + floor: require an actual
+            # reduction below the stage-0 plateau before advancing to 1.75x.
+            "fh_ball_gate": 0.120,
+            "rec_rms_gate": 0.160,
+            "view_gate": 0.85,
+        },
+        {
+            "dq_noise": 0.45,
+            "noise_warmup": 256 * 10,
+            "noise_ramp": 256 * 90,
+            "hits": 11.40,
+            "hge3": 11.00,
+            "min_updates": 140,
+            # Terminal stage under --max-stages 3: ungated on the split vxy
+            # metrics (matches v44), aggregate targets report progress instead.
+            "fh_ball_gate": None,
+            "rec_rms_gate": None,
+            "view_gate": 0.82,
+        },
+    ]
+
+    shaped: list[CurriculumStage] = []
+    for index, stage in enumerate(v44):
+        if index >= len(specs):
+            shaped.append(stage)
+            continue
+        spec = specs[index]
+        cfg = replace(
+            stage.cfg,
+            proprio_dq_obs_noise_std=spec["dq_noise"],
+            proprio_obs_noise_warmup_env_steps=spec["noise_warmup"],
+            proprio_obs_noise_ramp_env_steps=spec["noise_ramp"],
+        )
+        shaped.append(
+            replace(
+                stage,
+                name=stage.name.replace("v44_", "v46_"),
+                cfg=cfg,
+                # Hits gates from the specs table; vxy gates re-referenced to
+                # the r9 noise-adapted plateau (see comment above the table).
+                target_mean_hits=spec["hits"],
+                target_mean_hits_ge3=spec["hge3"],
+                min_updates=spec["min_updates"],
+                max_recent_mean_first_hit_ball_vxy=spec["fh_ball_gate"],
+                max_recent_rms_recurrent_hit_racket_vxy=spec["rec_rms_gate"],
+                target_ball_view_in_bounds=spec["view_gate"],
+                notes=(
+                    stage.notes
+                    + " V46: slower dq ramp (0.12/0.28/0.45), hits gates "
+                    "re-referenced to the noise-on regime; vxy objective "
+                    "unchanged from v44."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_noise_fov_v47_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """FOV/apex overlay on the v46 noise-adapt recipe (GPU0 A/B arm).
+
+    v45 layered the FOV terms on the v44 fast noise ramp and collapsed at
+    update ~50 exactly like r8, then sat at 4.5 hits for 4000 updates -- the
+    FOV terms were never actually tested.  v47 re-runs that test on the v46
+    schedule, which r9 proved survivable (13.1+ hits after 2700 updates).
+
+    Differences from the v45 overlay:
+      * no proprio_racket_vel_obs_noise_std raise (v45 pushed 0.14-0.24; the
+        hardware-implied value is an upper bound contaminated by tracking
+        error, and the raise was confounded with the collapse) -- v46's
+        0.05/0.08/0.11 ladder is kept;
+      * apex/camera weights enter at stage 0's mild level and ramp with the
+        stages, same shape as v45 but on a base that can absorb them.
+    """
+
+    v46 = _sport_taskspace_noise_adapt_v46_stages(stages)
+    specs = [
+        {
+            "target_height": 0.21,
+            "top_margin": 6.0,
+            "center": 0.35,
+            "visibility": 4.0,
+            "visible": 1.0,
+            "apex_margin": 0.035,
+            "apex_weight": 6.0,
+            "view_z_ideal_hi": 1.38,
+            "view_z_bound_hi": 1.45,
+            "high_term": 1.48,
+            "apex_view_center": 0.40,
+        },
+        {
+            "target_height": 0.185,
+            "top_margin": 9.0,
+            "center": 0.50,
+            "visibility": 6.0,
+            "visible": 2.0,
+            "apex_margin": 0.030,
+            "apex_weight": 7.0,
+            "view_z_ideal_hi": 1.35,
+            "view_z_bound_hi": 1.43,
+            "high_term": 1.46,
+            "apex_view_center": 0.50,
+        },
+        {
+            "target_height": 0.16,
+            "top_margin": 12.0,
+            "center": 0.60,
+            "visibility": 8.0,
+            "visible": 3.0,
+            "apex_margin": 0.025,
+            "apex_weight": 8.0,
+            "view_z_ideal_hi": 1.32,
+            "view_z_bound_hi": 1.40,
+            "high_term": 1.44,
+            "apex_view_center": 0.60,
+        },
+    ]
+
+    shaped: list[CurriculumStage] = []
+    for index, stage in enumerate(v46):
+        if index >= len(specs):
+            shaped.append(stage)
+            continue
+        spec = specs[index]
+        cfg = stage.cfg
+        z_ideal = (float(cfg.ball_view_z_ideal_m[0]), spec["view_z_ideal_hi"])
+        z_bounds = (float(cfg.ball_view_z_bounds_m[0]), spec["view_z_bound_hi"])
+        cfg = replace(
+            cfg,
+            target_height=spec["target_height"],
+            hit_height_center=spec["target_height"],
+            camera_visibility_mode="pixel",
+            virtual_camera_pose_mode="base_extrinsic",
+            camera_pixel_margin=D455_848_UNDISTORTED_PIXEL_MARGIN,
+            camera_top_margin_penalty_weight=spec["top_margin"],
+            camera_center_weight=spec["center"],
+            camera_visibility_penalty_weight=spec["visibility"],
+            camera_visible_penalty_weight=spec["visible"],
+            apex_soft_limit_margin=spec["apex_margin"],
+            apex_soft_penalty_weight=spec["apex_weight"],
+            ball_view_z_ideal_m=z_ideal,
+            ball_view_z_bounds_m=z_bounds,
+            ball_high_termination_z_m=spec["high_term"],
+            hit_apex_view_center_penalty_weight=max(
+                spec["apex_view_center"],
+                float(cfg.hit_apex_view_center_penalty_weight),
+            ),
+        )
+        shaped.append(
+            replace(
+                stage,
+                name=stage.name.replace("v46_", "v47_"),
+                cfg=cfg,
+                notes=(
+                    stage.notes
+                    + " V47 FOV: apex lowered under the 1.511 m pixel-exit "
+                    "height + pixel top-margin cost, on the v46 noise recipe."
+                ),
+            )
+        )
+    return shaped
+
+
+# Measured from record_new2 (13 sessions, 5199 policy frames, 38 hits).  The
+# ball pixel row is an almost deterministic function of ball height:
+#   cy_px = -773 * ball_z + 1168   (R = -0.938, 7.7 px per cm)
+# so cy = 0 (top edge) corresponds to ball_z = 1.511 m.  Observed apex max was
+# 1.436 m and the worst session reached cy = 6.8 px, i.e. 0.9 cm from leaving
+# frame; 7 of 13 sessions came within 40 px.  v44 trains toward
+# target_height=0.23 above a ~1.10 m anchor, i.e. an apex of ~1.33 m, only
+# ~18 cm under that ceiling -- the real robot then loses the ball upward.
+D455_848_UNDISTORTED_BALL_Z_TOP_EXIT_M = 1.511
+
+
+def _sport_taskspace_fov_apex_v45_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Add field-of-view retention on top of the v44 racket-xy polish.
+
+    v44 already gates on ``target_ball_view_z_ideal`` and
+    ``target_hit_camera_lower_band_rate`` and carries the view-frame terms
+    (``ball_view_out_of_bounds_penalty_weight``,
+    ``hit_apex_view_center_penalty_weight``), but every *camera pixel* weight is
+    still 0.0 -- including ``camera_top_margin_penalty_weight``, the only term
+    that specifically costs approaching the top edge.  So the curriculum grades
+    the exact failure mode it gives no pixel-space gradient for.
+
+    Three changes, each ramped over the same three shaped stages v44 uses so a
+    resumed checkpoint is never asked to absorb them at once:
+
+    1. Lower the apex target (``target_height``/``hit_height_center``) from 0.23
+       to 0.16, moving the trained apex from ~1.33 m to ~1.26 m and roughly
+       doubling the margin to the 1.511 m exit height.
+    2. Turn on the pixel-space camera penalties, weighted toward the top margin,
+       and tighten the view-z band and the hard high-z termination to sit below
+       the measured exit height instead of above it.
+    3. Raise ``proprio_racket_vel_obs_noise_std`` toward the level implied by
+       the hardware telemetry (0.136/0.156/0.362 per axis vs 0.05/0.08/0.11 in
+       v44).  Treat the implied value as an upper bound -- it contains
+       systematic tracking error, not just noise -- so ramp to 0.24, not 0.36.
+
+    The racket-xy penalty ramp that v44 introduced for the circling behaviour is
+    deliberately left untouched; this overlay only adds height/visibility.
+    """
+
+    specs = [
+        {
+            "target_height": 0.21,
+            "top_margin": 6.0,
+            "center": 0.35,
+            "visibility": 4.0,
+            "visible": 1.0,
+            "apex_margin": 0.035,
+            "apex_weight": 6.0,
+            "view_z_ideal_hi": 1.38,
+            "view_z_bound_hi": 1.45,
+            "high_term": 1.48,
+            "apex_view_center": 0.40,
+            "rv_noise": 0.14,
+        },
+        {
+            "target_height": 0.185,
+            "top_margin": 9.0,
+            "center": 0.50,
+            "visibility": 6.0,
+            "visible": 2.0,
+            "apex_margin": 0.030,
+            "apex_weight": 7.0,
+            "view_z_ideal_hi": 1.35,
+            "view_z_bound_hi": 1.43,
+            "high_term": 1.46,
+            "apex_view_center": 0.50,
+            "rv_noise": 0.18,
+        },
+        {
+            "target_height": 0.16,
+            "top_margin": 12.0,
+            "center": 0.60,
+            "visibility": 8.0,
+            "visible": 3.0,
+            "apex_margin": 0.025,
+            "apex_weight": 8.0,
+            "view_z_ideal_hi": 1.32,
+            "view_z_bound_hi": 1.40,
+            "high_term": 1.44,
+            "apex_view_center": 0.60,
+            "rv_noise": 0.24,
+        },
+    ]
+
+    shaped: list[CurriculumStage] = []
+    for index, stage in enumerate(stages):
+        if index >= len(specs):
+            shaped.append(stage)
+            continue
+        spec = specs[index]
+        cfg = stage.cfg
+        z_ideal = (float(cfg.ball_view_z_ideal_m[0]), spec["view_z_ideal_hi"])
+        z_bounds = (float(cfg.ball_view_z_bounds_m[0]), spec["view_z_bound_hi"])
+        cfg = replace(
+            cfg,
+            target_height=spec["target_height"],
+            hit_height_center=spec["target_height"],
+            camera_visibility_mode="pixel",
+            virtual_camera_pose_mode="base_extrinsic",
+            camera_pixel_margin=D455_848_UNDISTORTED_PIXEL_MARGIN,
+            camera_top_margin_penalty_weight=spec["top_margin"],
+            camera_center_weight=spec["center"],
+            camera_visibility_penalty_weight=spec["visibility"],
+            camera_visible_penalty_weight=spec["visible"],
+            apex_soft_limit_margin=spec["apex_margin"],
+            apex_soft_penalty_weight=spec["apex_weight"],
+            ball_view_z_ideal_m=z_ideal,
+            ball_view_z_bounds_m=z_bounds,
+            ball_high_termination_z_m=spec["high_term"],
+            hit_apex_view_center_penalty_weight=max(
+                spec["apex_view_center"],
+                float(cfg.hit_apex_view_center_penalty_weight),
+            ),
+            proprio_racket_vel_obs_noise_std=spec["rv_noise"],
+        )
+        shaped.append(
+            replace(
+                stage,
+                name=stage.name.replace("v44_", "v45_"),
+                cfg=cfg,
+                notes=(
+                    stage.notes
+                    + " V45 FOV: lower apex target under the measured 1.511 m "
+                    "pixel-exit height, enable pixel-space top-margin cost, "
+                    "and calibrate racket-vel obs noise to hardware."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_estnoise_v48_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Train against the measured ball-velocity estimator error (root cause).
+
+    Causal replay ablation (replay_ablation_20260808, real trajectory from
+    record_new2/202829 through the deployed policy): full real obs reproduce
+    the circling in sim (racket loop area 0.075 m^2, rms lateral 0.62 m/s);
+    zeroing only lateral ball-velocity obs cuts the area to 37%, freezing
+    lateral position to 19%, both to 3%.  The driver is the policy's high
+    lateral gain on the ball observation, excited by estimator error the sim
+    never modelled: lateral vel error std 0.20-0.27 m/s (sim trained 0.03-0.11
+    white), hit-synchronised spikes (median 0.39, p90 1.39 right after the
+    hit) and temporal correlation (vy autocorr 0.47 @1 obs frame).  dq noise
+    is a secondary amplifier only -- and its 0.28/0.45 ladder crushed training
+    twice (r10, v47r1: hits 13 -> 6.8 in stage 1), so it is held at the
+    proven-survivable 0.12 (r9: 2700 updates at 13.1-13.3 hits) and nudged to
+    0.18 only in the terminal stage.
+    """
+
+    v44 = _sport_taskspace_racket_xy_polish_v44_stages(stages)
+    specs = [
+        {
+            # velxy ramps in over updates ~50-200 (per-env steps @ n_steps=256),
+            # the same schedule that r9 survived for dq.
+            "velxy": 0.22, "posthit": 0.35,
+            "v_warm": 256 * 50, "v_ramp": 256 * 150,
+            "dq": 0.12, "dq_warm": 0, "dq_ramp": 1,
+            "hits": 13.20, "hge3": 12.80, "view": 0.85,
+            "fh_ball": 0.135, "rec_rms": 0.185, "min_updates": 220,
+        },
+        {
+            "velxy": 0.27, "posthit": 0.60,
+            "v_warm": 2560, "v_ramp": 23040,
+            "dq": 0.12, "dq_warm": 0, "dq_ramp": 1,
+            "hits": 12.40, "hge3": 12.00, "view": 0.85,
+            "fh_ball": 0.125, "rec_rms": 0.170, "min_updates": 140,
+        },
+        {
+            # Terminal under --max-stages 3: full measured estimator error,
+            # strongest vxy pressure inherited from v44 (1.75x + floor).
+            "velxy": 0.27, "posthit": 0.80,
+            "v_warm": 2560, "v_ramp": 23040,
+            "dq": 0.18, "dq_warm": 2560, "dq_ramp": 23040,
+            "hits": 11.60, "hge3": 11.20, "view": 0.82,
+            "fh_ball": None, "rec_rms": None, "min_updates": 140,
+        },
+    ]
+
+    shaped: list[CurriculumStage] = []
+    for index, stage in enumerate(v44):
+        if index >= len(specs):
+            shaped.append(stage)
+            continue
+        spec = specs[index]
+        cfg = replace(
+            stage.cfg,
+            ball_obs_vel_xy_noise_std=spec["velxy"],
+            ball_obs_vel_xy_noise_rho=0.6,
+            ball_obs_posthit_vel_xy_noise_std=spec["posthit"],
+            ball_obs_posthit_vel_noise_frames=3,
+            ball_obs_vel_xy_noise_warmup_env_steps=spec["v_warm"],
+            ball_obs_vel_xy_noise_ramp_env_steps=spec["v_ramp"],
+            proprio_dq_obs_noise_std=spec["dq"],
+            proprio_obs_noise_warmup_env_steps=spec["dq_warm"],
+            proprio_obs_noise_ramp_env_steps=spec["dq_ramp"],
+        )
+        shaped.append(
+            replace(
+                stage,
+                name=stage.name.replace("v44_", "v48_"),
+                cfg=cfg,
+                target_mean_hits=spec["hits"],
+                target_mean_hits_ge3=spec["hge3"],
+                target_ball_view_in_bounds=spec["view"],
+                max_recent_mean_first_hit_ball_vxy=spec["fh_ball"],
+                max_recent_rms_recurrent_hit_racket_vxy=spec["rec_rms"],
+                min_updates=spec["min_updates"],
+                notes=(
+                    stage.notes
+                    + " V48: measured ball-vel estimator-error DR (AR1 lateral "
+                    "0.22-0.27 + post-hit spike) as the primary robustness "
+                    "axis; dq held at 0.12/0.18."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_estnoise_fov_v49_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """FOV/apex overlay on the v48 estimator-noise base (GPU0 A/B arm)."""
+
+    v48 = _sport_taskspace_estnoise_v48_stages(stages)
+    specs = [
+        {
+            "target_height": 0.21, "top_margin": 6.0, "center": 0.35,
+            "visibility": 4.0, "visible": 1.0, "apex_margin": 0.035,
+            "apex_weight": 6.0, "view_z_ideal_hi": 1.38,
+            "view_z_bound_hi": 1.45, "high_term": 1.48, "apex_view_center": 0.40,
+        },
+        {
+            "target_height": 0.185, "top_margin": 9.0, "center": 0.50,
+            "visibility": 6.0, "visible": 2.0, "apex_margin": 0.030,
+            "apex_weight": 7.0, "view_z_ideal_hi": 1.35,
+            "view_z_bound_hi": 1.43, "high_term": 1.46, "apex_view_center": 0.50,
+        },
+        {
+            "target_height": 0.16, "top_margin": 12.0, "center": 0.60,
+            "visibility": 8.0, "visible": 3.0, "apex_margin": 0.025,
+            "apex_weight": 8.0, "view_z_ideal_hi": 1.32,
+            "view_z_bound_hi": 1.40, "high_term": 1.44, "apex_view_center": 0.60,
+        },
+    ]
+
+    shaped: list[CurriculumStage] = []
+    for index, stage in enumerate(v48):
+        if index >= len(specs):
+            shaped.append(stage)
+            continue
+        spec = specs[index]
+        cfg = stage.cfg
+        z_ideal = (float(cfg.ball_view_z_ideal_m[0]), spec["view_z_ideal_hi"])
+        z_bounds = (float(cfg.ball_view_z_bounds_m[0]), spec["view_z_bound_hi"])
+        cfg = replace(
+            cfg,
+            target_height=spec["target_height"],
+            hit_height_center=spec["target_height"],
+            camera_visibility_mode="pixel",
+            virtual_camera_pose_mode="base_extrinsic",
+            camera_pixel_margin=D455_848_UNDISTORTED_PIXEL_MARGIN,
+            camera_top_margin_penalty_weight=spec["top_margin"],
+            camera_center_weight=spec["center"],
+            camera_visibility_penalty_weight=spec["visibility"],
+            camera_visible_penalty_weight=spec["visible"],
+            apex_soft_limit_margin=spec["apex_margin"],
+            apex_soft_penalty_weight=spec["apex_weight"],
+            ball_view_z_ideal_m=z_ideal,
+            ball_view_z_bounds_m=z_bounds,
+            ball_high_termination_z_m=spec["high_term"],
+            hit_apex_view_center_penalty_weight=max(
+                spec["apex_view_center"],
+                float(cfg.hit_apex_view_center_penalty_weight),
+            ),
+        )
+        shaped.append(
+            replace(
+                stage,
+                name=stage.name.replace("v48_", "v49_"),
+                cfg=cfg,
+                notes=(
+                    stage.notes
+                    + " V49 FOV: apex lowered under the 1.511 m pixel-exit "
+                    "height + pixel top-margin cost, on the v48 base."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_estnoise_invariant_v50_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Robustly fine-tune V46 against measured real ball-estimator error.
+
+    V48/V49 established that simply turning on the complete 0.22 m/s AR(1)
+    lateral-velocity perturbation after a clean-policy warm-up collapses the
+    13-hit attractor.  This is not evidence that the measured gap is harmless:
+    the real replay ablation identifies it as the primary circle driver.  V50
+    changes the continuation rather than the objective: start under a small
+    error that preserves the V46 basin, make each ramp far longer than the
+    original 150-update jump, and rely on clean-label/noisy-input real-prefix
+    counterfactual supervision for the otherwise unobservable invariance.
+
+    There is deliberately no horizontal-velocity hard termination.  Historical
+    V41 showed that changing the MDP at a contact destroys valid juggling;
+    V44's dense outgoing-vxy, contact-point-racket-vxy and cycle-area costs
+    remain the low-lateral-motion objective throughout.
+    """
+
+    v44 = _sport_taskspace_racket_xy_polish_v44_stages(stages)
+    specs = (
+        # At n_steps=256, warm-up/ramp last 80/320 rollout updates per
+        # environment.  They intentionally begin below V48 and require a long
+        # consolidation before the next regime.
+        # ``min_updates`` must not allow graduation during the ramp.  The
+        # launch command uses a 12-update convergence window, hence every
+        # stage first reaches its full error level and then must retain it for
+        # one complete window: (warm + ramp) / 256 + 12.
+        dict(velxy=0.06, posthit=0.10, warm=256 * 80, ramp=256 * 320,
+             dq=0.12, hits=12.8, hge3=12.4, view=0.84, min_updates=412),
+        dict(velxy=0.13, posthit=0.28, warm=256 * 60, ramp=256 * 420,
+             dq=0.12, hits=12.0, hge3=11.6, view=0.82, min_updates=492),
+        dict(velxy=0.22, posthit=0.48, warm=256 * 60, ramp=256 * 520,
+             dq=0.16, hits=11.2, hge3=10.8, view=0.80, min_updates=592),
+    )
+    shaped: list[CurriculumStage] = []
+    for index, stage in enumerate(v44):
+        if index >= len(specs):
+            shaped.append(stage)
+            continue
+        spec = specs[index]
+        progress = index / max(1, len(specs) - 1)
+        cfg = replace(
+            stage.cfg,
+            ball_obs_vel_xy_noise_std=spec["velxy"],
+            ball_obs_vel_xy_noise_rho=0.60,
+            ball_obs_posthit_vel_xy_noise_std=spec["posthit"],
+            ball_obs_posthit_vel_noise_frames=3,
+            ball_obs_vel_xy_noise_warmup_env_steps=spec["warm"],
+            ball_obs_vel_xy_noise_ramp_env_steps=spec["ramp"],
+            proprio_dq_obs_noise_std=spec["dq"],
+            proprio_obs_noise_warmup_env_steps=spec["warm"],
+            proprio_obs_noise_ramp_env_steps=spec["ramp"],
+            # Keep the dense anti-cut signals clearly present as sensor noise
+            # rises; no contact termination is introduced.
+            hit_vxy_penalty_weight=max(
+                float(stage.cfg.hit_vxy_penalty_weight), 1.15 + 0.50 * progress
+            ),
+            hit_vxy_zero_reward_weight=max(
+                float(stage.cfg.hit_vxy_zero_reward_weight), 1.10 + 0.80 * progress
+            ),
+            hit_cycle_racket_xy_area_penalty_weight=max(
+                float(stage.cfg.hit_cycle_racket_xy_area_penalty_weight),
+                0.18 + 0.22 * progress,
+            ),
+        )
+        shaped.append(
+            replace(
+                stage,
+                name=stage.name.replace("v44_", "v50_"),
+                cfg=cfg,
+                target_mean_hits=spec["hits"],
+                target_mean_hits_ge3=spec["hge3"],
+                target_ball_view_in_bounds=spec["view"],
+                # V50 observes these split metrics but does not invent a
+                # gate before establishing the noisy-label plateau.
+                max_recent_mean_first_hit_ball_vxy=None,
+                max_recent_rms_recurrent_hit_racket_vxy=None,
+                min_updates=spec["min_updates"],
+                notes=(
+                    stage.notes
+                    + " V50: clean-label/noisy-input real-prefix invariance "
+                    "plus a 0.06→0.13→0.22 m/s correlated estimator-error "
+                    "bridge; dense anti-cut rewards, no hit-vxy termination."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_estnoise_gated_v52_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Promote estimator noise only after the preceding level is retained.
+
+    V51 established a clear failure mode: its first stage combines the clean
+    V46 policy with a time-driven 0 -> 0.06 m/s AR(1) observation-noise ramp.
+    Ball and racket RMS rise monotonically once that ramp becomes material,
+    while PPO itself remains numerically stable.  A slower ramp is not a
+    curriculum if it reaches the same difficult endpoint regardless of whether
+    the policy retained the preceding level.
+
+    This overlay keeps V50's fitted actuator, dense anti-cut reward, clean
+    label/noisy input real-prefix supervision and 67-D deployment contract.
+    It changes only the estimator-noise sequence:
+
+      0 -> 0.020 -> 0.028 -> 0.036 -> 0.048 -> 0.060 m/s.
+
+    Every entry level is preserved by ``ball_obs_vel_xy_noise_min_scale`` and
+    each transition has a task/RMS gate.  Thus stage N+1 cannot expose the
+    actor to a larger observation error until N demonstrated that it can juggle
+    without recovering the old lateral-cutting attractor.  This is deliberately
+    separate from a future temporal-observer profile: it preserves checkpoint
+    and real-prefix 67-D compatibility, isolating the curriculum variable.
+    """
+
+    v50 = _sport_taskspace_estnoise_invariant_v50_stages(stages)
+    specs = (
+        dict(
+            name="v52_estnoise_002_retention",
+            velxy=0.020,
+            posthit=0.100 / 3.0,
+            floor=0.0,
+            warm=256 * 80,
+            ramp=256 * 320,
+            min_updates=412,
+            mean_ball=0.100,
+            rms_ball=0.140,
+            mean_racket=0.130,
+            rms_racket=0.165,
+            first_ball=0.118,
+            recurrent_racket=0.140,
+        ),
+        dict(
+            name="v52_estnoise_0028_bridge",
+            velxy=0.028,
+            posthit=0.100 * 0.028 / 0.060,
+            floor=5.0 / 7.0,
+            warm=0,
+            ramp=256 * 320,
+            min_updates=332,
+            mean_ball=0.110,
+            rms_ball=0.150,
+            mean_racket=0.140,
+            rms_racket=0.180,
+            first_ball=0.125,
+            recurrent_racket=0.155,
+        ),
+        dict(
+            name="v52_estnoise_0036_bridge",
+            velxy=0.036,
+            posthit=0.060,
+            floor=7.0 / 9.0,
+            warm=0,
+            ramp=256 * 320,
+            min_updates=332,
+            mean_ball=0.120,
+            rms_ball=0.165,
+            mean_racket=0.150,
+            rms_racket=0.195,
+            first_ball=0.135,
+            recurrent_racket=0.170,
+        ),
+        dict(
+            name="v52_estnoise_0048_bridge",
+            velxy=0.048,
+            posthit=0.080,
+            floor=0.75,
+            warm=0,
+            ramp=256 * 320,
+            min_updates=332,
+            mean_ball=0.130,
+            rms_ball=0.180,
+            mean_racket=0.160,
+            rms_racket=0.215,
+            first_ball=0.145,
+            recurrent_racket=0.185,
+        ),
+        dict(
+            name="v52_estnoise_006_commit",
+            velxy=0.060,
+            posthit=0.100,
+            floor=0.8,
+            warm=0,
+            ramp=256 * 320,
+            min_updates=332,
+            mean_ball=0.140,
+            rms_ball=0.200,
+            mean_racket=0.175,
+            rms_racket=0.235,
+            first_ball=0.155,
+            recurrent_racket=0.200,
+        ),
+    )
+    if len(v50) < 3:
+        raise ValueError("V52 estimator bridge expects at least three V50 stages")
+
+    shaped: list[CurriculumStage] = []
+    # Preserve V50's retention -> bridge -> commit reward schedule without
+    # reintroducing a blind 0.04 m/s jump: use its middle/commit semantics for
+    # the added intermediate noise rungs.
+    source_indices = (0, 1, 1, 2, 2)
+    for spec, source_index in zip(specs, source_indices, strict=True):
+        stage = v50[source_index]
+        cfg = replace(
+            stage.cfg,
+            ball_obs_vel_xy_noise_std=spec["velxy"],
+            ball_obs_posthit_vel_xy_noise_std=spec["posthit"],
+            ball_obs_vel_xy_noise_min_scale=spec["floor"],
+            ball_obs_vel_xy_noise_warmup_env_steps=spec["warm"],
+            ball_obs_vel_xy_noise_ramp_env_steps=spec["ramp"],
+        )
+        shaped.append(
+            replace(
+                stage,
+                name=spec["name"],
+                cfg=cfg,
+                max_recent_mean_hit_vxy=spec["mean_ball"],
+                max_recent_rms_hit_vxy=spec["rms_ball"],
+                max_recent_mean_hit_racket_vxy=spec["mean_racket"],
+                max_recent_rms_hit_racket_vxy=spec["rms_racket"],
+                max_recent_mean_first_hit_ball_vxy=spec["first_ball"],
+                max_recent_rms_recurrent_hit_racket_vxy=spec["recurrent_racket"],
+                min_updates=spec["min_updates"],
+                notes=(
+                    stage.notes
+                    + " V52: performance-gated AR(1) estimator-noise ladder "
+                    "0.020 -> 0.028 -> 0.036 -> 0.048 -> 0.060 m/s; each stage begins at the "
+                    "previous noise level and must retain low ball/racket RMS."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_estnoise_viewcenter_v59_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Retain the V52 noise ladder while restoring the measured view-Y margin.
+
+    V58 isolates the bounded innovation observer at the V52 0.060 m/s commit
+    level.  It preserves hits, full-horizon survival, and both lateral-speed
+    RMS gates, so the old observation-error-driven circle is no longer the
+    active failure.  Its only systematic gate loss is view retention: the ball
+    drifts toward the negative local-Y boundary while vertical view retention
+    remains perfect.  The existing continuous view term is too weak and is
+    late in the causal chain.  Raise only the contact-time predicted-apex
+    center cost, leaving the observer, 67-D interface, noise schedule,
+    actuator model, and every strict gate unchanged.
+    """
+
+    v52 = _sport_taskspace_estnoise_gated_v52_stages(stages)
+    repaired: list[CurriculumStage] = []
+    for stage in v52:
+        cfg = replace(
+            stage.cfg,
+            hit_apex_view_center_penalty_weight=max(
+                0.80, float(stage.cfg.hit_apex_view_center_penalty_weight)
+            ),
+        )
+        repaired.append(
+            replace(
+                stage,
+                name=stage.name.replace("v52_", "v59_"),
+                cfg=cfg,
+                notes=(
+                    stage.notes
+                    + " V59: retain the V58 bounded-innovation observer and "
+                    "actual AR(1) estimator noise, while raising only the "
+                    "causal predicted-apex view-center cost to restore the "
+                    "measured local-Y FOV margin."
+                ),
+            )
+        )
+    return repaired
+
+
+def _sport_taskspace_estnoise_ytight_v60_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Strengthen only V59's dense local-Y FOV-centering gradient.
+
+    V59's event-aligned predicted-apex loss fixes the original estimator-loop
+    failure, but its continuation can still settle slowly toward the D455
+    lower-Y edge while horizontal speed and all other safety diagnostics stay
+    nominal.  This paired follow-up leaves the V59 observer, plant, action
+    interface, noise ladder, PPO settings, reward terms, and gates intact.
+    It changes only the existing *dense* local-Y view-centering sigma from
+    10 cm to 7.5 cm, increasing the corrective gradient for that measured
+    error by (0.10 / 0.075)^2 without perturbing local X behavior.
+    """
+
+    v59 = _sport_taskspace_estnoise_viewcenter_v59_stages(stages)
+    tightened: list[CurriculumStage] = []
+    for stage in v59:
+        cfg = replace(stage.cfg, ball_view_y_sigma_m=0.075)
+        tightened.append(
+            replace(
+                stage,
+                name=stage.name.replace("v59_", "v60_"),
+                cfg=cfg,
+                notes=(
+                    stage.notes
+                    + " V60: retain V59 exactly while tightening only the "
+                    "dense local-Y view-center sigma from 0.10 to 0.075 m."
+                ),
+            )
+        )
+    return tightened
+
+
+def _sport_taskspace_estnoise_ytarget_v61_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Resolve the V59 view-return versus zero-vxy objective conflict.
+
+    V59/V60 both retain low true lateral RMS but settle near local-Y=-0.47 m:
+    the state/apex centering losses ask the ball to come back to -0.35 m while
+    the strongest contact shaping simultaneously treats every nonzero lateral
+    outgoing velocity as an error.  Tightening the position loss in V60 did
+    not change that attractor.  This branch keeps the full V59 plant, observer,
+    noisy domain, gates, and *actual* vxy metrics.  It changes only the
+    shaping reference used by the existing hit-vxy penalty/zero-credit: outside
+    a 2 cm local-Y deadband, a bounded 0.10 m/s velocity toward the D455
+    center is the zero-residual target.  Thus corrective motion is encouraged
+    without concealing it from the strict real-speed and RMS gates.
+    """
+
+    v59 = _sport_taskspace_estnoise_viewcenter_v59_stages(stages)
+    targeted: list[CurriculumStage] = []
+    for stage in v59:
+        cfg = replace(
+            stage.cfg,
+            hit_vxy_local_y_target_gain_s_inv=1.0,
+            hit_vxy_local_y_target_max_m_s=0.10,
+            hit_vxy_local_y_target_deadband_m=0.020,
+        )
+        targeted.append(
+            replace(
+                stage,
+                name=stage.name.replace("v59_", "v61_"),
+                cfg=cfg,
+                notes=(
+                    stage.notes
+                    + " V61: preserve true vxy safety/gates while using a "
+                    "bounded deadbanded local-Y return velocity as the "
+                    "event-level hit-vxy shaping target."
+                ),
+            )
+        )
+    return targeted
+
+
+def _sport_taskspace_estnoise_yprogress_v62_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Make inward local-Y corrections creditable without relaxing safety.
+
+    V61 proves that supplying only a local-Y velocity reference is not enough:
+    the legacy racket-vxy shaping still charges the motion required to realize
+    that reference, and PPO retains the outward apex attractor.  V62 keeps
+    V61's bounded 0.10 m/s reference and adds two tightly coupled, bounded
+    pieces of causal credit at a real contact:
+
+    * signed reward when the *predicted post-hit apex* reduces local-Y error;
+    * 5.5 cm/s extra racket-vxy soft allowance only on that demonstrated
+      inward correction.
+
+    The allowance is never applied to outward/neutral apex motion.  It changes
+    no true ball/racket speed diagnostic, quality score, constraint, or strict
+    gate, so a lateral-cut solution remains visible and fails exactly as
+    before.  The signed apex score clips at +/-1 over a 4 cm improvement, which
+    prevents an off-center reset from purchasing an unbounded sweep.
+    """
+
+    v61 = _sport_taskspace_estnoise_ytarget_v61_stages(stages)
+    progressed: list[CurriculumStage] = []
+    for stage in v61:
+        cfg = replace(
+            stage.cfg,
+            hit_apex_view_y_progress_reward_weight=4.0,
+            hit_apex_view_y_progress_sigma_m=0.040,
+            hit_apex_view_y_progress_deadband_m=0.020,
+            hit_apex_view_y_progress_racket_vxy_allowance_m_s=0.055,
+        )
+        progressed.append(
+            replace(
+                stage,
+                name=stage.name.replace("v61_", "v62_"),
+                cfg=cfg,
+                notes=(
+                    stage.notes
+                    + " V62: add bounded signed predicted-apex local-Y "
+                    "progress credit and correction-only racket-vxy shaping "
+                    "allowance; true velocity/RMS gates remain unchanged."
+                ),
+            )
+        )
+    return progressed
+
+
+def _sport_taskspace_estnoise_yprospective_v63_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Break V62's correction-first shaping deadlock without relaxing safety.
+
+    V62's post-hoc allowance never opens on its outward-apex attractor: the
+    policy first has to pay the steady racket-vxy cost to discover an inward
+    contact.  V63 keeps V61's bounded local-Y velocity target and every V62
+    strict metric/gate, but grants a bounded 8.5 cm/s *soft* racket allowance
+    whenever the current confirmed-hit state is outside the 2 cm view-centre
+    band.  A stronger signed apex-progress term differentiates inward from
+    outward use of that exploratory capacity.  It changes neither physical
+    control nor the measured ball/racket speed used for acceptance.
+    """
+
+    v62 = _sport_taskspace_estnoise_yprogress_v62_stages(stages)
+    prospective: list[CurriculumStage] = []
+    for stage in v62:
+        cfg = replace(
+            stage.cfg,
+            hit_apex_view_y_progress_reward_weight=16.0,
+            hit_apex_view_y_error_racket_vxy_allowance_m_s=0.085,
+        )
+        prospective.append(
+            replace(
+                stage,
+                name=stage.name.replace("v62_", "v63_"),
+                cfg=cfg,
+                notes=(
+                    stage.notes
+                    + " V63: break V62's correction-first deadlock with a "
+                    "bounded local-Y-error-gated racket-vxy shaping allowance "
+                    "and progress credit scaled to compete with contact costs; "
+                    "true-speed metrics and strict gates remain unchanged."
+                ),
+            )
+        )
+    return prospective
+
+
+def _sport_taskspace_estnoise_ydirectional_v64_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Make V63's exploratory lateral allowance direction-selective.
+
+    V63 proves that a state-gated allowance reduces the correction deadlock,
+    but its unsigned form also admits large contact-point sweeps opposite the
+    requested local-Y return.  V64 begins from V62 rather than V63, preserves
+    the bounded V61 outgoing-velocity target and V62's success-only allowance,
+    and opens its 8.5 cm/s prospective soft allowance only when the *physical
+    contact-edge* racket local-Y velocity is aligned with that requested return
+    direction.  All actual velocity/RMS diagnostics, constraints, and strict
+    gates remain exactly unchanged.
+    """
+
+    v62 = _sport_taskspace_estnoise_yprogress_v62_stages(stages)
+    directional: list[CurriculumStage] = []
+    for stage in v62:
+        cfg = replace(
+            stage.cfg,
+            hit_apex_view_y_progress_reward_weight=16.0,
+            hit_apex_view_y_directional_racket_vxy_allowance_m_s=0.085,
+        )
+        directional.append(
+            replace(
+                stage,
+                name=stage.name.replace("v62_", "v64_"),
+                cfg=cfg,
+                notes=(
+                    stage.notes
+                    + " V64: use a bounded prospective racket-vxy shaping "
+                    "allowance only when the physical contact-point local-Y "
+                    "velocity aligns with the requested return direction; "
+                    "true-speed metrics and strict gates remain unchanged."
+                ),
+            )
+        )
+    return directional
+
+
+def _sport_taskspace_estnoise_youtcome_v65_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Credit only an observed, correct outgoing local-Y return result.
+
+    V64's frozen matched-environment comparison shows that its contact-point
+    local-Y proxy is not a reliable action-to-ball direction map: late in the
+    run it requested roughly +0.08 m/s while the mean cached contact velocity
+    was roughly -0.03 m/s.  The 16x apex-progress term and that proxy moved a
+    V59 policy below the strict view gate even as true velocity/RMS fell.
+
+    V65 returns to V61's small (4.0) signed apex credit, removes both V62's
+    apex-success allowance and V64's contact-proxy allowance, and instead
+    grants 5.5 cm/s soft racket capacity only after the confirmed outgoing
+    ball local-Y velocity itself points toward the bounded return target.
+    The original target residual continues to shape magnitude.  No real-speed
+    diagnostics, hard constraints, observer, domain, or strict gate changes.
+    """
+
+    v61 = _sport_taskspace_estnoise_ytarget_v61_stages(stages)
+    outcome: list[CurriculumStage] = []
+    for stage in v61:
+        cfg = replace(
+            stage.cfg,
+            hit_apex_view_y_progress_reward_weight=4.0,
+            hit_apex_view_y_progress_deadband_m=0.020,
+            hit_local_y_return_outcome_racket_vxy_allowance_m_s=0.055,
+        )
+        outcome.append(
+            replace(
+                stage,
+                name=stage.name.replace("v61_", "v65_"),
+                cfg=cfg,
+                notes=(
+                    stage.notes
+                    + " V65: use modest signed apex progress plus an "
+                    "outgoing-ball local-Y-result-gated racket-vxy shaping "
+                    "allowance; true-speed metrics and strict gates remain "
+                    "unchanged."
+                ),
+            )
+        )
+    return outcome
+
+
+def _sport_taskspace_estnoise_yreturn_singlehit_v66_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Isolate the missing local-Y return strike before recurrent transfer.
+
+    V61--V65 all fine-tune V59 inside a normal recurrent episode.  The direct
+    outcome logs show the issue is not a noisy gate: when the bounded target is
+    about +0.08 m/s, the mean confirmed outgoing local-Y velocity remains
+    negative.  In a multi-hit episode PPO can keep the existing stable stroke
+    and collect survival/cycle reward, so the rare corrective strike never gets
+    enough on-policy support.  V66 is deliberately an *intermediate skill*
+    stage: use a realistically falling ball, retain the fitted actuator, full
+    observation noise, contact DR, and V65's result-gated contact allowance,
+    but terminate successfully immediately after one confirmed hit.  This
+    leaves the velocity-target residual and bounded apex direction as the
+    causal objective instead of letting later survival offset a wrong return.
+
+    Its relaxed episode-length/hit-count gates apply only to this intermediate
+    strike skill.  The source policy and subsequent recurrent acceptance remain
+    protected by V59's unchanged strict domain/metrics; V66 is never presented
+    as a deployment-valid checkpoint by itself.
+    """
+
+    result = _sport_taskspace_estnoise_youtcome_v65_stages(stages)
+    skill = result[-1]
+    cfg = replace(
+        skill.cfg,
+        ball_reset_mode="falling_contact",
+        falling_reset_time_to_contact_range_s=(0.20, 0.28),
+        falling_reset_apex_height_range_m=(0.20, 0.28),
+        falling_reset_vxy_max=0.0,
+        falling_reset_contact_xy_jitter=0.0,
+        falling_reset_contact_local_y_offset_range_m=(-0.040, -0.020),
+        falling_reset_contact_rel_height=0.065,
+        terminate_after_confirmed_hits=1,
+        # A single impact no longer has later survival credit.  Raise only the
+        # demonstrated outcome reward enough to distinguish a return from the
+        # inherited outward stroke, without changing actual speed constraints.
+        hit_apex_view_y_progress_reward_weight=8.0,
+        hit_local_y_return_outcome_racket_vxy_allowance_m_s=0.075,
+    )
+    result[-1] = replace(
+        skill,
+        name="v66_local_y_return_single_hit",
+        cfg=cfg,
+        target_mean_hits=0.90,
+        target_mean_len_frac=0.0,
+        min_recent_mean_return=None,
+        target_camera_visible=None,
+        min_recent_camera_reward_dense=None,
+        target_ball_view_in_bounds=None,
+        target_ball_view_z_ideal=None,
+        target_hit1_rate=0.90,
+        target_hit3_rate=None,
+        target_hit12_rate=None,
+        target_mean_hits_ge3=None,
+        target_min_hit_interval_s=None,
+        target_max_hit_interval_s=None,
+        target_hit_camera_visible_rate=None,
+        target_hit_camera_lower_band_rate=None,
+        # The +0.10 m/s bounded return target remains inside these true-speed
+        # limits.  They make a cut visible during skill acquisition instead of
+        # granting the old policy a hidden escape path.
+        max_recent_mean_hit_vxy=0.14,
+        max_recent_rms_hit_vxy=0.20,
+        max_recent_mean_hit_racket_vxy=0.14,
+        max_recent_rms_hit_racket_vxy=0.20,
+        max_recent_mean_first_hit_ball_vxy=0.14,
+        max_recent_rms_first_hit_ball_vxy=0.20,
+        max_recent_mean_recurrent_hit_racket_vxy=None,
+        max_recent_rms_recurrent_hit_racket_vxy=None,
+        max_recent_rms_steady_hit_racket_vxy=None,
+        max_recent_hit_cycle_racket_xy_path_excess_m=None,
+        max_recent_hit_cycle_racket_xy_area_m2=None,
+        max_recent_mean_racket_cycle_vxy=None,
+        max_recent_stationary_racket_vxy_m_s=None,
+        max_recent_stationary_racket_xy_error_m=None,
+        max_recent_mean_hit_ball_z=None,
+        max_recent_hit_ball_z_over_limit_rate=None,
+        max_recent_hit_next_contact_anchor_err=None,
+        max_recent_mean_hit_camera_v_frac=None,
+        target_episode_truncation_rate=None,
+        target_racket_up_cos=float(np.cos(np.deg2rad(6.0))),
+        max_recent_hit_racket_angular_speed_rad_s=1.50,
+        max_recent_arm_posture_error_deg=None,
+        max_recent_phase_teacher_q_norm_error=None,
+        min_ball_obs_missing_refresh_rate=None,
+        max_ball_obs_lost_rate=None,
+        best_checkpoint_mean_hit_vxy_weight=560.0,
+        best_checkpoint_rms_hit_vxy_weight=420.0,
+        notes=(
+            skill.notes
+            + " V66: isolate a falling, one-confirmed-hit local-Y return "
+            "skill so recurrent survival/cycle reward cannot subsidize the "
+            "wrong-sign outgoing trajectory.  This is an intermediate skill, "
+            "not a deployment acceptance stage."
+        ),
+    )
+    return result
+
+
+def _sport_taskspace_estnoise_yreturn_outcome_v67_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Use the measured local-Y result as the V66 skill's causal credit.
+
+    V66's one-hit reset proved that the older policy keeps its wrong-sign
+    outgoing local-Y velocity even when survival credit is removed.  Its only
+    directional term was a predicted-apex score (about four reward units),
+    while the inherited ball/racket speed terms charged roughly forty units
+    for the correction.  V67 changes just that causal reward group: replace
+    the indirect apex term with a bounded score of the *measured* post-contact
+    local-Y velocity around the same +/−0.10 m/s V61 target.  The score rejects
+    wrong direction and excess speed alike.  All reset, observer, actuator,
+    PPO, true velocity/RMS metrics, and acceptance gates remain V66-identical.
+    """
+
+    result = _sport_taskspace_estnoise_yreturn_singlehit_v66_stages(stages)
+    skill = result[-1]
+    cfg = replace(
+        skill.cfg,
+        hit_apex_view_y_progress_reward_weight=0.0,
+        hit_local_y_return_outcome_reward_weight=28.0,
+        hit_local_y_return_outcome_sigma_m_s=0.060,
+    )
+    result[-1] = replace(
+        skill,
+        name="v67_local_y_return_outcome_single_hit",
+        cfg=cfg,
+        notes=(
+            skill.notes
+            + " V67: replace V66's indirect apex-progress reward with a "
+            "bounded reward for the measured outgoing local-Y velocity at "
+            "the confirmed hit; wrong direction and excess speed are both "
+            "negative, while strict true-speed gates stay unchanged."
+        ),
+    )
+    return result
+
+
+def _sport_taskspace_estnoise_yreturn_falling_adapt_v68_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Insert a centered falling-contact adaptation before the V67 offset.
+
+    V67 confirmed that measured-outcome local-Y credit changes the direction
+    slightly, but its V59 initialization still carries a roughly 0.42 m/s
+    local-X component in the short falling-contact reset.  That reset is
+    outside the recurrent checkpoint's support, so directly asking for the
+    full -2--4 cm local-Y offset forces PPO to solve intercept adaptation and
+    recentering together.  V68 changes the curriculum, not the plant or
+    safety contract: first acquire one centered falling contact under the same
+    actual ball/racket speed gates, then enter the unchanged V67 Y-offset
+    strike.  Both intermediate stages retain direct measured-outcome credit.
+    """
+
+    result = _sport_taskspace_estnoise_yreturn_outcome_v67_stages(stages)
+    offset_skill = result[-1]
+    centered_cfg = replace(
+        offset_skill.cfg,
+        falling_reset_contact_local_y_offset_range_m=(0.0, 0.0),
+    )
+    result[-2] = replace(
+        offset_skill,
+        name="v68_falling_centered_single_hit",
+        cfg=centered_cfg,
+        notes=(
+            offset_skill.notes
+            + " V68 centered adaptation: retain the measured-outcome reward "
+            "and every true-speed gate while removing only the local-Y reset "
+            "offset before the final return strike."
+        ),
+    )
+    result[-1] = replace(
+        offset_skill,
+        name="v68_falling_offset_return_single_hit",
+        notes=(
+            offset_skill.notes
+            + " V68 final return: restore the V67 local-Y offset only after "
+            "the centered falling-contact skill passes its unchanged gates."
+        ),
+    )
+    return result
+
+
+def _sport_taskspace_estnoise_yreturn_prehitbrake_v69_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Keep the V68 curriculum but add unsaturated first-hit braking credit.
+
+    V68 shows that the centered falling reset has good contact probability but
+    retains an approximately 0.47 m/s local-X impact.  Its generic approach
+    penalty is active, yet the dedicated first-hit stationary term is disabled
+    even in the aligned pre-contact window.  V69 enables that existing term
+    with a small weight and a linear tail, preserving an optimization gradient
+    above its 0.03 m/s soft reference instead of allowing the inherited rapid
+    first-hit sweep to sit in a capped loss.  This changes only dense
+    pre-contact shaping; physical dynamics and all true speed/RMS acceptance
+    gates remain exactly V68-identical.
+    """
+
+    result = _sport_taskspace_estnoise_yreturn_falling_adapt_v68_stages(stages)
+    for index, stage in ((-2, result[-2]), (-1, result[-1])):
+        cfg = replace(
+            stage.cfg,
+            first_hit_stationary_penalty_weight=0.08,
+            first_hit_stationary_linear_tail=True,
+        )
+        result[index] = replace(
+            stage,
+            name=stage.name.replace("v68_", "v69_"),
+            cfg=cfg,
+            notes=(
+                stage.notes
+                + " V69: enable the small, uncapped first-hit stationary "
+                "braking penalty during aligned descent; preserve all true "
+                "speed/RMS gates."
+            ),
+        )
+    return result
+
+
+def _sport_taskspace_estnoise_yreturn_anchor_v70_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Hold the centered first strike near its reset anchor before Y transfer.
+
+    V69's stationary braking term only carries gradient while the racket and
+    ball remain tightly aligned.  Its formal trace shows the inherited V59
+    sweep leaves that region while the always-active early anchor barrier is
+    disabled.  V70 changes the centered falling stage only: turn on the
+    existing early-racket-anchor barrier so the policy cannot abandon the
+    planned zero-vxy contact before braking can act.  The subsequent offset
+    return stage stays byte-for-byte V69 so its necessary local-Y correction is
+    not accidentally penalized.  Dynamics, PPO, observations, and all true
+    speed/RMS gates remain unchanged.
+    """
+
+    result = _sport_taskspace_estnoise_yreturn_prehitbrake_v69_stages(stages)
+    centered = result[-2]
+    centered_cfg = replace(
+        centered.cfg,
+        early_racket_xy_anchor_penalty_weight=0.20,
+    )
+    result[-2] = replace(
+        centered,
+        name="v70_falling_centered_anchor_single_hit",
+        cfg=centered_cfg,
+        notes=(
+            centered.notes
+            + " V70: enable the early reset-anchor barrier only during the "
+            "centered falling strike, retaining V69 braking and all true "
+            "speed/RMS gates."
+        ),
+    )
+    return result
+
+
+def _sport_taskspace_estnoise_yreturn_staticanchor_v71_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Acquire the missing static XY invariant before the falling strike.
+
+    V70 proved that holding an early falling-contact anchor with a small dense
+    barrier does not overcome V59's inherited lateral sweep: the first actual
+    contact still carries about 0.50 m/s horizontal ball velocity.  A normal
+    falling rollout couples that sweep to an intermittent impact and the
+    inherited multi-hit policy, so PPO has no dense way to distinguish a
+    stable-but-wrong sweep from a truly stationary racket.
+
+    V71 therefore uses the existing world-fixed-ball task as an explicit
+    auxiliary skill.  It preserves V70's deployed delayed actuator, observer
+    noise, domain randomization, action limits, posture costs, and reset XY
+    target, but pins the ball and disables contacts.  Its reward is only
+    physical racket XY alignment and horizontal braking.  This removes
+    survival credit and allows the policy to relearn the missing invariant.
+    The two following stages are V70's centered real falling contact and the
+    V69 offset return unchanged, including their true contact-speed/RMS gates.
+    """
+
+    v70 = _sport_taskspace_estnoise_yreturn_anchor_v70_stages(stages)
+    centered, offset = v70[-2:]
+    stationary_cfg = replace(
+        centered.cfg,
+        stationary_ball_training=True,
+        stationary_reward_only=True,
+        stationary_racket_alignment_reward_weight=2.0,
+        stationary_racket_xy_penalty_weight=2.0,
+        stationary_racket_xy_deadband_m=0.004,
+        stationary_racket_xy_scale_m=0.030,
+        stationary_racket_vxy_penalty_weight=2.0,
+        stationary_racket_vxy_soft_limit_m_s=0.015,
+        stationary_racket_vxy_scale_m_s=0.080,
+        # This is an XY acquisition/braking skill.  The next falling-contact
+        # stages still require vertical racket motion to send the ball back.
+        stationary_racket_vz_penalty_weight=0.0,
+    )
+    stationary = replace(
+        centered,
+        name="v71_static_world_anchor_hold",
+        total_steps=30_000_000,
+        cfg=stationary_cfg,
+        target_mean_hits=0.0,
+        target_mean_hits_ge3=None,
+        target_mean_len_frac=0.95,
+        target_episode_truncation_rate=0.95,
+        target_hit1_rate=None,
+        target_hit3_rate=None,
+        target_hit12_rate=None,
+        target_hit_camera_visible_rate=None,
+        target_hit_camera_lower_band_rate=None,
+        target_min_hit_interval_s=None,
+        target_max_hit_interval_s=None,
+        target_camera_visible=None,
+        target_ball_view_in_bounds=None,
+        target_ball_view_z_ideal=None,
+        max_recent_mean_hit_vxy=None,
+        max_recent_rms_hit_vxy=None,
+        max_recent_mean_hit_racket_vxy=None,
+        max_recent_rms_hit_racket_vxy=None,
+        max_recent_mean_first_hit_ball_vxy=None,
+        max_recent_rms_first_hit_ball_vxy=None,
+        max_recent_mean_recurrent_hit_racket_vxy=None,
+        max_recent_rms_recurrent_hit_racket_vxy=None,
+        max_recent_rms_steady_hit_racket_vxy=None,
+        max_recent_hit_cycle_racket_xy_path_excess_m=None,
+        max_recent_hit_cycle_racket_xy_area_m2=None,
+        max_recent_mean_racket_cycle_vxy=None,
+        max_recent_stationary_racket_vxy_m_s=0.020,
+        max_recent_stationary_racket_xy_error_m=0.010,
+        max_recent_mean_hit_ball_z=None,
+        max_recent_hit_ball_z_over_limit_rate=None,
+        max_recent_hit_next_contact_anchor_err=None,
+        max_recent_mean_hit_camera_v_frac=None,
+        min_updates=120,
+        convergence_hold_updates=8,
+        notes=(
+            "V71 isolated world-fixed-ball task: retain the V70 actuator, "
+            "observer, DR, safety, and center target, but optimize only "
+            "racket XY acquisition plus <2 cm/s braking.  Contacts are "
+            "intentionally disabled, so impact-speed gates apply only after "
+            "transfer to the unchanged centered and offset falling stages."
+        ),
+    )
+    return [stationary, centered, offset]
+
+
+def _sport_taskspace_estnoise_yreturn_staticanchor_v72_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Remove V71's inherited contact-only flatness loss from the hold skill.
+
+    The V71 formal trace falsified one assumption in its static objective:
+    V70's high-gain contact flatness term remains inside ``stationary_dense``.
+    At the inherited 0.968 up-cos it contributed about -0.55 reward/step,
+    eighteen times the horizontal-braking signal (-0.03/step).  Consequently
+    the policy trained the wrong objective and static racket vxy did not fall.
+
+    V72 changes exactly that isolated-task reward coefficient to zero.  The
+    static hold still has its explicit XY alignment, horizontal-braking,
+    action, actuator, and safety terms.  Flatness and all true impact-speed
+    requirements resume unchanged in the byte-identical V70/V69 real-contact
+    stages, where a flat face is physically relevant.
+    """
+
+    v71 = _sport_taskspace_estnoise_yreturn_staticanchor_v71_stages(stages)
+    stationary, centered, offset = v71
+    static_cfg = replace(
+        stationary.cfg,
+        racket_flatness_penalty_weight=0.0,
+    )
+    static = replace(
+        stationary,
+        name="v72_static_world_anchor_hold_no_flatness",
+        cfg=static_cfg,
+        notes=(
+            "V72 isolated static hold: disable only the inherited contact-only "
+            "flatness loss that dominated V71 by roughly 18x.  Retain XY "
+            "alignment/braking and all actuator/safety/action terms; the "
+            "following real-contact stages restore their original flatness and "
+            "true contact-speed/RMS requirements."
+        ),
+    )
+    return [static, centered, offset]
+
+
+def _sport_taskspace_estnoise_yreturn_staticanchor_v73_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Raise only the verified-too-weak static XY/braking signal.
+
+    V72 removed the inappropriate contact-flatness loss and made the static
+    reward well scaled, but its 22-update decision window held racket vxy near
+    0.31 m/s (only about 2% below V59).  The remaining static velocity term was
+    merely -0.03/step at that error, while the inherited high-norm action stayed
+    near 0.95.  This is insufficient credit to replace the recurrent sweep.
+
+    V73 changes only the three explicit static terms: double the position
+    alignment and position-error weights and quadruple horizontal-braking
+    weight.  At the measured 0.31 m/s it makes the braking term about
+    -0.12/step, while a correctly aligned and stationary racket receives a
+    positive reward.  The simulator, PPO, actuator model, observation/DR,
+    policy-preserving auxiliary policy, and both real-contact stages stay
+    V72-identical.
+    """
+
+    v72 = _sport_taskspace_estnoise_yreturn_staticanchor_v72_stages(stages)
+    stationary, centered, offset = v72
+    static_cfg = replace(
+        stationary.cfg,
+        stationary_racket_alignment_reward_weight=4.0,
+        stationary_racket_xy_penalty_weight=4.0,
+        stationary_racket_vxy_penalty_weight=8.0,
+    )
+    static = replace(
+        stationary,
+        name="v73_static_world_anchor_hold_scaled_xy_brake",
+        cfg=static_cfg,
+        notes=(
+            "V73 static hold: retain V72's no-flatness isolated objective and "
+            "increase only XY alignment/position/braking weights 2/2/2 -> "
+            "4/4/8 after its measured 0.31 m/s plateau.  All real-contact "
+            "stages and their strict physical speed/RMS gates are unchanged."
+        ),
+    )
+    return [static, centered, offset]
+
+
+def _sport_taskspace_estnoise_yreturn_staticanchor_v74_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Acquire a quiet racket before demanding estimator-noise robustness.
+
+    V72 and V73 both held a 0.31 m/s static racket-speed plateau despite clean
+    reward scaling and a fourfold braking coefficient.  Their shared obstacle
+    is that the inherited sweeping policy is immediately exposed to the full
+    record_new2 observation distribution: 0.06 m/s correlated lateral ball
+    velocity error and large proprioceptive velocity noise.  Before it has
+    learned the stationary actuator equilibrium, that noise continually
+    excites the old tracking response.
+
+    V74 makes this a proper two-stage curriculum.  It first acquires the
+    physical delayed-actuator XY hold with only observation noise/frame DR
+    removed; all actuator, latency, joint/plant, and safety randomization stay
+    active.  It then restores the byte-identical V73 noisy static hold before
+    either real falling-contact stage.  The clean stage is not presented as a
+    deployment result; the noisy hold and both real-contact stages retain the
+    full observed noise distribution and strict physical speed/RMS gates.
+    """
+
+    v73 = _sport_taskspace_estnoise_yreturn_staticanchor_v73_stages(stages)
+    noisy, centered, offset = v73
+    clean_cfg = replace(
+        noisy.cfg,
+        ball_obs_pos_noise_std=0.0,
+        ball_obs_vel_noise_std=0.0,
+        ball_obs_vel_xy_noise_std=0.0,
+        ball_obs_posthit_vel_xy_noise_std=0.0,
+        ball_obs_vel_xy_noise_min_scale=0.0,
+        proprio_dq_obs_noise_std=0.0,
+        proprio_racket_vel_obs_noise_std=0.0,
+        dr_randomize_ball_obs_frame=False,
+    )
+    clean = replace(
+        noisy,
+        name="v74_static_clean_anchor_acquire",
+        cfg=clean_cfg,
+        max_recent_stationary_racket_vxy_m_s=0.040,
+        max_recent_stationary_racket_xy_error_m=0.012,
+        min_updates=100,
+        convergence_hold_updates=6,
+        notes=(
+            "V74 first acquire the delayed-actuator static XY hold without "
+            "observation noise or ball-frame DR.  Plant/actuator/safety DR and "
+            "the V73 4/4/8 reward remain active; require <=4 cm/s and <=1.2 cm "
+            "before restoring the full record_new2 observation noise."
+        ),
+    )
+    noisy = replace(
+        noisy,
+        name="v74_static_noisy_anchor_hold",
+        notes=(
+            "V74 restore the exact V73 full observation/noise/frame-DR static "
+            "hold after clean acquisition; retain <=2 cm/s and <=1 cm gates "
+            "before transferring to physical falling contact."
+        ),
+    )
+    return [clean, noisy, centered, offset]
+
+
+def _sport_taskspace_estnoise_yreturn_staticanchor_v75_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Make the static V74 auxiliary learn the required zero-action hold.
+
+    V74 proves that clean observation acquisition removes much of the inherited
+    sweep (about 0.33 -> 0.125 m/s) but cannot reach its 0.04 m/s gate.  The
+    terminal trace makes the residual mechanism quantitative: at update 180,
+    the horizontal-speed brake contributes about -0.0248 reward per tick while
+    the inherited action-energy cost is only -0.000079, so the old large
+    acceleration command remains effectively free.  Positive entropy pressure
+    also raises the policy entropy through the static course.
+
+    V75 changes the clean static stage only.  Its action-energy coefficient is
+    raised from 0.0018 to 0.60, making it comparable to the measured braking
+    term and selecting the physical hold equilibrium (near-zero acceleration)
+    rather than another moving solution.  The launcher uses low entropy in
+    stage one only and restores V74's exploration coefficient at stage two.
+    The noisy static and both falling-contact stages are byte-identical V74;
+    all true speed/RMS acceptance gates remain unchanged.
+    """
+
+    v74 = _sport_taskspace_estnoise_yreturn_staticanchor_v74_stages(stages)
+    clean, noisy, centered, offset = v74
+    clean = replace(
+        clean,
+        name="v75_static_clean_action_brake",
+        cfg=replace(clean.cfg, action_penalty_weight=0.60),
+        notes=(
+            "V75: retain V74 clean static acquisition and its <=4 cm/s, "
+            "<=1.2 cm gates, but raise only static action energy to 0.60 so "
+            "holding position has a direct gradient toward zero acceleration."
+        ),
+    )
+    return [clean, noisy, centered, offset]
+
+
+def _sport_taskspace_estnoise_yreturn_staticanchor_v76_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Match clean-static action energy to the measured horizontal brake.
+
+    The V75 smoke run verifies the intended isolated static optimizer but
+    calibrates its action coefficient as still ten times too small: 0.60 gives
+    about -0.00317 reward per tick at the inherited action norm, versus
+    -0.0314 from the horizontal-speed brake.  V76 therefore changes only that
+    static coefficient to 5.0, yielding an observed-scale action cost of about
+    -0.026 per tick.  It remains a static-stage-only objective; noisy and
+    physical falling-contact stages are byte-identical V74/V75.
+    """
+
+    v75 = _sport_taskspace_estnoise_yreturn_staticanchor_v75_stages(stages)
+    clean, noisy, centered, offset = v75
+    clean = replace(
+        clean,
+        name="v76_static_clean_matched_action_brake",
+        cfg=replace(clean.cfg, action_penalty_weight=5.0),
+        notes=(
+            "V76: retain V75's static-only low-entropy action brake, but set "
+            "the action-energy coefficient to 5.0 from its measured 0.60 "
+            "smoke value so it is commensurate with horizontal braking."
+        ),
+    )
+    return [clean, noisy, centered, offset]
+
+
+def _sport_taskspace_belief_contraction_v77_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Temporal, outcome-based continuation for the GPU1 real-gap problem.
+
+    V35--V76 tried static stages, action invariance, filtering, proxy motion
+    costs, or real-prefix action labels.  Those interventions either removed
+    contact skill or kept the memoryless observation/action feedback intact.
+    V77 changes the information and objective: a four-frame actor input, no
+    real action supervision, and event-posterior contact contraction.
+    """
+
+    source = _sport_taskspace_racket_xy_polish_v34_stages(stages)
+    specs = (
+        dict(
+            name="belief00_clean_posterior_retention",
+            velxy_noise=0.0,
+            posthit_noise=0.0,
+            noise_floor=0.0,
+            noise_ramp=1,
+            posterior_weight=0.75,
+            contraction_weight=0.25,
+            angular_weight=0.80,
+            angular_soft=1.00,
+            angular_scale=0.80,
+            flatness_weight=2.00,
+            hits=12.8,
+            hge3=12.4,
+            full=0.90,
+            mean_vxy=0.110,
+            rms_vxy=0.145,
+            min_updates=100,
+        ),
+        dict(
+            name="belief01_identified_subcritical_bridge",
+            velxy_noise=0.022,
+            posthit_noise=0.040,
+            noise_floor=0.0,
+            noise_ramp=256 * 96,
+            posterior_weight=1.00,
+            contraction_weight=0.50,
+            angular_weight=1.00,
+            angular_soft=0.90,
+            angular_scale=0.75,
+            flatness_weight=2.25,
+            hits=11.5,
+            hge3=11.0,
+            full=0.80,
+            mean_vxy=0.130,
+            rms_vxy=0.175,
+            min_updates=140,
+        ),
+        dict(
+            name="belief02_identified_feedback_boundary",
+            velxy_noise=0.032,
+            posthit_noise=0.060,
+            noise_floor=0.022 / 0.032,
+            noise_ramp=256 * 128,
+            posterior_weight=1.25,
+            contraction_weight=0.75,
+            angular_weight=1.20,
+            angular_soft=0.80,
+            angular_scale=0.70,
+            flatness_weight=2.50,
+            hits=10.0,
+            hge3=9.5,
+            full=0.68,
+            mean_vxy=0.155,
+            rms_vxy=0.210,
+            min_updates=180,
+        ),
+    )
+    if len(source) < len(specs):
+        raise ValueError("V77 belief-contraction profile requires three recurrent stages")
+
+    shaped: list[CurriculumStage] = []
+    for index, spec in enumerate(specs):
+        stage = source[index]
+        cfg = replace(
+            stage.cfg,
+            high_latency_obs=True,
+            high_latency_history_frames=4,
+            high_latency_obs_history_frames=4,
+            high_latency_action_history_frames=4,
+            high_latency_prediction_time_clip=0.25,
+            high_latency_prediction_include_obs_latency=True,
+            high_latency_prediction_include_ball_age=True,
+            high_latency_prediction_include_actuator_tau=True,
+            ball_obs_velocity_observer_mode="innovation_clip_xy",
+            ball_obs_velocity_observer_max_innovation_m_s=0.35,
+            ball_obs_vel_xy_noise_std=spec["velxy_noise"],
+            ball_obs_vel_xy_noise_rho=0.60,
+            ball_obs_posthit_vel_xy_noise_std=spec["posthit_noise"],
+            ball_obs_posthit_vel_noise_frames=3,
+            ball_obs_vel_xy_noise_min_scale=spec["noise_floor"],
+            ball_obs_vel_xy_noise_warmup_env_steps=0,
+            ball_obs_vel_xy_noise_ramp_env_steps=spec["noise_ramp"],
+            # Remove the proxy-motion reward stack that drove the V34--V76
+            # coefficient treadmill.  Retain physical outcome/feasibility.
+            approach_racket_vxy_penalty_weight=0.0,
+            racket_cycle_vxy_penalty_weight=0.0,
+            hit_cycle_racket_xy_path_penalty_weight=0.0,
+            hit_cycle_racket_xy_area_penalty_weight=0.0,
+            hit_cycle_q_closure_penalty_weight=0.0,
+            hit_cycle_action_dc_penalty_weight=0.0,
+            hit_cycle_q_excursion_penalty_weight=0.0,
+            ball_vxy_penalty_weight=0.02,
+            post_hit_ball_vxy_penalty_weight=0.05,
+            hit_vxy_penalty_weight=0.20,
+            hit_vxy_soft_limit_m_s=0.06,
+            hit_vxy_penalty_scale_m_s=0.10,
+            hit_vxy_penalty_loss="pseudo_huber",
+            hit_vxy_apply_from_first_hit=True,
+            hit_vxy_zero_reward_weight=0.20,
+            hit_vxy_zero_reward_sigma_m_s=0.08,
+            hit_racket_vxy_penalty_weight=0.04,
+            hit_racket_vxy_soft_limit_m_s=0.16,
+            hit_racket_vxy_penalty_scale_m_s=0.14,
+            hit_racket_vxy_apply_from_first_hit=True,
+            # Align the physical pose reward with the existing promotion
+            # gates.  The old V34 reward declared 0.99 flatness and 1.2 rad/s
+            # sufficient while its gate required 0.995 and <=1.2, which left
+            # the GPU1 polish branch parked at the same failed gate for 400
+            # updates.  These remain soft event outcomes, never terminations.
+            hit_flatness_target_cos=0.995,
+            hit_flatness_excess_penalty_weight=spec["flatness_weight"],
+            hit_racket_angular_speed_penalty_weight=spec["angular_weight"],
+            hit_racket_angular_speed_soft_limit_rad_s=spec["angular_soft"],
+            hit_racket_angular_speed_scale_rad_s=spec["angular_scale"],
+            # The predictor remains diagnostic only.  Learning uses the next
+            # confirmed contact actually produced by the preceding hit.
+            hit_next_contact_anchor_penalty_weight=0.0,
+            hit_posterior_contact_anchor_penalty_weight=spec["posterior_weight"],
+            hit_posterior_contact_anchor_sigma_m=0.10,
+            hit_contact_anchor_contraction_reward_weight=spec["contraction_weight"],
+            hit_contact_anchor_contraction_sigma_m=0.05,
+            hit_racket_vxy_constraint_threshold_m_s=0.0,
+            hit_racket_vxy_constraint_penalty=0.0,
+            hit_vxy_constraint_threshold_m_s=0.0,
+            hit_vxy_constraint_penalty=0.0,
+        )
+        shaped.append(
+            replace(
+                stage,
+                name=spec["name"],
+                cfg=cfg,
+                target_mean_hits=spec["hits"],
+                target_mean_hits_ge3=spec["hge3"],
+                target_episode_truncation_rate=spec["full"],
+                max_recent_mean_hit_vxy=spec["mean_vxy"],
+                max_recent_rms_hit_vxy=spec["rms_vxy"],
+                min_updates=spec["min_updates"],
+                convergence_hold_updates=16,
+                notes=(
+                    "GPU1 V77: four-frame belief input and measured next-contact "
+                    "anchor error/contraction. Real trajectories define only "
+                    "disturbance levels; no real-prefix action loss, behavior "
+                    "cloning, actor anchor, static stage, or hard vxy termination."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_belief_joint_quality_v78_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Repair V77's measured angular-vs-horizontal reward trade.
+
+    The pose-aligned V77 continuation reduced impact angular speed from about
+    1.63 to 1.61 rad/s, but its ball/racket horizontal RMS reached a minimum
+    near update 120 and then rose by 9--15 percent while total reward kept
+    improving.  Reward decomposition showed that lowering angular speed and
+    improving the inherited height/center bonuses more than paid for worse
+    horizontal outcomes.  V78 therefore makes sparse positive contact credit
+    a *joint* ball-vxy/racket-vxy/pose quality score instead of allowing those
+    objectives to buy one another, and restores the V77-v1-compatible soft
+    angular cost.  It keeps the temporal actor, posterior outcomes, actuator,
+    observation-noise bridge, and PPO problem unchanged.
+    """
+
+    v77 = _sport_taskspace_belief_contraction_v77_stages(stages)
+    specs = (
+        dict(
+            name="joint00_clean_pareto_retention",
+            mean_vxy=0.070,
+            rms_vxy=0.100,
+            mean_racket_vxy=0.205,
+            rms_racket_vxy=0.225,
+            rms_steady_racket_vxy=0.215,
+            cycle_vxy=0.230,
+            posterior_err=0.082,
+            contraction=-0.018,
+            best_mean=240.0,
+            best_rms=200.0,
+        ),
+        dict(
+            name="joint01_identified_subcritical_bridge",
+            mean_vxy=0.085,
+            rms_vxy=0.120,
+            mean_racket_vxy=0.230,
+            rms_racket_vxy=0.250,
+            rms_steady_racket_vxy=0.240,
+            cycle_vxy=0.250,
+            posterior_err=0.090,
+            contraction=-0.025,
+            best_mean=220.0,
+            best_rms=180.0,
+        ),
+        dict(
+            name="joint02_identified_feedback_boundary",
+            mean_vxy=0.105,
+            rms_vxy=0.145,
+            mean_racket_vxy=0.260,
+            rms_racket_vxy=0.285,
+            rms_steady_racket_vxy=0.270,
+            cycle_vxy=0.275,
+            posterior_err=0.100,
+            contraction=-0.035,
+            best_mean=200.0,
+            best_rms=160.0,
+        ),
+    )
+    shaped: list[CurriculumStage] = []
+    for index, (stage, spec) in enumerate(zip(v77, specs, strict=True)):
+        cfg = replace(
+            stage.cfg,
+            # Gate every positive hit/center/height credit jointly.  The 0.25
+            # floors retain an acquisition gradient for imperfect contacts,
+            # while the product makes a late policy with better angle but
+            # worse ball/racket vxy rank below the update-120 policy.
+            hit_vxy_quality_gate_sigma_m_s=0.10,
+            hit_vxy_quality_gate_floor=0.25,
+            hit_racket_vxy_quality_gate_sigma_m_s=0.22,
+            hit_racket_vxy_quality_gate_floor=0.25,
+            hit_pose_quality_gate_floor=0.25,
+            hit_angular_speed_quality_gate_sigma_rad_s=2.0,
+            # Restore the V77-v1-compatible soft pose cost.  The pose-aligned
+            # V77 settings made this term about 16x larger in the measured
+            # rollout and created the horizontal-speed trade instead of a
+            # usable approach direction.
+            hit_racket_angular_speed_penalty_weight=0.30 + 0.05 * index,
+            hit_racket_angular_speed_soft_limit_rad_s=1.20 - 0.05 * index,
+            hit_racket_angular_speed_scale_rad_s=1.20,
+            hit_flatness_excess_penalty_weight=1.0,
+        )
+        shaped.append(
+            replace(
+                stage,
+                name=spec["name"],
+                cfg=cfg,
+                max_recent_mean_hit_vxy=spec["mean_vxy"],
+                max_recent_rms_hit_vxy=spec["rms_vxy"],
+                max_recent_mean_hit_racket_vxy=spec["mean_racket_vxy"],
+                max_recent_rms_hit_racket_vxy=spec["rms_racket_vxy"],
+                max_recent_rms_steady_hit_racket_vxy=(
+                    spec["rms_steady_racket_vxy"]
+                ),
+                max_recent_mean_racket_cycle_vxy=spec["cycle_vxy"],
+                max_recent_mean_hit_posterior_contact_anchor_err=(
+                    spec["posterior_err"]
+                ),
+                min_recent_mean_hit_contact_anchor_contraction=(
+                    spec["contraction"]
+                ),
+                # V77 proved that 0.995 / 1.2 is not an attainable stage-0
+                # promotion pair.  Preserve the measured pose while the joint
+                # objective is learned; deployment acceptance stays separate.
+                target_racket_up_cos=0.9935,
+                max_recent_hit_racket_angular_speed_rad_s=1.65,
+                best_checkpoint_mean_hit_vxy_weight=spec["best_mean"],
+                best_checkpoint_rms_hit_vxy_weight=spec["best_rms"],
+                notes=(
+                    "GPU1 V78: joint positive contact quality closes V77's "
+                    "angular-vs-horizontal reward loophole. Posterior error "
+                    "and measured contraction are promotion gates; there are "
+                    "no real action labels or hard contact terminations."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_belief_constrained_v79_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Preserve the early V78 feasible policy and remove its scalar loopholes.
+
+    V78 satisfied every behavior gate during updates 6--79, but its inherited
+    ``min_updates=100`` prevented promotion.  Once the posterior-contraction
+    gate failed at update 80, another 420 clean-stage updates optimized the
+    product quality score by reducing racket speed while ball RMS, posterior
+    error, hits, and FULL degraded.  The contraction reward itself is a
+    clipped difference of consecutive anchor errors; it telescopes over a
+    recurrent trajectory and therefore cannot be a persistent stationary
+    objective.
+
+    V79 treats true outgoing ball vxy as the primary positive-credit quality.
+    Physical racket speed, impact pose, survival, and measured posterior error
+    remain explicit penalties and promotion constraints, but cannot increase
+    hit/center/height credit enough to buy worse ball motion.  The clean stage
+    is a short requalification stage for a warm-started policy, not a new
+    acquisition course.  PPO, exploration, temporal observation, actuator,
+    and noise curricula are intentionally unchanged for attribution.
+    """
+
+    v78 = _sport_taskspace_belief_joint_quality_v78_stages(stages)
+    posterior_limits = (0.085, 0.095, 0.105)
+    best_mean_weights = (3000.0, 2500.0, 2000.0)
+    best_rms_weights = (2500.0, 2000.0, 1600.0)
+    names = (
+        "constrained00_clean_requalification",
+        "constrained01_identified_subcritical_bridge",
+        "constrained02_identified_feedback_boundary",
+    )
+
+    shaped: list[CurriculumStage] = []
+    for index, stage in enumerate(v78):
+        cfg = replace(
+            stage.cfg,
+            # V78's product still allowed a large racket-speed improvement to
+            # buy a smaller but deployment-critical ball-speed regression.
+            # Keep ball vxy as the only multiplier on sparse positive credit;
+            # racket/pose remain penalties and hard promotion constraints.
+            hit_racket_vxy_quality_gate_sigma_m_s=0.0,
+            hit_racket_vxy_quality_gate_floor=0.0,
+            hit_pose_quality_gate_floor=1.0,
+            hit_angular_speed_quality_gate_sigma_rad_s=0.0,
+            # Consecutive error differences telescope in a recurrent process.
+            # Preserve the absolute measured posterior penalty, but remove the
+            # non-stationary contraction reward and its promotion gate.
+            hit_contact_anchor_contraction_reward_weight=0.0,
+        )
+        shaped.append(
+            replace(
+                stage,
+                name=names[index],
+                cfg=cfg,
+                min_updates=32 if index == 0 else stage.min_updates,
+                max_updates=(96, 240, 280)[index],
+                max_recent_mean_hit_posterior_contact_anchor_err=(
+                    posterior_limits[index]
+                ),
+                min_recent_mean_hit_contact_anchor_contraction=None,
+                best_checkpoint_mean_hit_vxy_weight=best_mean_weights[index],
+                best_checkpoint_rms_hit_vxy_weight=best_rms_weights[index],
+                notes=(
+                    "GPU1 V79 constrained fine-tune: true ball-vxy determines "
+                    "positive hit quality; racket speed, pose, survival, and "
+                    "absolute measured posterior error are constraints. The "
+                    "telescoping contraction objective is disabled. Stage 0 "
+                    "is only a short warm-start requalification; PPO, entropy, "
+                    "temporal observation, actuator, and noise are unchanged."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_belief_event_aligned_v80_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Align the fine-tuning objective with the measured RMS failure tail.
+
+    The V79 clean run remained numerically stable and retained about 14.26
+    hits, yet its rolling outgoing-ball RMS ended at 0.07675 m/s instead of
+    improving from the warm start.  Per-contact decomposition identified the
+    mismatch: hits 1/2 remained near 0.11 m/s while hit 4+ was already near
+    0.046 m/s.  The historical combo bonus multiplied ball-motion quality by
+    hit count, so the already-good late contacts carried the largest positive
+    quality gradient.  Its pseudo-Huber excess cost was only about 0.3% of the
+    main sparse positive terms and softened exactly the high-speed tail that
+    dominates RMS.
+
+    V80 separates survival/count credit from motion quality, uses the squared
+    loss that defines RMS, and applies the existing transient multiplier only
+    to hits 1--3.  It also removes V79's 0.25 positive-credit floor.  PPO,
+    exploration, observation history, actuator, posterior penalty, and reset
+    distribution remain unchanged so the clean-stage experiment identifies
+    this reward/metric alignment rather than another optimizer sweep.
+    """
+
+    v79 = _sport_taskspace_belief_constrained_v79_stages(stages)
+    specs = (
+        dict(
+            name="aligned00_clean_transient_proof",
+            mean_vxy=0.055,
+            rms_vxy=0.074,
+            first_mean=0.106,
+            first_rms=0.123,
+            min_updates=64,
+            max_updates=128,
+        ),
+        dict(
+            name="aligned01_identified_subcritical_bridge",
+            mean_vxy=0.080,
+            rms_vxy=0.110,
+            first_mean=0.125,
+            first_rms=0.145,
+            min_updates=140,
+            max_updates=240,
+        ),
+        dict(
+            name="aligned02_identified_feedback_boundary",
+            mean_vxy=0.100,
+            rms_vxy=0.135,
+            first_mean=0.145,
+            first_rms=0.170,
+            min_updates=180,
+            max_updates=280,
+        ),
+    )
+
+    shaped: list[CurriculumStage] = []
+    for stage, spec in zip(v79, specs, strict=True):
+        cfg = replace(
+            stage.cfg,
+            # Survival is valuable even while a contact's physical outcome is
+            # imperfect, but later survival must not amplify the ball-vxy
+            # gradient relative to the first three RMS-dominating contacts.
+            hit_combo_motion_quality_independent=True,
+            hit_vxy_quality_gate_floor=0.0,
+            # Match the measured metric: square the excess and focus the
+            # additional weight on the launch/transient contacts only.
+            hit_vxy_penalty_loss="squared",
+            early_hit_vxy_penalty_hit_count=3,
+            early_hit_vxy_penalty_multiplier=3.0,
+            early_hit_vxy_zero_reward_multiplier=2.0,
+        )
+        shaped.append(
+            replace(
+                stage,
+                name=spec["name"],
+                cfg=cfg,
+                max_recent_mean_hit_vxy=spec["mean_vxy"],
+                max_recent_rms_hit_vxy=spec["rms_vxy"],
+                max_recent_mean_first_hit_ball_vxy=spec["first_mean"],
+                max_recent_rms_first_hit_ball_vxy=spec["first_rms"],
+                min_updates=spec["min_updates"],
+                max_updates=spec["max_updates"],
+                notes=(
+                    "GPU1 V80 event-aligned fine-tune: count credit is a pure "
+                    "survival objective; base positive credit remains true "
+                    "ball-vxy gated, and the squared early-hit objective "
+                    "targets the measured RMS tail. Clean promotion requires "
+                    "real improvement over V78-u75/V79, not merely RMS<0.10."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_belief_component_ablation_stages(
+    stages: list[CurriculumStage],
+    *,
+    component: str,
+) -> list[CurriculumStage]:
+    """Isolate one of the four simultaneous V80 reward changes.
+
+    All variants start from the exact V79 objective and alter one field group.
+    They are intended for same-source, same-seed, fixed-budget experiments;
+    none is itself a deployment curriculum.
+    """
+
+    if component not in {"combo", "floor", "squared", "early"}:
+        raise ValueError(f"unknown belief component ablation: {component}")
+    base = _sport_taskspace_belief_constrained_v79_stages(stages)
+    shaped: list[CurriculumStage] = []
+    for stage in base:
+        cfg = stage.cfg
+        if component == "combo":
+            cfg = replace(cfg, hit_combo_motion_quality_independent=True)
+        elif component == "floor":
+            cfg = replace(cfg, hit_vxy_quality_gate_floor=0.0)
+        elif component == "squared":
+            cfg = replace(cfg, hit_vxy_penalty_loss="squared")
+        else:
+            cfg = replace(
+                cfg,
+                early_hit_vxy_penalty_hit_count=3,
+                early_hit_vxy_penalty_multiplier=3.0,
+                early_hit_vxy_zero_reward_multiplier=2.0,
+            )
+        shaped.append(
+            replace(
+                stage,
+                name=f"ablate_{component}_clean_fixed_budget",
+                cfg=cfg,
+                min_updates=10_000,
+                max_updates=64,
+                convergence_hold_updates=64,
+                notes=(
+                    f"GPU1 V81 component ablation ({component} only): exact "
+                    "V79 source objective with one V80 mechanism enabled. "
+                    "This fixed-budget stage is for causal attribution, not "
+                    "promotion or deployment selection."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_belief_transient_resample_v82_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Repair launch contacts by changing sampling, not reward coefficients.
+
+    The paired V81 experiment rejected every isolated V80 reward change over
+    the preregistered decision window: combo split, zero quality floor,
+    squared loss, and early scalar multipliers all raised ball/racket RMS.
+    V82 therefore keeps V79's reward exactly and temporarily ends successful
+    episodes after three confirmed hits.  This increases launch/transient
+    contact density while preserving a real contact -> rebound -> intercept
+    loop; it is neither a fixed-ball skill nor a real-data action label.
+
+    The next stage restores the full horizon and must retain both aggregate
+    and first-hit motion quality before either identified noise bridge opens.
+    """
+
+    v79 = _sport_taskspace_belief_constrained_v79_stages(stages)
+    clean = v79[0]
+    transient_cfg = replace(
+        clean.cfg,
+        terminate_after_confirmed_hits=3,
+    )
+    transient = replace(
+        clean,
+        name="transient00_first3_contact_resampling",
+        cfg=transient_cfg,
+        target_mean_hits=2.75,
+        target_mean_len_frac=0.0,
+        target_hit1_rate=0.995,
+        target_hit3_rate=0.90,
+        target_hit12_rate=None,
+        target_mean_hits_ge3=2.95,
+        target_episode_truncation_rate=None,
+        max_recent_mean_hit_vxy=0.070,
+        max_recent_rms_hit_vxy=0.100,
+        max_recent_mean_first_hit_ball_vxy=0.108,
+        max_recent_rms_first_hit_ball_vxy=0.128,
+        require_aggregate_hit_vxy_with_first_hit=True,
+        min_updates=48,
+        max_updates=96,
+        convergence_hold_updates=12,
+        notes=(
+            "GPU1 V82 transient resampling: keep the exact V79 reward/PPO/"
+            "observer/actuator, but end successfully after three confirmed "
+            "hits so launch-tail contacts cannot be diluted by hit4+ samples. "
+            "Both aggregate and first-hit ball-vxy gates must pass."
+        ),
+    )
+
+    clean_retention = replace(
+        clean,
+        name="transient01_full_horizon_clean_retention",
+        cfg=replace(clean.cfg, terminate_after_confirmed_hits=0),
+        max_recent_mean_hit_vxy=0.065,
+        max_recent_rms_hit_vxy=0.090,
+        max_recent_mean_first_hit_ball_vxy=0.108,
+        max_recent_rms_first_hit_ball_vxy=0.128,
+        require_aggregate_hit_vxy_with_first_hit=True,
+        min_updates=64,
+        max_updates=160,
+        convergence_hold_updates=16,
+        notes=(
+            "GPU1 V82 full-horizon clean retention: restore unlimited recurrent "
+            "juggling with byte-identical V79 rewards. Promotion requires high "
+            "hit/FULL plus aggregate and first-hit ball-vxy simultaneously."
+        ),
+    )
+
+    bridge = replace(
+        v79[1],
+        name="transient02_identified_subcritical_bridge",
+        require_aggregate_hit_vxy_with_first_hit=True,
+        max_recent_mean_first_hit_ball_vxy=0.125,
+        max_recent_rms_first_hit_ball_vxy=0.145,
+        notes=(
+            v79[1].notes
+            + " V82 enters the measured 0.022 m/s estimator-noise bridge only "
+            "after transient and full-horizon clean retention both pass."
+        ),
+    )
+    boundary = replace(
+        v79[2],
+        name="transient03_identified_feedback_boundary",
+        require_aggregate_hit_vxy_with_first_hit=True,
+        max_recent_mean_first_hit_ball_vxy=0.145,
+        max_recent_rms_first_hit_ball_vxy=0.170,
+        notes=(
+            v79[2].notes
+            + " V82 tests the measured 0.032 m/s feedback boundary without "
+            "real-trajectory behavior cloning or positive action labels."
+        ),
+    )
+    return [transient, clean_retention, bridge, boundary]
+
+
+def _sport_taskspace_belief_bounded_residual_v83_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Keep V79/V82 task rewards but make adaptation structurally bounded.
+
+    V82 proved that first-three-hit resampling exposes the actual transient
+    defect (hit 1/2 RMS), but updating the complete shared actor is the same
+    interference mechanism behind the earlier fine-tuning regressions.  V83
+    is intentionally paired with ``--residual-teacher-checkpoint``: the source
+    actor is frozen, the trainable actor starts at exactly zero correction,
+    and the CLI residual scale is a hard action-space trust region.
+
+    Stage 0 retains the useful transient sampling experiment.  Stage 1 then
+    restores the byte-identical full-horizon V79 environment/reward and must
+    pass aggregate plus first-hit gates before either measured-noise bridge.
+    """
+
+    v82 = _sport_taskspace_belief_transient_resample_v82_stages(stages)
+    names = (
+        "residual00_first3_bounded_correction",
+        "residual01_full_horizon_teacher_retention",
+        "residual02_identified_subcritical_bridge",
+        "residual03_identified_feedback_boundary",
+    )
+    min_updates = (64, 80, v82[2].min_updates, v82[3].min_updates)
+    max_updates = (160, 200, v82[2].max_updates, v82[3].max_updates)
+    holds = (16, 20, v82[2].convergence_hold_updates, v82[3].convergence_hold_updates)
+    result: list[CurriculumStage] = []
+    for index, stage in enumerate(v82):
+        result.append(
+            replace(
+                stage,
+                name=names[index],
+                min_updates=min_updates[index],
+                max_updates=max_updates[index],
+                convergence_hold_updates=holds[index],
+                notes=(
+                    f"GPU1 V83 frozen-teacher bounded-residual stage {index}: "
+                    "V79 reward, observer, actuator, and real-data exclusion "
+                    "remain unchanged. Only a zero-initialized bounded residual "
+                    "actor is trainable; the source actor is immutable. "
+                    + stage.notes
+                ),
+            )
+        )
+    return result
+
+
+def _sport_taskspace_belief_bounded_residual_v84_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Correct V83's gate topology without changing its optimization task.
+
+    V83 stage 0 deliberately terminates after three confirmed hits, so its
+    inherited steady-hit population is identically empty.  The convergence
+    checker correctly refuses to treat an empty population as zero RMS; the
+    inherited steady-hit racket gate therefore made promotion impossible.
+
+    V84 changes no environment/reward/PPO field.  It disables that one
+    inapplicable gate only in the three-hit transient stage, retains aggregate
+    racket/cycle/flatness gates, restores the steady-hit gate in the full-
+    horizon stage, and removes per-stage update caps.  Advancement still
+    requires the original aggregate plus first-hit ball-vxy proof.
+    """
+
+    v83 = _sport_taskspace_belief_bounded_residual_v83_stages(stages)
+    names = (
+        "residualfix00_first3_bounded_correction",
+        "residualfix01_full_horizon_teacher_retention",
+        "residualfix02_identified_subcritical_bridge",
+        "residualfix03_identified_feedback_boundary",
+    )
+    result: list[CurriculumStage] = []
+    for index, stage in enumerate(v83):
+        result.append(
+            replace(
+                stage,
+                name=names[index],
+                max_updates=None,
+                max_recent_rms_steady_hit_racket_vxy=(
+                    None
+                    if index == 0
+                    else stage.max_recent_rms_steady_hit_racket_vxy
+                ),
+                notes=(
+                    f"GPU1 V84 gate-topology correction stage {index}: no "
+                    "reward, environment, observer, actuator, or PPO change. "
+                    "The three-hit stage alone disables the impossible "
+                    "steady-hit-population gate; all stages have no update "
+                    "cap and retain their applicable strict quality gates. "
+                    + stage.notes
+                ),
+            )
+        )
+    return result
+
+
+def _sport_taskspace_belief_feedback_break_v85_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Break the measured action-state positive feedback before adding noise.
+
+    The aligned real/sim audit of all 67 deployed actor inputs found that the
+    ball inputs were identical by construction, while replacing only the
+    previous-action group explained 70.3% of the paired action split. Command
+    velocity and measured arm velocity explained a further 15.1% and 8.0%.
+    V83/V84 cannot remove that oscillator because the source actor is frozen.
+
+    V85 returns to a fully trainable V79 actor and makes the intervention
+    causal and staged. A direct zero-action-input ablation collapsed V78-u75
+    from recurrent juggling to 0.05 mean hits, while a 0.75 multiplier retained
+    4.64 hits but raised first-hit vxy to 0.273 m/s. Removal is therefore a
+    0.95 -> 0.93 -> DR[0.915, 0.93] -> 0.915 proof ->
+    DR[0.90, 0.915] -> 0.90 proof -> 0.80 -> 0.70 -> 0.50 -> 0.25 ->
+    0.00 homotopy,
+    with a first-hit gate at every step, rather than another
+    out-of-distribution switch. The 0.93 bridge was added after the first
+    independent 0.90 probe preserved 13.89 hits but raised mean first-hit vxy
+    to 0.134 m/s, failing the pre-registered 0.12 m/s gate. After 0.93 passed
+    every independent gate, direct 0.90 training retained hits but collapsed
+    view-in-bounds to about 0.72 and worsened posterior error. A fixed 0.915
+    midpoint repeated the same attractor (view about 0.69 by update 58), so
+    ever finer fixed jumps are not a useful curriculum. V85 instead uses
+    narrow per-episode gain DR to retain successful 0.93 trajectories inside
+    every on-policy batch before a separate fixed-boundary proof. This is not
+    the rejected V55 static paired-action invariance loss.
+    It then removes the redundant high-latency action history, broadens only
+    the identified execution plant, and finally introduces ball-velocity noise.
+    Observation dimensions stay unchanged for checkpoint compatibility. Real
+    trajectories set disturbance envelopes only; no recorded action is a
+    target, teacher, anchor, or reward label.
+    """
+
+    source = _sport_taskspace_belief_constrained_v79_stages(stages)
+    if len(source) != 3:
+        raise ValueError("V85 feedback-break profile requires the three V79 stages")
+
+    specs = (
+        # First isolate current previous-action gain. DR acquisition stages
+        # retain the last proven value in every batch; fixed stages prove the
+        # lower boundary separately before the next range is introduced.
+        dict(name="feedback00_previous_action_gain095", source=0, previous=0.95, previous_range=None, history=1.00, execution_dr=False, hits=10.0, hits_ge3=9.5, length=0.72, hit3=0.86, hit12=0.35, full=0.60, mean_vxy=0.090, rms_vxy=0.125, min_updates=40),
+        dict(name="feedback01_previous_action_gain093", source=0, previous=0.93, previous_range=None, history=1.00, execution_dr=False, hits=9.5, hits_ge3=9.0, length=0.70, hit3=0.85, hit12=0.33, full=0.58, mean_vxy=0.092, rms_vxy=0.128, min_updates=40),
+        dict(name="feedback02_previous_action_gain_dr0915_093", source=0, previous=0.93, previous_range=(0.915, 0.93), history=1.00, execution_dr=False, hits=9.25, hits_ge3=8.75, length=0.69, hit3=0.84, hit12=0.32, full=0.57, mean_vxy=0.093, rms_vxy=0.129, min_updates=48),
+        dict(name="feedback03_previous_action_gain0915_proof", source=0, previous=0.915, previous_range=None, history=1.00, execution_dr=False, hits=9.25, hits_ge3=8.75, length=0.69, hit3=0.84, hit12=0.32, full=0.57, mean_vxy=0.093, rms_vxy=0.129, min_updates=40),
+        dict(name="feedback04_previous_action_gain_dr090_0915", source=0, previous=0.915, previous_range=(0.90, 0.915), history=1.00, execution_dr=False, hits=9.0, hits_ge3=8.5, length=0.68, hit3=0.83, hit12=0.30, full=0.55, mean_vxy=0.095, rms_vxy=0.130, min_updates=48),
+        dict(name="feedback05_previous_action_gain090_proof", source=0, previous=0.90, previous_range=None, history=1.00, execution_dr=False, hits=9.0, hits_ge3=8.5, length=0.68, hit3=0.83, hit12=0.30, full=0.55, mean_vxy=0.095, rms_vxy=0.130, min_updates=40),
+        dict(name="feedback06_previous_action_gain080", source=0, previous=0.80, previous_range=None, history=1.00, execution_dr=False, hits=7.0, hits_ge3=6.5, length=0.58, hit3=0.75, hit12=0.18, full=0.42, mean_vxy=0.100, rms_vxy=0.140, min_updates=48),
+        dict(name="feedback07_previous_action_gain070", source=0, previous=0.70, previous_range=None, history=1.00, execution_dr=False, hits=5.0, hits_ge3=4.7, length=0.48, hit3=0.65, hit12=0.10, full=0.30, mean_vxy=0.100, rms_vxy=0.140, min_updates=48),
+        dict(name="feedback08_previous_action_gain050", source=0, previous=0.50, previous_range=None, history=1.00, execution_dr=False, hits=4.0, hits_ge3=3.8, length=0.42, hit3=0.58, hit12=0.06, full=0.22, mean_vxy=0.105, rms_vxy=0.145, min_updates=56),
+        dict(name="feedback09_previous_action_gain025", source=0, previous=0.25, previous_range=None, history=1.00, execution_dr=False, hits=3.2, hits_ge3=3.2, length=0.36, hit3=0.50, hit12=0.03, full=0.15, mean_vxy=0.105, rms_vxy=0.145, min_updates=64),
+        dict(name="feedback10_current_previous_action_removed", source=0, previous=0.00, previous_range=None, history=1.00, execution_dr=False, hits=2.8, hits_ge3=3.0, length=0.32, hit3=0.45, hit12=0.02, full=0.10, mean_vxy=0.110, rms_vxy=0.150, min_updates=72),
+        # Once the current input is removed, taper its redundant history.
+        dict(name="feedback11_action_history_gain050", source=0, previous=0.00, previous_range=None, history=0.50, execution_dr=False, hits=2.8, hits_ge3=3.0, length=0.32, hit3=0.45, hit12=0.02, full=0.10, mean_vxy=0.110, rms_vxy=0.150, min_updates=64),
+        dict(name="feedback12_all_policy_action_recurrence_removed", source=0, previous=0.00, previous_range=None, history=0.00, execution_dr=False, hits=2.8, hits_ge3=3.0, length=0.32, hit3=0.45, hit12=0.02, full=0.10, mean_vxy=0.110, rms_vxy=0.150, min_updates=72),
+        # Execution and ball-observation mechanisms remain separate stages.
+        dict(name="feedback13_execution_plant_envelope", source=0, previous=0.00, previous_range=None, history=0.00, execution_dr=True, hits=2.8, hits_ge3=3.0, length=0.32, hit3=0.45, hit12=0.02, full=0.10, mean_vxy=0.110, rms_vxy=0.150, min_updates=80),
+        dict(name="feedback14_identified_ball_noise_bridge", source=1, previous=0.00, previous_range=None, history=0.00, execution_dr=True, hits=2.6, hits_ge3=2.9, length=0.30, hit3=0.42, hit12=0.01, full=0.08, mean_vxy=0.120, rms_vxy=0.165, min_updates=96),
+        dict(name="feedback15_identified_feedback_boundary", source=2, previous=0.00, previous_range=None, history=0.00, execution_dr=True, hits=2.5, hits_ge3=2.8, length=0.28, hit3=0.40, hit12=0.01, full=0.06, mean_vxy=0.130, rms_vxy=0.180, min_updates=120),
+    )
+
+    result: list[CurriculumStage] = []
+    for spec in specs:
+        stage = source[spec["source"]]
+        cfg = replace(
+            stage.cfg,
+            actor_mask_previous_action=False,
+            actor_mask_action_history=False,
+            actor_previous_action_scale=spec["previous"],
+            actor_previous_action_scale_range=spec["previous_range"],
+            actor_action_history_scale=spec["history"],
+        )
+        if spec["execution_dr"]:
+            cfg = replace(
+                cfg,
+                # The real replay first diverges in dq/command state and has
+                # substantially stronger acceleration excursions than the
+                # aligned simulator. Widen the already-fitted plant around its
+                # nominal values; do not inject real actions or trajectories.
+                dr_actuator_cmd_tau_range=(0.055, 0.095),
+                dr_actuator_cmd_gain_range=(0.96, 1.04),
+                dr_second_order_frequency_scale_range=(0.80, 1.20),
+                dr_second_order_damping_scale_range=(0.75, 1.25),
+                dr_second_order_gain_scale_range=(0.96, 1.04),
+                dr_second_order_delay_offset_steps_range=(-3, 2),
+            )
+        result.append(
+            replace(
+                stage,
+                name=spec["name"],
+                cfg=cfg,
+                target_mean_hits=spec["hits"],
+                target_mean_hits_ge3=spec["hits_ge3"],
+                target_mean_len_frac=spec["length"],
+                target_hit1_rate=0.98,
+                target_hit3_rate=spec["hit3"],
+                target_hit12_rate=spec["hit12"],
+                target_episode_truncation_rate=spec["full"],
+                max_recent_mean_hit_vxy=spec["mean_vxy"],
+                max_recent_rms_hit_vxy=spec["rms_vxy"],
+                max_recent_mean_first_hit_ball_vxy=(
+                    0.12 if spec["source"] == 0 else 0.15
+                ),
+                max_recent_rms_first_hit_ball_vxy=(
+                    0.16 if spec["source"] == 0 else 0.19
+                ),
+                require_aggregate_hit_vxy_with_first_hit=True,
+                min_updates=spec["min_updates"],
+                max_updates=None,
+                convergence_hold_updates=12,
+                notes=(
+                    "GPU1 V85 causal feedback-break ladder. The actor remains "
+                    "fully trainable; real recordings define only the audited "
+                    "input ranking and execution/noise envelopes. No real "
+                    "action labels and no frozen oscillatory teacher are used. "
+                    + stage.notes
+                ),
+            )
+        )
+    return result
+
+
+def _sport_taskspace_belief_feedback_dc_v88_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Reject slow action-feedback drift while retaining fast innovations.
+
+    V85 showed that uniformly shrinking previous-action feedback eventually
+    makes the source policy out of distribution. V86/V87 then showed that
+    static replay KL and current-state KL do not stop the low-view PPO
+    attractor, even though the untouched source policy passes the same narrow
+    gain-DR stress domain. V88 changes the representation instead of adding
+    another teacher constraint: it subtracts a per-joint temporal mean shared
+    by the current previous-action input and its explicit history. This targets
+    the slowly accumulating circular/DC feedback measured in real recordings,
+    while preserving within-window action innovations and the 254-D checkpoint
+    contract. Real trajectories identify the risky input group only; recorded
+    actions are never targets, rewards, anchors, or teacher labels.
+    """
+
+    v85 = _sport_taskspace_belief_feedback_break_v85_stages(stages)
+    source = v85[2]
+    specs = (
+        ("feedbackdc00_action_dc_rejection025", 0.25, 48),
+        ("feedbackdc01_action_dc_rejection050", 0.50, 56),
+        ("feedbackdc02_action_dc_rejection075", 0.75, 64),
+        ("feedbackdc03_action_dc_rejection100", 1.00, 72),
+    )
+    result: list[CurriculumStage] = []
+    for name, rejection, min_updates in specs:
+        result.append(
+            replace(
+                source,
+                name=name,
+                cfg=replace(
+                    source.cfg,
+                    actor_action_dc_rejection=rejection,
+                ),
+                min_updates=min_updates,
+                max_updates=None,
+                convergence_hold_updates=12,
+                notes=(
+                    "GPU1 V88 action-feedback DC-rejection ablation. The "
+                    "actor is fully trainable and retains V85's proven "
+                    "per-episode previous-action gain DR [0.915, 0.93]. Only "
+                    f"the actor-observed temporal action mean is rejected at "
+                    f"alpha={rejection:.2f}; control state and action buffers "
+                    "are unchanged. No residual/frozen teacher and no real "
+                    "action labels are used. "
+                    + source.notes
+                ),
+            )
+        )
+    return result
+
+
+def _sport_taskspace_world_hold_v90_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Adapt only the measured real launch-prefix mismatch over long stages.
+
+    Aligned real/sim temporal replay shows that arm velocity diverges before
+    policy action and previous-action feedback. Frozen-policy counterfactuals
+    then reproduce the real failure without observation noise: the deployed
+    launch keeps the ball approximately world-stationary for 0.20--0.25 s,
+    whereas the training launch is free immediately (and the older hold mode
+    follows the moving racket). The source policy retains full six-second
+    episodes through 0.18 s, crosses a sharp failure boundary at 0.185 s, and
+    has zero >=3-hit episodes above 0.20 s.
+
+    V90 is therefore a single-variable causal homotopy. Reward, PPO,
+    observation dimensions/noise, actuator randomization, previous-action
+    representation, and the fully trainable actor are held fixed. Every stage
+    retains zero-delay source episodes while widening only the per-episode
+    world-fixed launch hold. Real trajectories identify the duration envelope;
+    recorded actions are never targets, rewards, anchors, or teacher labels.
+    The 300-update minimum and 32-update convergence hold prevent short-window
+    rejection, and no stage has an update cap.
+    """
+
+    v85 = _sport_taskspace_belief_feedback_break_v85_stages(stages)
+    source = v85[1]
+    specs = (
+        dict(
+            name="worldhold00_identified_support_000_180ms",
+            upper=0.180,
+            hits=10.0,
+            hits_ge3=9.5,
+            length=0.72,
+            hit1=0.95,
+            hit3=0.85,
+            hit12=0.30,
+            full=0.60,
+            mean_vxy=0.100,
+            rms_vxy=0.140,
+        ),
+        dict(
+            name="worldhold01_transition_000_200ms",
+            upper=0.200,
+            hits=9.0,
+            hits_ge3=8.5,
+            length=0.68,
+            hit1=0.90,
+            hit3=0.80,
+            hit12=0.25,
+            full=0.55,
+            mean_vxy=0.110,
+            rms_vxy=0.155,
+        ),
+        dict(
+            name="worldhold02_real_prefix_000_225ms",
+            upper=0.225,
+            hits=8.0,
+            hits_ge3=7.5,
+            length=0.62,
+            hit1=0.85,
+            hit3=0.72,
+            hit12=0.20,
+            full=0.48,
+            mean_vxy=0.120,
+            rms_vxy=0.170,
+        ),
+        dict(
+            name="worldhold03_real_prefix_000_250ms",
+            upper=0.250,
+            hits=8.0,
+            hits_ge3=7.5,
+            length=0.62,
+            hit1=0.85,
+            hit3=0.72,
+            hit12=0.20,
+            full=0.48,
+            mean_vxy=0.120,
+            rms_vxy=0.170,
+        ),
+    )
+
+    result: list[CurriculumStage] = []
+    for spec in specs:
+        cfg = replace(
+            source.cfg,
+            racket_launch_hold_time_s=0.0,
+            racket_launch_hold_time_range_s=(0.0, spec["upper"]),
+            racket_launch_hold_mode="world_fixed",
+            actor_previous_action_scale=0.93,
+            actor_previous_action_scale_range=None,
+            actor_action_dc_rejection=0.0,
+        )
+        result.append(
+            replace(
+                source,
+                name=spec["name"],
+                cfg=cfg,
+                target_mean_hits=spec["hits"],
+                target_mean_hits_ge3=spec["hits_ge3"],
+                target_mean_len_frac=spec["length"],
+                target_hit1_rate=spec["hit1"],
+                target_hit3_rate=spec["hit3"],
+                target_hit12_rate=spec["hit12"],
+                target_episode_truncation_rate=spec["full"],
+                target_ball_view_in_bounds=max(
+                    0.82,
+                    float(source.target_ball_view_in_bounds or 0.0),
+                ),
+                max_recent_mean_hit_vxy=spec["mean_vxy"],
+                max_recent_rms_hit_vxy=spec["rms_vxy"],
+                max_recent_mean_first_hit_ball_vxy=0.15,
+                max_recent_rms_first_hit_ball_vxy=0.20,
+                require_aggregate_hit_vxy_with_first_hit=True,
+                min_updates=300,
+                max_updates=None,
+                convergence_hold_updates=32,
+                notes=(
+                    "GPU1 V90 world-fixed launch-prefix causal homotopy. "
+                    f"Only the per-episode hold upper bound changes to "
+                    f"{spec['upper']:.3f} s; all batches retain hold=0 support. "
+                    "No short-run rejection, feedback-gain tuning, teacher, "
+                    "replay action loss, or real action label is used. "
+                    + source.notes
+                ),
+            )
+        )
+    return result
+
+
+def _sport_taskspace_release_robust_v92_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """One conservative end-to-end course from the proven gain-0.93 actor.
+
+    The deployment release state machine is fixed with ``hold_command``; it is
+    not something PPO must rediscover.  The fully trainable actor then sees
+    only three nested distributions that the frozen source already survives:
+    the leading position/lateral observation interaction, the complete
+    three-way ball-observation bundle, and finally that bundle together with
+    the measured execution envelope.  Reward, observation dimension,
+    previous-action gain, optimizer semantics, and the retained innovation
+    clip stay fixed.  There are no real-action labels, teacher, KL anchor,
+    residual policy, or short update cap.
+    """
+
+    source = _sport_taskspace_belief_feedback_break_v85_stages(stages)[1]
+    specs = (
+        dict(
+            name="release00_pos005_lateral032",
+            min_updates=240,
+            vel=0.0,
+            execution=False,
+            hits=12.0,
+            hits_ge3=11.5,
+            length=0.86,
+            hit12=0.72,
+            full=0.85,
+            view=0.84,
+            mean_vxy=0.110,
+            rms_vxy=0.140,
+            angular=1.65,
+        ),
+        dict(
+            name="release01_threeway_pos005_vel030_lateral032",
+            min_updates=300,
+            vel=0.030,
+            execution=False,
+            hits=11.5,
+            hits_ge3=11.0,
+            length=0.82,
+            hit12=0.66,
+            full=0.80,
+            view=0.84,
+            mean_vxy=0.120,
+            rms_vxy=0.160,
+            angular=1.62,
+        ),
+        dict(
+            name="release02_threeway_plus_execution_envelope",
+            min_updates=300,
+            vel=0.030,
+            execution=True,
+            hits=10.5,
+            hits_ge3=10.0,
+            length=0.76,
+            hit12=0.55,
+            full=0.72,
+            view=0.84,
+            mean_vxy=0.125,
+            rms_vxy=0.170,
+            angular=1.60,
+        ),
+    )
+
+    result: list[CurriculumStage] = []
+    for spec in specs:
+        cfg = replace(
+            source.cfg,
+            racket_launch_hold_time_s=0.0,
+            racket_launch_hold_time_range_s=(0.0, 0.25),
+            racket_launch_hold_mode="world_fixed",
+            racket_launch_pre_release_control_mode="hold_command",
+            actor_previous_action_scale=0.93,
+            actor_previous_action_scale_range=None,
+            actor_action_dc_rejection=0.0,
+            ball_obs_pos_noise_std=0.005,
+            ball_obs_vel_noise_std=spec["vel"],
+            ball_obs_vel_xy_noise_std=0.032,
+            ball_obs_vel_xy_noise_rho=0.6,
+            ball_obs_posthit_vel_xy_noise_std=0.0,
+        )
+        if spec["execution"]:
+            cfg = replace(
+                cfg,
+                dr_actuator_cmd_tau_range=(0.055, 0.095),
+                dr_actuator_cmd_gain_range=(0.96, 1.04),
+                dr_second_order_frequency_scale_range=(0.80, 1.20),
+                dr_second_order_damping_scale_range=(0.75, 1.25),
+            )
+        result.append(
+            replace(
+                source,
+                name=spec["name"],
+                cfg=cfg,
+                target_mean_hits=spec["hits"],
+                target_mean_hits_ge3=spec["hits_ge3"],
+                target_mean_len_frac=spec["length"],
+                target_hit1_rate=0.98,
+                target_hit3_rate=0.94,
+                target_hit12_rate=spec["hit12"],
+                target_episode_truncation_rate=spec["full"],
+                target_ball_view_in_bounds=spec["view"],
+                max_recent_mean_hit_vxy=spec["mean_vxy"],
+                max_recent_rms_hit_vxy=spec["rms_vxy"],
+                max_recent_mean_first_hit_ball_vxy=0.15,
+                max_recent_rms_first_hit_ball_vxy=0.19,
+                require_aggregate_hit_vxy_with_first_hit=True,
+                target_racket_up_cos=0.9935,
+                max_recent_hit_racket_angular_speed_rad_s=spec["angular"],
+                min_updates=spec["min_updates"],
+                max_updates=None,
+                convergence_hold_updates=32,
+                notes=(
+                    "GPU1 V92 frozen-design end-to-end robustness course. "
+                    "Gain 0.93 and the original 254-D actor contract remain "
+                    "fixed; hold_command is a deployment-state fix. Stages "
+                    "only nest prevalidated observation and execution stress. "
+                    "No real action labels, teacher, KL, residual, or early "
+                    "update cap is used. "
+                    + source.notes
+                ),
+            )
+        )
+    return result
+
+
+def _sport_taskspace_record_new3_exec_rate_v93_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Fine-tune the committed 67-D actor on valid record_new3 evidence.
+
+    The record_new3 sim mirror is intentionally not used.  A direct replay of
+    the angle actually published to the robot against real q/dq shows that the
+    existing fitted task-space plant remains the global grid optimum (0.602
+    deg mean q RMSE), while the real 200 Hz state path has 0--5 ms receipt age
+    and intermittent sample holds.  This profile therefore keeps the fitted
+    center, actor contract, and 60 Hz ball rate, then adds causal proprioceptive
+    corruption and the measured one-control-tick observation timing envelope.
+    Real failed actions are never used as targets.
+
+    The higher 90 Hz observation rate is intentionally not sampled during PPO.
+    It is a checkpoint-selection gate: the separately paired evaluator must
+    show that 90 Hz is strictly better than 60 Hz before a checkpoint can be
+    promoted.
+    """
+
+    if not stages:
+        raise ValueError("record_new3 V93 requires a 67-D source curriculum")
+    source = stages[-1]
+    if bool(source.cfg.high_latency_obs):
+        raise ValueError("record_new3 V93 must preserve the committed 67-D actor")
+
+    specs = (
+        dict(
+            name="record_new3_00_exec_observation_mild_60hz",
+            min_updates=160,
+            dq_noise=0.060,
+            racket_vel_noise=0.020,
+            pos_noise=0.0020,
+            lateral_noise=0.0,
+            execution_wide=False,
+            hits=12.2,
+            hits_ge3=11.8,
+            length=0.86,
+            full=0.82,
+            view=0.86,
+            mean_vxy=0.145,
+            rms_vxy=0.185,
+        ),
+        dict(
+            name="record_new3_01_exec_plus_observation_methods_60hz",
+            min_updates=220,
+            dq_noise=0.100,
+            racket_vel_noise=0.035,
+            pos_noise=0.0035,
+            lateral_noise=0.016,
+            execution_wide=False,
+            hits=11.7,
+            hits_ge3=11.2,
+            length=0.82,
+            full=0.77,
+            view=0.84,
+            mean_vxy=0.155,
+            rms_vxy=0.200,
+        ),
+        dict(
+            name="record_new3_02_joint_observation_execution_envelope_60hz",
+            min_updates=260,
+            dq_noise=0.140,
+            racket_vel_noise=0.050,
+            pos_noise=0.0050,
+            lateral_noise=0.024,
+            execution_wide=True,
+            hits=10.8,
+            hits_ge3=10.2,
+            length=0.76,
+            full=0.70,
+            view=0.82,
+            mean_vxy=0.165,
+            rms_vxy=0.215,
+        ),
+    )
+
+    result: list[CurriculumStage] = []
+    for index, spec in enumerate(specs):
+        cfg = replace(
+            source.cfg,
+            # Train only at the deployment-preferred rate.  Fractional timing
+            # avoids the 200/60 integer-rounding bias and is also used by the
+            # paired 90-Hz checkpoint gate.
+            ball_obs_rate_hz=60.0,
+            ball_obs_fractional_rate=True,
+            ball_obs_pos_noise_std=max(
+                float(source.cfg.ball_obs_pos_noise_std), spec["pos_noise"]
+            ),
+            # Preserve the already measured vertical/contact-time noise.  Add
+            # only the smaller correlated XY residual supported by record_new3.
+            ball_obs_vel_xy_noise_std=spec["lateral_noise"],
+            ball_obs_vel_xy_noise_rho=0.60,
+            ball_obs_posthit_vel_xy_noise_std=0.0,
+            proprio_dq_obs_noise_std=spec["dq_noise"],
+            proprio_racket_vel_obs_noise_std=spec["racket_vel_noise"],
+            proprio_obs_noise_rho=0.85,
+            proprio_obs_noise_warmup_env_steps=(128 * 20 if index == 0 else 0),
+            proprio_obs_noise_ramp_env_steps=(128 * 80 if index == 0 else 128 * 40),
+            # The real first hit is too high, but replay does not support a
+            # scalar actuator-gain explanation.  Shape the causal predicted
+            # apex while the execution distribution is varied instead of
+            # weakening the plant or applying an output gain patch.
+            first_hit_apex_reward_weight=max(
+                0.50, float(source.cfg.first_hit_apex_reward_weight)
+            ),
+            first_hit_apex_sigma=min(
+                0.055, float(source.cfg.first_hit_apex_sigma)
+            ),
+            apex_soft_limit_margin=min(
+                0.035, float(source.cfg.apex_soft_limit_margin)
+            ),
+            apex_soft_penalty_weight=max(
+                8.0, float(source.cfg.apex_soft_penalty_weight)
+            ),
+        )
+        if spec["execution_wide"]:
+            cfg = replace(
+                cfg,
+                dr_actuator_cmd_tau_range=(0.055, 0.095),
+                dr_actuator_cmd_gain_range=(0.96, 1.04),
+                dr_second_order_frequency_scale_range=(0.80, 1.20),
+                dr_second_order_damping_scale_range=(0.75, 1.25),
+                # Raw record_new3 timestamps: joint sample dt P95=5.002 ms,
+                # receipt age P50/P95=2.49/4.56 ms, with 2--16% identical-q
+                # sample holds across recordings.  Hold only joint-derived
+                # channels for one control tick on 8% of steps; delaying the
+                # entire base observation also delays the camera stream and
+                # is an invalid, substantially harder perturbation.
+                proprio_obs_one_step_stale_probability=0.08,
+            )
+        result.append(
+            replace(
+                source,
+                name=spec["name"],
+                cfg=cfg,
+                target_mean_hits=spec["hits"],
+                target_mean_hits_ge3=spec["hits_ge3"],
+                target_mean_len_frac=spec["length"],
+                target_hit1_rate=0.98,
+                target_hit3_rate=0.92,
+                target_hit12_rate=0.62 if index < 2 else 0.50,
+                target_episode_truncation_rate=spec["full"],
+                target_ball_view_in_bounds=spec["view"],
+                max_recent_mean_hit_vxy=spec["mean_vxy"],
+                max_recent_rms_hit_vxy=spec["rms_vxy"],
+                max_recent_mean_first_hit_ball_vxy=0.17,
+                max_recent_rms_first_hit_ball_vxy=0.22,
+                require_aggregate_hit_vxy_with_first_hit=True,
+                target_racket_up_cos=0.992,
+                min_updates=spec["min_updates"],
+                max_updates=None,
+                convergence_hold_updates=24,
+                best_checkpoint_mean_hit_vxy_weight=max(
+                    220.0, float(source.best_checkpoint_mean_hit_vxy_weight)
+                ),
+                best_checkpoint_rms_hit_vxy_weight=max(
+                    160.0, float(source.best_checkpoint_rms_hit_vxy_weight)
+                ),
+                notes=(
+                    "GPU1 V93 record_new3-only simulation fine-tune. The actor "
+                    "is the committed 67-D acceleration policy and trains at "
+                    "60 Hz. The course separates execution-observation noise, "
+                    "ball-observation-method residuals, and widened plant "
+                    "dynamics. Failed real actions, observer corrections, "
+                    "deployment state changes, teachers, and residual policies "
+                    "are excluded. A paired 90>60 Hz external gate owns final "
+                    "checkpoint promotion. "
+                    + source.notes
+                ),
+            )
+        )
+    return result
+
+
+def _sport_taskspace_record_new3_impact_angular_v94_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Reduce the measured fast-through-contact angular stroke in V93.
+
+    The stopped V93 policy keeps a very flat contact pose but crosses it at
+    about 1.67 rad/s.  Its local-y component dominates, so this course retains
+    the historical full-norm impact metric and adds only angular-quality
+    shaping: a causal descending-approach penalty, a progressively stronger
+    event loss, and a bounded angular gate on positive hit/combo credit.
+    Observation, plant, reset, actor contract, and PPO settings stay V93.
+    """
+
+    result = _sport_taskspace_record_new3_exec_rate_v93_stages(stages)
+    specs = (
+        dict(
+            approach_weight=0.75,
+            approach_soft=0.90,
+            approach_scale=1.00,
+            hit_weight=0.65,
+            hit_soft=1.15,
+            hit_scale=1.25,
+            quality_floor=0.65,
+            quality_sigma=2.40,
+        ),
+        dict(
+            approach_weight=1.00,
+            approach_soft=0.80,
+            approach_scale=0.90,
+            hit_weight=0.90,
+            hit_soft=1.05,
+            hit_scale=1.10,
+            quality_floor=0.55,
+            quality_sigma=2.10,
+        ),
+        dict(
+            approach_weight=1.25,
+            approach_soft=0.70,
+            approach_scale=0.80,
+            hit_weight=1.20,
+            hit_soft=0.95,
+            hit_scale=0.95,
+            quality_floor=0.45,
+            quality_sigma=1.80,
+        ),
+    )
+
+    shaped: list[CurriculumStage] = []
+    for stage, spec in zip(result, specs, strict=True):
+        cfg = replace(
+            stage.cfg,
+            racket_stability_angular_speed_mode="full_norm",
+            approach_racket_vxy_time_window_s=max(
+                0.14, float(stage.cfg.approach_racket_vxy_time_window_s)
+            ),
+            approach_racket_tilt_speed_penalty_weight=spec[
+                "approach_weight"
+            ],
+            racket_tilt_angular_speed_soft_limit_rad_s=spec[
+                "approach_soft"
+            ],
+            racket_tilt_angular_speed_scale_rad_s=spec["approach_scale"],
+            hit_racket_angular_speed_penalty_weight=spec["hit_weight"],
+            hit_racket_angular_speed_soft_limit_rad_s=spec["hit_soft"],
+            hit_racket_angular_speed_scale_rad_s=spec["hit_scale"],
+            hit_pose_quality_gate_floor=spec["quality_floor"],
+            hit_angular_speed_quality_gate_sigma_rad_s=spec[
+                "quality_sigma"
+            ],
+            # Keep count/survival credit tied to the same motion quality;
+            # otherwise the high-value combo term can repay a fast impact.
+            hit_combo_quality_independent=False,
+            hit_combo_motion_quality_independent=False,
+        )
+        shaped.append(
+            replace(
+                stage,
+                name=stage.name.replace("record_new3_", "angular_v94_"),
+                cfg=cfg,
+                max_recent_hit_racket_angular_speed_rad_s=1.50,
+                convergence_hold_updates=24,
+                notes=(
+                    "GPU1 V94 angular-impact homotopy. Penalize tilt-axis "
+                    "angular speed during the final 140 ms aligned descent, "
+                    "strengthen the physical-contact full-norm angular loss, "
+                    "and condition positive hit/combo credit on angular "
+                    "quality. Promotion requires <=1.50 rad/s for 24 "
+                    "updates while retaining all V93 hit, full-rate, view, "
+                    "vxy, observation-rate, and execution gates. "
+                    + stage.notes
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_record_new3_angular_positive_v95_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Add an explicit positive signal for successful low-angular hits.
+
+    V94 retained task quality for more than 1600 updates but plateaued near
+    1.65 rad/s because its approach and event losses remained small relative
+    to positive hit credit.  V95 changes only the angular reward family: each
+    confirmed hit receives a bounded bonus that is flat below a stage target
+    and falls off smoothly above it.  PPO, exploration, plant, observations,
+    resets, and every V94 gate remain unchanged for the reward-only ablation.
+    """
+
+    result = _sport_taskspace_record_new3_impact_angular_v94_stages(stages)
+    specs = (
+        dict(weight=1.25, target=1.30, sigma=0.35),
+        dict(weight=1.50, target=1.20, sigma=0.35),
+        dict(weight=1.75, target=1.10, sigma=0.30),
+    )
+    shaped: list[CurriculumStage] = []
+    for stage, spec in zip(result, specs, strict=True):
+        shaped.append(
+            replace(
+                stage,
+                name=stage.name.replace("angular_v94_", "angular_v95_"),
+                cfg=replace(
+                    stage.cfg,
+                    hit_racket_angular_speed_reward_weight=spec["weight"],
+                    hit_racket_angular_speed_reward_target_rad_s=spec[
+                        "target"
+                    ],
+                    hit_racket_angular_speed_reward_sigma_rad_s=spec["sigma"],
+                ),
+                notes=(
+                    "GPU1 V95 reward-only ablation: add a bounded positive "
+                    "bonus for confirmed hits at or below the stage angular "
+                    "target; keep V94 PPO/exploration and all task gates "
+                    "unchanged. "
+                    + stage.notes
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_record_new3_deployment_v96_stages(
+    stages: list[CurriculumStage],
+    *,
+    variant: str,
+) -> list[CurriculumStage]:
+    """Repair the V95 view/lateral reward-to-gate mismatch.
+
+    The stopped V95 final stage had a 0.165 m/s mean hit-vxy gate, but its
+    inherited hit-vxy reward remained inactive below 0.35 m/s. It also paid
+    substantially more positive angular credit than apex-view cost after the
+    angular target was already met. The variants isolate view shaping,
+    gate-aligned lateral shaping, and their balanced combination.
+    """
+
+    if variant not in {"view", "lateral", "balanced"}:
+        raise ValueError(f"unknown record_new3 V96 variant: {variant}")
+    result = _sport_taskspace_record_new3_angular_positive_v95_stages(stages)
+    shaped: list[CurriculumStage] = []
+    for index, stage in enumerate(result):
+        cfg = stage.cfg
+        if variant in {"view", "balanced"}:
+            cfg = replace(
+                cfg,
+                ball_view_xy_center_penalty_weight=max(
+                    0.18, float(cfg.ball_view_xy_center_penalty_weight)
+                ),
+                ball_view_out_of_bounds_penalty_weight=max(
+                    1.00, float(cfg.ball_view_out_of_bounds_penalty_weight)
+                ),
+                hit_apex_view_center_penalty_weight=max(
+                    0.24, float(cfg.hit_apex_view_center_penalty_weight)
+                ),
+            )
+        if variant in {"lateral", "balanced"}:
+            cfg = replace(
+                cfg,
+                # Activate the event penalty in the measured failure band
+                # instead of leaving a dead zone above the deployment gate.
+                hit_vxy_soft_limit_m_s=min(
+                    0.14, float(cfg.hit_vxy_soft_limit_m_s)
+                ),
+                hit_vxy_penalty_scale_m_s=min(
+                    0.08, float(cfg.hit_vxy_penalty_scale_m_s)
+                ),
+                hit_vxy_penalty_weight=max(
+                    0.90, float(cfg.hit_vxy_penalty_weight)
+                ),
+                hit_vxy_apply_from_first_hit=True,
+                hit_vxy_zero_reward_weight=max(
+                    0.35, float(cfg.hit_vxy_zero_reward_weight)
+                ),
+                hit_vxy_zero_reward_sigma_m_s=max(
+                    0.16, float(cfg.hit_vxy_zero_reward_sigma_m_s)
+                ),
+                hit_racket_vxy_soft_limit_m_s=min(
+                    0.18, float(cfg.hit_racket_vxy_soft_limit_m_s)
+                ),
+                hit_racket_vxy_penalty_scale_m_s=min(
+                    0.10, float(cfg.hit_racket_vxy_penalty_scale_m_s)
+                ),
+                hit_racket_vxy_penalty_weight=max(
+                    0.15, float(cfg.hit_racket_vxy_penalty_weight)
+                ),
+                hit_racket_vxy_apply_from_first_hit=True,
+                hit_cycle_racket_xy_path_penalty_weight=max(
+                    0.08, float(cfg.hit_cycle_racket_xy_path_penalty_weight)
+                ),
+                hit_cycle_racket_xy_area_penalty_weight=max(
+                    0.06, float(cfg.hit_cycle_racket_xy_area_penalty_weight)
+                ),
+                racket_cycle_vxy_penalty_weight=max(
+                    0.03, float(cfg.racket_cycle_vxy_penalty_weight)
+                ),
+            )
+        if variant == "balanced":
+            cfg = replace(
+                cfg,
+                # V95 already moved impact angular speed from about 1.65 to
+                # about 1.19 rad/s. Retain guidance without dominating view.
+                hit_racket_angular_speed_reward_weight=min(
+                    1.25, float(cfg.hit_racket_angular_speed_reward_weight)
+                ),
+                hit_racket_angular_speed_reward_target_rad_s=max(
+                    1.20, float(cfg.hit_racket_angular_speed_reward_target_rad_s)
+                ),
+                hit_racket_angular_speed_reward_sigma_rad_s=max(
+                    0.35, float(cfg.hit_racket_angular_speed_reward_sigma_rad_s)
+                ),
+            )
+        shaped.append(
+            replace(
+                stage,
+                name=stage.name.replace(
+                    "angular_v95_", f"deployment_v96_{variant}_"
+                ),
+                cfg=cfg,
+                # The final deployment envelope must not terminate merely at
+                # the old robustness-admission floor.  Keep training without
+                # an update cap until stochastic DR is close to full-horizon
+                # and near-continuously in view; final promotion still uses
+                # deterministic conv_len=1/view=1 plus the paired 90>60 gate.
+                target_mean_hits=(
+                    max(12.0, float(stage.target_mean_hits))
+                    if index == len(result) - 1
+                    else stage.target_mean_hits
+                ),
+                target_mean_hits_ge3=(
+                    max(11.5, float(stage.target_mean_hits_ge3 or 0.0))
+                    if index == len(result) - 1
+                    else stage.target_mean_hits_ge3
+                ),
+                target_mean_len_frac=(
+                    max(0.90, float(stage.target_mean_len_frac))
+                    if index == len(result) - 1
+                    else stage.target_mean_len_frac
+                ),
+                target_episode_truncation_rate=(
+                    max(0.88, float(stage.target_episode_truncation_rate or 0.0))
+                    if index == len(result) - 1
+                    else stage.target_episode_truncation_rate
+                ),
+                target_ball_view_in_bounds=(
+                    max(0.92, float(stage.target_ball_view_in_bounds or 0.0))
+                    if index == len(result) - 1
+                    else stage.target_ball_view_in_bounds
+                ),
+                min_updates=(
+                    max(320, int(stage.min_updates))
+                    if index == len(result) - 1
+                    else stage.min_updates
+                ),
+                convergence_hold_updates=(
+                    max(32, int(stage.convergence_hold_updates))
+                    if index == len(result) - 1
+                    else stage.convergence_hold_updates
+                ),
+                notes=(
+                    f"GPU1 V96 {variant} controlled reward ablation. "
+                    "Actor observations, 60 Hz training rate, plant DR, PPO, "
+                    "reset distribution, and V95 gates are unchanged. "
+                    + stage.notes
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_record_new3_plateau_v97_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Rebalance V96 after the long-run reward/rollout plateau audit.
+
+    The 5514-update V96 continuation improved the policy on its source
+    environment, but the final execution envelope stayed near 0.72 full
+    episodes and 0.79 in-view occupancy.  Reward telemetry showed why: the
+    bounded angular bonus alone contributed about +0.012 per step, more than
+    all view losses combined, while action-delta and delayed-action jerk
+    costs were effectively zero.  A deterministic trace consequently put
+    26.6% of action power above 8 Hz.
+
+    V97 keeps the measured record_new3 execution envelope intact -- including
+    the third-stage 8% one-tick joint-state hold, fitted plant DR, 60 Hz ball
+    observations, and the 67-D actor contract.  It only rebalances successful
+    contact credit toward view/lateral quality and makes command continuity a
+    meaningful, still-subordinate objective.  The three stages form a gentle
+    homotopy even though the audited continuation normally resumes at stage 3.
+    """
+
+    result = _sport_taskspace_record_new3_deployment_v96_stages(
+        stages, variant="balanced"
+    )
+    specs = (
+        dict(angular=0.70, center=1.20, view_xy=0.30, view_oob=1.50,
+             apex_view=0.35, action_delta=0.030, action_jerk=1.0e-6),
+        dict(angular=0.50, center=1.00, view_xy=0.45, view_oob=2.00,
+             apex_view=0.50, action_delta=0.060, action_jerk=2.0e-6),
+        dict(angular=0.35, center=0.80, view_xy=0.60, view_oob=3.00,
+             apex_view=0.70, action_delta=0.100, action_jerk=3.0e-6),
+    )
+    shaped: list[CurriculumStage] = []
+    for stage, spec in zip(result, specs, strict=True):
+        cfg = replace(
+            stage.cfg,
+            # Preserve a small positive low-angular signal without allowing
+            # it to repay a lateral/out-of-view contact.
+            hit_racket_angular_speed_reward_weight=min(
+                spec["angular"],
+                float(stage.cfg.hit_racket_angular_speed_reward_weight),
+            ),
+            center_flat_hit_reward_weight=min(
+                spec["center"], float(stage.cfg.center_flat_hit_reward_weight)
+            ),
+            ball_view_xy_center_penalty_weight=max(
+                spec["view_xy"],
+                float(stage.cfg.ball_view_xy_center_penalty_weight),
+            ),
+            ball_view_out_of_bounds_penalty_weight=max(
+                spec["view_oob"],
+                float(stage.cfg.ball_view_out_of_bounds_penalty_weight),
+            ),
+            hit_apex_view_center_penalty_weight=max(
+                spec["apex_view"],
+                float(stage.cfg.hit_apex_view_center_penalty_weight),
+            ),
+            action_delta_penalty_weight=max(
+                spec["action_delta"], float(stage.cfg.action_delta_penalty_weight)
+            ),
+            delay_action_jerk_penalty_weight=max(
+                spec["action_jerk"],
+                float(stage.cfg.delay_action_jerk_penalty_weight),
+            ),
+        )
+        shaped.append(
+            replace(
+                stage,
+                name=stage.name.replace(
+                    "deployment_v96_balanced_", "plateau_v97_", 1
+                ),
+                cfg=cfg,
+                notes=(
+                    "GPU1 V97 plateau repair: retain the raw record_new3 "
+                    "proprioceptive timing and plant envelope, reduce the "
+                    "over-dominant positive angular/contact credit, strengthen "
+                    "view shaping, and penalize high-frequency command changes. "
+                    + stage.notes
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_record_new3_count_aligned_v98_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Count legitimate low-cadence launches without admitting contact chatter.
+
+    V97 used a 0.32 s count dead-time with no fast-hit penalty.  Long-run
+    telemetry showed that this silently discarded about 15% of launches that
+    had already passed the height/apex confirmation test.  Those contacts lost
+    all hit-conditioned positive and quality credit while the counted-hit
+    overdue clock kept running.  Retain a 0.22 s debounce for sticky/repeated
+    contacts, but count ordinary low-height juggling cycles and explicitly
+    penalize only the residual sub-debounce events.
+    """
+
+    result = _sport_taskspace_record_new3_plateau_v97_stages(stages)
+    shaped: list[CurriculumStage] = []
+    for stage in result:
+        old_interval = float(stage.cfg.hit_min_count_interval)
+        cfg = replace(
+            stage.cfg,
+            hit_min_count_interval=(
+                min(0.22, old_interval) if old_interval > 0.0 else 0.0
+            ),
+            fast_hit_penalty_weight=(
+                max(0.20, float(stage.cfg.fast_hit_penalty_weight))
+                if old_interval > 0.0
+                else float(stage.cfg.fast_hit_penalty_weight)
+            ),
+        )
+        shaped.append(
+            replace(
+                stage,
+                name=stage.name.replace("plateau_v97_", "count_aligned_v98_", 1),
+                cfg=cfg,
+                notes=(
+                    "GPU1 V98 hit-credit alignment: reduce the count debounce "
+                    "from 0.32 s to at most 0.22 s so height-confirmed normal "
+                    "juggling receives hit/quality credit; retain a small "
+                    "penalty only for residual sub-debounce contact chatter. "
+                    + stage.notes
+                ),
+            )
+        )
+    return shaped
+
+
+def _append_measured_heavy_ball_stages(
+    stages: list[CurriculumStage],
+    *,
+    name_prefix: str,
+) -> list[CurriculumStage]:
+    """Append a measured 3.7 g ball bridge and deployment distribution.
+
+    The prior sport profiles sampled only 2.45--2.95 g, which excludes the
+    measured real ball (a standard 2.7 g ball plus 1.0 g).  Preserve every
+    reset, observation, actuator, friction, timing, reward, and gate setting;
+    change only ball mass and normal-contact damping.  Positive MuJoCo solref
+    damping is inversely related to rebound, so the modest 0.82 -> 0.90 mean
+    shift represents the reported slightly lower elasticity without changing
+    the already wide contact time-constant support.
+    """
+
+    if not stages:
+        return []
+    source = stages[-1]
+    bridge = replace(
+        source,
+        name=f"{name_prefix}_heavy_ball_mass_elasticity_bridge",
+        cfg=replace(
+            source.cfg,
+            dr_randomize_ball=True,
+            dr_randomize_contact=True,
+            dr_ball_mass_range=(0.00290, 0.00370),
+            dr_ball_solref_damping_range=(0.66, 1.06),
+        ),
+        min_updates=80,
+        convergence_hold_updates=16,
+        notes=(
+            "Measured-heavy-ball bridge: move the old 2.45--2.95 g support "
+            "toward the 3.7 g real ball while modestly biasing contact damping "
+            "toward lower elasticity; all other domains are unchanged. "
+            + source.notes
+        ),
+    )
+    target = replace(
+        source,
+        name=f"{name_prefix}_heavy_ball_3p7g_lower_elasticity_target",
+        cfg=replace(
+            source.cfg,
+            dr_randomize_ball=True,
+            dr_randomize_contact=True,
+            dr_ball_mass_range=(0.00345, 0.00395),
+            dr_ball_solref_damping_range=(0.72, 1.08),
+        ),
+        notes=(
+            "Measured-heavy-ball target: center mass DR at 3.7 g and shift "
+            "positive solref damping upward enough to cover the reported "
+            "slightly lower rebound; preserve contact time, friction, plant, "
+            "observation, timing, reward, and validation contracts. "
+            + source.notes
+        ),
+    )
+    return [*stages, bridge, target]
+
+
+def _sport_taskspace_record_new3_heavy_ball_v99_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """V98 plus a two-stage measured heavy/less-elastic ball continuation."""
+
+    base = _sport_taskspace_record_new3_count_aligned_v98_stages(stages)
+    renamed = [
+        replace(
+            stage,
+            name=stage.name.replace("count_aligned_v98_", "heavy_ball_v99_", 1),
+        )
+        for stage in base
+    ]
+    result = _append_measured_heavy_ball_stages(
+        renamed,
+        name_prefix="heavy_ball_v99",
+    )
+    bridge = result[-2]
+    target = result[-1]
+    result[-2] = replace(
+        bridge,
+        target_mean_hits=min(11.0, float(bridge.target_mean_hits)),
+        target_mean_hits_ge3=min(
+            10.0,
+            float(bridge.target_mean_hits_ge3 or 10.0),
+        ),
+        target_mean_len_frac=min(0.82, float(bridge.target_mean_len_frac)),
+        target_episode_truncation_rate=min(
+            0.65,
+            float(bridge.target_episode_truncation_rate or 0.65),
+        ),
+        target_ball_view_in_bounds=min(
+            0.82,
+            float(bridge.target_ball_view_in_bounds or 0.82),
+        ),
+    )
+    result[-1] = replace(
+        target,
+        # On entry, the target physics changes the reward scale enough that the
+        # inherited global -2 probe rejected a healthy policy (-5.71) even
+        # though hits, horizon, view, vxy and reset-bucket gates all passed.
+        # This floor applies only to bridge -> target admission; the target's
+        # own convergence and final strict self-probe remain unchanged.
+        advance_transfer_min_mean_return=-8.0,
+    )
+    return result
+
+
+def _sport_taskspace_record_new3_heavy_ball_guided_v100_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Add causal realized-contact guidance to the measured heavy-ball path.
+
+    V98 spent 1336 updates near 0.88 horizon/view with no sustained trend.
+    It strongly penalized lateral hit velocity but left the realized next-hit
+    anchor and signed anchor contraction at zero reward weight.  Add those
+    causal outcome signals and make command continuity measurable while
+    retaining the 60 Hz actor contract, real joint-state hold, plant, and all
+    final gates.
+    """
+
+    result = _sport_taskspace_record_new3_heavy_ball_v99_stages(stages)
+    result = [
+        replace(
+            stage,
+            name=stage.name.replace("heavy_ball_v99_", "heavy_guided_v100_", 1),
+        )
+        for stage in result
+    ]
+    specs = (
+        dict(
+            posterior=0.20,
+            contraction=0.10,
+            next_anchor=0.12,
+            approach_vxy=0.12,
+            angular_positive=0.20,
+            action_delta=0.50,
+            action_jerk=1.0e-5,
+        ),
+        dict(
+            posterior=0.35,
+            contraction=0.18,
+            next_anchor=0.18,
+            approach_vxy=0.20,
+            angular_positive=0.15,
+            action_delta=1.00,
+            action_jerk=3.0e-5,
+        ),
+    )
+    for offset, spec in zip((-2, -1), specs, strict=True):
+        stage = result[offset]
+        result[offset] = replace(
+            stage,
+            cfg=replace(
+                stage.cfg,
+                hit_posterior_contact_anchor_penalty_weight=max(
+                    spec["posterior"],
+                    float(stage.cfg.hit_posterior_contact_anchor_penalty_weight),
+                ),
+                hit_contact_anchor_contraction_reward_weight=max(
+                    spec["contraction"],
+                    float(stage.cfg.hit_contact_anchor_contraction_reward_weight),
+                ),
+                hit_next_contact_anchor_penalty_weight=max(
+                    spec["next_anchor"],
+                    float(stage.cfg.hit_next_contact_anchor_penalty_weight),
+                ),
+                approach_racket_vxy_penalty_weight=max(
+                    spec["approach_vxy"],
+                    float(stage.cfg.approach_racket_vxy_penalty_weight),
+                ),
+                hit_racket_angular_speed_reward_weight=min(
+                    spec["angular_positive"],
+                    float(stage.cfg.hit_racket_angular_speed_reward_weight),
+                ),
+                action_delta_penalty_weight=max(
+                    spec["action_delta"],
+                    float(stage.cfg.action_delta_penalty_weight),
+                ),
+                delay_action_jerk_penalty_weight=max(
+                    spec["action_jerk"],
+                    float(stage.cfg.delay_action_jerk_penalty_weight),
+                ),
+            ),
+            notes=(
+                "V100 causal landing guidance: penalize the realized next "
+                "contact anchor, reward signed contraction toward the anchor, "
+                "limit aligned-descent lateral racket motion, and price command "
+                "changes at a still-subordinate scale. "
+                + stage.notes
+            ),
+        )
+    return result
+
+
+def _sport_taskspace_record_new3_heavy_ball_view_angular_v101_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Test dense flight-view control without changing the V99 plant.
+
+    V99 target telemetry improved through roughly update 25, then cumulative
+    actor drift reduced view/full-horizon performance.  Its reward constrains
+    lateral velocity mainly at impact while ``ball_view_vxy`` is inactive, and
+    its positive angular term explicitly prefers 1.2 rad/s.  Change only the
+    final heavy-ball target: add a modest dense view-velocity barrier, slightly
+    strengthen view centering, and lower the preferred impact angular speed.
+    This remains an ablation profile until fixed-seed validation proves it.
+    """
+
+    result = _sport_taskspace_record_new3_heavy_ball_v99_stages(stages)
+    result = [
+        replace(
+            stage,
+            name=stage.name.replace(
+                "heavy_ball_v99_", "heavy_view_angular_v101_", 1
+            ),
+        )
+        for stage in result
+    ]
+    target = result[-1]
+    result[-1] = replace(
+        target,
+        cfg=replace(
+            target.cfg,
+            ball_view_xy_center_penalty_weight=max(
+                0.75, float(target.cfg.ball_view_xy_center_penalty_weight)
+            ),
+            ball_view_vxy_soft_limit_m_s=min(
+                0.30, float(target.cfg.ball_view_vxy_soft_limit_m_s)
+            ),
+            ball_view_vxy_excess_penalty_weight=max(
+                0.18, float(target.cfg.ball_view_vxy_excess_penalty_weight)
+            ),
+            hit_racket_angular_speed_reward_weight=min(
+                0.20, float(target.cfg.hit_racket_angular_speed_reward_weight)
+            ),
+            hit_racket_angular_speed_reward_target_rad_s=min(
+                0.95,
+                float(target.cfg.hit_racket_angular_speed_reward_target_rad_s),
+            ),
+        ),
+        notes=(
+            "V101 ablation: add a modest dense flight-view velocity barrier "
+            "and lower the nonzero impact-angular reward target; preserve V99 "
+            "physics, observation, actuator, reset, and gates. "
+            + target.notes
+        ),
+    )
+    return result
+
+
+def _sport_taskspace_record_new3_heavy_ball_effective_hit_v102_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Give valid low launches small survival credit without redefining hits.
+
+    Fixed replay separated the final target's physical contacts into 965
+    quality hits, 56 launches reaching 50--70% of target height, and only two
+    launches below the 50% survival floor.  V102 preserves the V101 quality
+    hit counter, combo, gates, and all hit-conditioned motion/pose shaping,
+    while assigning the middle bucket 0.25 reward.  This removes the silent
+    zero-credit discontinuity without making faster low bouncing preferable
+    to the normal ~0.23 m orbit.
+    """
+
+    result = _sport_taskspace_record_new3_heavy_ball_view_angular_v101_stages(
+        stages
+    )
+    result = [
+        replace(
+            stage,
+            name=stage.name.replace(
+                "heavy_view_angular_v101_", "heavy_effective_hit_v102_", 1
+            ),
+        )
+        for stage in result
+    ]
+    target = result[-1]
+    result[-1] = replace(
+        target,
+        cfg=replace(
+            target.cfg,
+            low_survival_hit_reward_weight=0.25,
+        ),
+        notes=(
+            "V102 effective-hit credit: report physical/survival/quality hit "
+            "layers separately and give 50--70% target-height launches a "
+            "small base survival reward; quality hit_count, combo, gates, "
+            "physics, observations, and actuator remain unchanged. "
+            + target.notes
+        ),
+    )
+    return result
+
+
+def _sport_taskspace_qvel_vertical_v1_stages(
+    stages: list[CurriculumStage],
+    *,
+    initial_velocity_scale: float = 0.45,
+    final_velocity_scale: float = 0.65,
+    variant_label: str = "QVEL-V1",
+) -> list[CurriculumStage]:
+    """Full 21-stage sport course with velocity-target policy actions.
+
+    The action is a desired joint velocity, not a velocity increment or a
+    position delta.  The environment converts that target through the fitted
+    actuator's physical acceleration/velocity limits into q references.  This
+    preserves the successful 21-stage reachability/DR ordering while teaching
+    a smooth, near-vertical impact rather than importing an acceleration-mode
+    policy whose output distribution has incompatible semantics.
+    """
+
+    if len(stages) != 21:
+        raise ValueError("qvel vertical course expects the documented 21-stage curriculum")
+    if not (0.0 < initial_velocity_scale <= final_velocity_scale <= 1.0):
+        raise ValueError("qvel velocity scales must satisfy 0 < initial <= final <= 1")
+    shaped: list[CurriculumStage] = []
+    for index, stage in enumerate(stages):
+        progress = index / max(1, len(stages) - 1)
+        lateral_progress = max(0.0, (index - 2) / max(1, len(stages) - 3))
+        cfg = replace(
+            stage.cfg,
+            action_command_mode="velocity",
+            # The qdot target is always bounded by the original physical qdot
+            # and qdd envelopes.  Variants alter only this normalized target
+            # range, never those hardware-relevant limits.
+            action_velocity_scale=(
+                initial_velocity_scale
+                + (final_velocity_scale - initial_velocity_scale) * progress
+            ),
+            action_filter_tau_ms=max(15.0, float(stage.cfg.action_filter_tau_ms)),
+            # Normalized qdot-target slew: <=0.15 per 5 ms tick, suppressing
+            # velocity-command chatter without a hidden downstream planner.
+            action_jerk_limit=30.0,
+            action_acc_limit=1.0,
+            action_acc_scale=1.0,
+            action_delta_penalty_weight=max(
+                0.0015, float(stage.cfg.action_delta_penalty_weight)
+            ),
+            delay_action_jerk_penalty_weight=max(
+                4.0e-7, float(stage.cfg.delay_action_jerk_penalty_weight)
+            ),
+            # The first acquisition stages retain a broad hit basin.  From
+            # stage 3 onward, all three causal signals (outgoing ball vxy,
+            # lateral racket motion at contact, and closed-loop XY area) ramp
+            # together, so success cannot come from cutting the ball.
+            hit_recoverability_min_count=(2 if index < 3 else 1),
+            hit_vxy_apply_from_first_hit=index >= 3,
+            hit_vxy_soft_limit_m_s=0.13 - 0.08 * lateral_progress,
+            hit_vxy_penalty_scale_m_s=0.09 - 0.04 * lateral_progress,
+            hit_vxy_penalty_weight=max(
+                float(stage.cfg.hit_vxy_penalty_weight), 0.10 + 0.65 * lateral_progress
+            ),
+            hit_vxy_zero_reward_weight=max(
+                float(stage.cfg.hit_vxy_zero_reward_weight), 0.20 + 1.10 * lateral_progress
+            ),
+            hit_vxy_zero_reward_sigma_m_s=0.075 - 0.040 * lateral_progress,
+            ball_vxy_penalty_weight=max(
+                float(stage.cfg.ball_vxy_penalty_weight), 0.03 + 0.17 * lateral_progress
+            ),
+            post_hit_ball_vxy_penalty_weight=max(
+                float(stage.cfg.post_hit_ball_vxy_penalty_weight), 0.06 + 0.34 * lateral_progress
+            ),
+            hit_racket_vxy_apply_from_first_hit=index >= 4,
+            hit_racket_vxy_soft_limit_m_s=0.16 - 0.08 * lateral_progress,
+            hit_racket_vxy_penalty_weight=max(
+                float(stage.cfg.hit_racket_vxy_penalty_weight), 0.05 + 0.42 * lateral_progress
+            ),
+            approach_racket_vxy_penalty_weight=max(
+                float(stage.cfg.approach_racket_vxy_penalty_weight), 0.08 + 0.40 * lateral_progress
+            ),
+            hit_cycle_racket_xy_path_penalty_weight=max(
+                float(stage.cfg.hit_cycle_racket_xy_path_penalty_weight), 0.06 + 0.30 * lateral_progress
+            ),
+            hit_cycle_racket_xy_area_penalty_weight=max(
+                float(stage.cfg.hit_cycle_racket_xy_area_penalty_weight), 0.08 + 0.38 * lateral_progress
+            ),
+            hit_vxy_constraint_threshold_m_s=0.0,
+            hit_vxy_constraint_penalty=0.0,
+        )
+        late_gate = index >= 14
+        shaped.append(
+            replace(
+                stage,
+                name=f"qvel_{stage.name}",
+                cfg=cfg,
+                # This is an acquisition gate, not a proof of repeated
+                # juggling.  With the velocity-action actuator it plateaus
+                # reproducibly at ~0.96 first hits while all reachability,
+                # view and safety metrics pass; 1.00 therefore wastes the
+                # stage without changing behaviour.  Repeated-hit/full-roll
+                # gates in the following stages remain unchanged.
+                target_mean_hits=(
+                    0.95 if index == 0 else float(stage.target_mean_hits)
+                ),
+                max_recent_mean_hit_vxy=(
+                    max(0.070, 0.16 - 0.010 * (index - 14)) if late_gate else None
+                ),
+                max_recent_rms_hit_vxy=(
+                    max(0.105, 0.22 - 0.012 * (index - 14)) if late_gate else None
+                ),
+                best_checkpoint_mean_hit_vxy_weight=(
+                    max(float(stage.best_checkpoint_mean_hit_vxy_weight), 250.0)
+                    if late_gate else float(stage.best_checkpoint_mean_hit_vxy_weight)
+                ),
+                best_checkpoint_rms_hit_vxy_weight=(
+                    max(float(stage.best_checkpoint_rms_hit_vxy_weight), 180.0)
+                    if late_gate else float(stage.best_checkpoint_rms_hit_vxy_weight)
+                ),
+                notes=(
+                    stage.notes
+                    + f" {variant_label}: actor emits joint-velocity targets; fitted "
+                    "second-order actuator and physical qdot/qdd limits remain "
+                    "active, with staged anti-cut horizontal-motion shaping."
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_qvel_vertical_v2_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Higher-reachability qdot-target continuation after V1 acquisition stalls.
+
+    V1 reaches the first descending contact reliably but its commanded joint
+    speed is only about half of the proven acceleration-policy's physical
+    velocity use; it cannot close the second descending intercept.  V2 raises
+    only the *normalized qdot target* range from 0.45--0.65 to 0.70--0.85.
+    The actuator model, actual qdot/qdd clipping, action smoothing, DR,
+    rewards, and anti-cut graduation gates remain identical to V1.
+    """
+
+    return _sport_taskspace_qvel_vertical_v1_stages(
+        stages,
+        initial_velocity_scale=0.70,
+        final_velocity_scale=0.85,
+        variant_label="QVEL-V2",
+    )
+
+
+def _sport_taskspace_qvel_vertical_v3_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Make qvel acquisition genuinely progressive after the first contact.
+
+    V1 reached a reliable first descending hit but could never graduate: its
+    first-stage mean-hit target was relaxed to 0.95 while the inherited
+    full-horizon target remained 0.02.  That makes the stage demand a six
+    second episode before the policy can enter the intermediate stages that
+    actually ask it to juggle.  V2 confirms the physical issue underneath:
+    after a first hit, the projected return requires 4.1--4.5 m/s racket speed
+    at 0.19--0.24 m XY error, yet there was no reward for reducing that error.
+
+    Keep V2's bounded qdot action scale and every actuator/safety/anti-cut
+    setting.  The only new task signal is a dense, post-first-hit reward for
+    reaching the *predicted descending crossing* plus a broad excess penalty.
+    Early gates ask for first contact -> second-contact readiness -> third-hit
+    evidence while retaining the requested 2% full-horizon proof in stage 0;
+    later stages retain the documented full course targets.
+    """
+
+    v2 = _sport_taskspace_qvel_vertical_v1_stages(
+        stages,
+        initial_velocity_scale=0.70,
+        final_velocity_scale=0.85,
+        variant_label="QVEL-V3",
+    )
+    if len(v2) != 21:
+        raise ValueError("qvel vertical V3 expects the documented 21-stage curriculum")
+
+    # The first five gates form a contact-order ladder.  A nonzero full-episode
+    # rate is introduced only after the policy has demonstrated multi-hit
+    # behavior, rather than being an impossible proxy for a first hit.
+    early_gates = (
+        # A small nonzero full-horizon rate is intentionally retained here:
+        # it proves a basic juggling orbit rather than merely a one-hit pose.
+        # The new dense predicted-intercept credit makes that requirement
+        # learnable without weakening its deployment meaning.
+        dict(hits=0.95, length=0.10, hit1=0.60, hit3=None, hge3=None, full=0.02),
+        dict(hits=1.65, length=0.15, hit1=0.70, hit3=None, hge3=None, full=None),
+        dict(hits=2.70, length=0.22, hit1=0.78, hit3=0.10, hge3=None, full=0.01),
+        dict(hits=4.00, length=0.32, hit1=0.84, hit3=0.30, hge3=4.40, full=0.04),
+        dict(hits=5.80, length=0.42, hit1=0.89, hit3=0.52, hge3=6.30, full=0.10),
+    )
+    shaped: list[CurriculumStage] = []
+    for index, stage in enumerate(v2):
+        # Keep this signal throughout the course: a policy that has reached a
+        # valid first impact should continue to receive a causal gradient for
+        # the next real interception even while later DR axes are introduced.
+        intercept_progress = min(1.0, index / 4.0)
+        cfg = replace(
+            stage.cfg,
+            descending_intercept_reward_weight=0.60 + 0.60 * intercept_progress,
+            descending_intercept_sigma=0.14 - 0.03 * intercept_progress,
+            descending_intercept_excess_penalty_weight=0.15 + 0.35 * intercept_progress,
+            descending_intercept_excess_radius=0.13 - 0.04 * intercept_progress,
+            descending_intercept_excess_sigma=0.16 - 0.04 * intercept_progress,
+            descending_intercept_excess_time_max=0.55,
+            pre_hit_intercept_reward_weight=0.35 + 0.65 * intercept_progress,
+            pre_hit_intercept_sigma=0.13 - 0.03 * intercept_progress,
+            pre_hit_intercept_time_max=0.55,
+            pre_hit_intercept_penalty_weight=0.08 + 0.22 * intercept_progress,
+            pre_hit_intercept_penalty_radius=0.08 - 0.03 * intercept_progress,
+            pre_hit_intercept_penalty_sigma=0.20 - 0.04 * intercept_progress,
+            pre_hit_intercept_penalty_time_max=0.65,
+        )
+        if index < len(early_gates):
+            gate = early_gates[index]
+            shaped.append(
+                replace(
+                    stage,
+                    cfg=cfg,
+                    target_mean_hits=gate["hits"],
+                    target_mean_len_frac=gate["length"],
+                    target_hit1_rate=gate["hit1"],
+                    target_hit3_rate=gate["hit3"],
+                    target_mean_hits_ge3=gate["hge3"],
+                    target_episode_truncation_rate=gate["full"],
+                    notes=(
+                        stage.notes
+                        + " QVEL-V3 early rebound bridge: retain the stage-0 "
+                        "2% full-horizon proof and add dense "
+                        "predicted-descending-intercept credit before later "
+                        "strict survival targets."
+                    ),
+                )
+            )
+        else:
+            shaped.append(
+                replace(
+                    stage,
+                    cfg=cfg,
+                    notes=(
+                        stage.notes
+                        + " QVEL-V3: retain predicted-descending-intercept "
+                        "credit under the existing DR and anti-cut stage."
+                    ),
+                )
+            )
+    return shaped
+
+
+def _sport_taskspace_qvel_vertical_v4_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Restore first-return authority without changing the qdot safety contract.
+
+    The V3 formal run proves that its dense descending-intercept reward is
+    active: it escapes the one-hit basin and reaches a stable 2.3--2.4 mean-hit
+    plateau.  It nevertheless has zero full-horizon episodes after 1,895
+    updates.  The terminal diagnostics make this a control-authority rather
+    than PPO or reward-scale failure: policy action norm is about 0.80 with no
+    raw clipping, while arm qvel and qacc utilization peak around 0.30 and
+    0.54.  At the same time, the next descending intercept asks for roughly
+    6 m/s racket speed at 0.12 m lateral error and the measured closing speed
+    is near zero.
+
+    Change only launch00's normalized velocity-target scale from 0.70 to 1.00.
+    The actor still emits qdot targets; the same fitted actuator, action
+    filter, jerk limit, qdot/qdd hard limits, domain randomization, rewards,
+    and strict ``full >= 0.02`` proof remain unchanged.  This is deliberately
+    a bounded authority test, not a relaxation of the first recurrent-juggle
+    requirement.
+    """
+
+    v3 = _sport_taskspace_qvel_vertical_v3_stages(stages)
+    if len(v3) != 21:
+        raise ValueError("qvel vertical V4 expects the documented 21-stage curriculum")
+    repaired: list[CurriculumStage] = []
+    for index, stage in enumerate(v3):
+        cfg = stage.cfg
+        if index == 0:
+            cfg = replace(cfg, action_velocity_scale=1.0)
+        repaired.append(
+            replace(
+                stage,
+                name=stage.name.replace("qvel_", "qvel_v4_", 1),
+                cfg=cfg,
+                notes=(
+                    stage.notes
+                    + " QVEL-V4: launch00 alone restores full normalized qdot "
+                    "target authority under the unchanged physical qdot/qdd "
+                    "limits and strict recurrent-juggle proof."
+                ),
+            )
+        )
+    return repaired
+
+
+def _sport_taskspace_qvel_vertical_v5_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Remove the qvel sweep attractor before the unchanged V4 course.
+
+    QVEL-V4 verifies that increasing the normalized qdot target scale to one
+    does not repair the recurrent-juggle failure: it has no raw-action clip and
+    only about 35% qvel utilization, yet the next descending intercept still
+    has a 15 cm XY error and moves away from the required closing direction.
+    The missing skill is therefore a quiet horizontal racket equilibrium, not
+    more command authority.
+
+    Prepend one contact-free, world-fixed-ball braking stage to V4.  It uses
+    the exact V4 qdot action semantics, actuator path, observation contract,
+    reset, and domain-randomization setting, but makes the dense objective
+    solely XY alignment plus horizontal racket speed.  At transfer, all 21 V4
+    sport stages are byte-for-byte unchanged, including launch00's
+    ``full >= 0.02`` recurrent-juggle proof and all physical limits.
+    """
+
+    v4 = _sport_taskspace_qvel_vertical_v4_stages(stages)
+    if len(v4) != 21:
+        raise ValueError("qvel vertical V5 expects the documented 21-stage V4 course")
+    source = v4[0]
+    static_cfg = replace(
+        source.cfg,
+        stationary_ball_training=True,
+        stationary_reward_only=True,
+        stationary_racket_alignment_reward_weight=4.0,
+        stationary_racket_xy_penalty_weight=4.0,
+        stationary_racket_xy_deadband_m=0.004,
+        stationary_racket_xy_scale_m=0.030,
+        stationary_racket_vxy_penalty_weight=8.0,
+        stationary_racket_vxy_soft_limit_m_s=0.015,
+        stationary_racket_vxy_scale_m_s=0.080,
+        stationary_racket_vz_penalty_weight=0.0,
+        # This auxiliary task must not teach a face-orientation workaround for
+        # a translational braking objective.  The ordinary V4 contact stages
+        # retain their original flatness term.
+        racket_flatness_penalty_weight=0.0,
+    )
+    static = replace(
+        source,
+        name="qvel_v5_static_world_anchor_hold",
+        total_steps=30_000_000,
+        cfg=static_cfg,
+        target_mean_hits=0.0,
+        target_mean_hits_ge3=None,
+        target_mean_len_frac=0.95,
+        target_episode_truncation_rate=0.95,
+        target_hit1_rate=None,
+        target_hit3_rate=None,
+        target_hit12_rate=None,
+        target_hit_camera_visible_rate=None,
+        target_hit_camera_lower_band_rate=None,
+        target_min_hit_interval_s=None,
+        target_max_hit_interval_s=None,
+        max_recent_mean_hit_vxy=None,
+        max_recent_rms_hit_vxy=None,
+        max_recent_mean_hit_racket_vxy=None,
+        max_recent_rms_hit_racket_vxy=None,
+        max_recent_mean_first_hit_ball_vxy=None,
+        max_recent_rms_recurrent_hit_racket_vxy=None,
+        max_recent_stationary_racket_vxy_m_s=0.040,
+        max_recent_stationary_racket_xy_error_m=0.012,
+        min_updates=100,
+        convergence_hold_updates=6,
+        notes=(
+            "QVEL-V5 static acquisition: under the unchanged V4 velocity "
+            "action and actuator path, hold the world-fixed ball anchor with "
+            "racket XY speed <=4 cm/s and XY error <=1.2 cm before the "
+            "unchanged strict recurrent-juggle course."
+        ),
+    )
+    return [static, *v4]
+
+
+def _sport_taskspace_qvel_vertical_v6_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Let the qvel braking auxiliary learn before applying z-task failure.
+
+    V5's first on-policy trace identifies a course-construction error: the
+    inherited launch00 racket Z terminal (12 cm below the anchor) ends about
+    half of the fixed-ball auxiliary episodes while the resumed policy is
+    still removing its old sweep.  The auxiliary reward then has neither a
+    full horizon nor a direct vertical-braking signal.  This is not a hardware
+    protection; joint limits, qdot/qdd clipping, and the fitted actuator stay
+    active even when the task-level Z terminal is disabled.
+
+    For only the static pre-skill, replace that sparse terminal with a dense
+    racket-Z velocity brake.  The original V5/V4 21 real-ball stages remain
+    byte-identical, so their Z terminal and strict ``full >= 0.02`` criterion
+    return before any juggling success can advance.
+    """
+
+    v5 = _sport_taskspace_qvel_vertical_v5_stages(stages)
+    static = v5[0]
+    cfg = replace(
+        static.cfg,
+        terminate_on_racket_z_limit=False,
+        stationary_racket_vz_penalty_weight=4.0,
+        stationary_racket_vz_soft_limit_m_s=0.015,
+        stationary_racket_vz_scale_m_s=0.080,
+    )
+    static = replace(
+        static,
+        name="qvel_v6_static_world_anchor_xyz_hold",
+        cfg=cfg,
+        notes=(
+            "QVEL-V6 static acquisition: V5's physical qdot/qdd/joint safety "
+            "remains active, but replace its premature task Z terminal with "
+            "a dense <=1.5 cm/s vertical-racket brake before the unchanged "
+            "strict V4 real-ball course."
+        ),
+    )
+    return [static, *v5[1:]]
+
+
+def _sport_taskspace_qvel_vertical_v7_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Acquire a qdot static XYZ hold without opening a vertical loophole.
+
+    V5 showed that XY-only static credit leaves the resumed qdot policy free to
+    drop below its 12 cm racket-Z terminal; V6 then showed that simply removing
+    this terminal lets the same policy drift indefinitely in Z.  The missing
+    objective is a dense Z *position* recovery, not a weaker safety boundary.
+
+    V7 keeps V5's task terminal and every physical limit.  In the static
+    auxiliary only, it adds a symmetric 1 cm racket-Z soft band, Z-position and
+    Z-speed brakes, and an action-energy coefficient calibrated from V75/V76
+    to make zero qdot a competitive hold solution.  The subsequent 21 V4
+    real-ball stages are byte-identical, including the strict full-horizon
+    proof and qdot/qdd limits.
+    """
+
+    v5 = _sport_taskspace_qvel_vertical_v5_stages(stages)
+    static = v5[0]
+    cfg = replace(
+        static.cfg,
+        racket_z_band_down=0.010,
+        racket_z_band_up=0.010,
+        racket_z_soft_penalty_weight=4.0,
+        stationary_racket_vz_penalty_weight=4.0,
+        stationary_racket_vz_soft_limit_m_s=0.015,
+        stationary_racket_vz_scale_m_s=0.080,
+        action_penalty_weight=5.0,
+    )
+    static = replace(
+        static,
+        name="qvel_v7_static_world_anchor_xyz_recover",
+        cfg=cfg,
+        notes=(
+            "QVEL-V7 static acquisition: retain V5's z terminal and all "
+            "qdot/qdd/joint safety, then combine <=4 cm/s XY, <=1.5 cm/s Z, "
+            "a symmetric 1 cm Z position band, and matched action energy "
+            "before the unchanged strict V4 real-ball course."
+        ),
+    )
+    return [static, *v5[1:]]
+
+
+def _sport_taskspace_qvel_vertical_v8_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Use a centimetre-normalized static Z recovery with V5's safety guard.
+
+    V7 retained the correct V5 task Z terminal but reused the ordinary
+    juggling soft-band reward as static position feedback.  That term is
+    expressed directly in metres squared and measured roughly ``1e-5`` per
+    control tick in the failed trace, far below the action and velocity terms.
+    It consequently does not teach recovery toward the world anchor.
+
+    V8 replaces that legacy static-only term with the same dimensionless,
+    centimetre-scale robust penalty used for the XY hold.  It preserves the
+    V5 terminal, qdot/qdd limits, actuator path, and every one of the 21 V4
+    real-ball stages byte-for-byte, including their strict ``full >= 0.02``
+    recurrent-juggle proof.
+    """
+
+    v5 = _sport_taskspace_qvel_vertical_v5_stages(stages)
+    static = v5[0]
+    cfg = replace(
+        static.cfg,
+        stationary_racket_z_penalty_weight=4.0,
+        stationary_racket_z_deadband_m=0.005,
+        stationary_racket_z_scale_m=0.030,
+        stationary_racket_vz_penalty_weight=4.0,
+        stationary_racket_vz_soft_limit_m_s=0.015,
+        stationary_racket_vz_scale_m_s=0.080,
+        action_penalty_weight=5.0,
+    )
+    static = replace(
+        static,
+        name="qvel_v8_static_world_anchor_xyz_normalized",
+        cfg=cfg,
+        notes=(
+            "QVEL-V8 static acquisition: retain V5's Z terminal and all "
+            "qdot/qdd/joint safety, then use a centimetre-normalized "
+            "world-anchor Z recovery together with <=4 cm/s XY, <=1.5 cm/s "
+            "Z, and matched action energy before the unchanged strict V4 "
+            "real-ball course."
+        ),
+    )
+    return [static, *v5[1:]]
+
+
+def _sport_taskspace_qvel_vertical_v9_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """From-scratch qdot course with a causal reflected-velocity bridge.
+
+    V3/V4 established that qdot targets and the original 21-stage course are
+    safe, but their recurrent plateau leaves the next predicted intercept far
+    from the racket anchor.  V5--V8 then showed that a contact-free static
+    prefix learns a zero-hit equilibrium and must not precede juggling.
+
+    V9 keeps V3's full-horizon proof, fitted replay actuator, physical qdot/
+    qdd bounds, and all anti-cut shaping.  Its sole new mechanism is a
+    center-aligned falling-contact reset for launch00 plus a post-impact
+    *next-contact* objective.  The target is calculated with the paper's
+    decoupled quadratic-drag flight model, so near the anchor it asks for a
+    vertical rebound and away from it it gives a bounded, physically useful
+    return gradient.  It is dense reward, never a contact termination.
+    """
+
+    v3 = _sport_taskspace_qvel_vertical_v3_stages(stages)
+    if len(v3) != 21:
+        raise ValueError("qvel vertical V9 expects the documented 21-stage curriculum")
+
+    shaped: list[CurriculumStage] = []
+    for index, stage in enumerate(v3):
+        progress = min(1.0, index / 5.0)
+        cfg = replace(
+            stage.cfg,
+            # 0.13 1/m follows 0.5*rho*S*Cd/m for the paper's reported
+            # ping-pong-ball parameters.  It affects only reward prediction,
+            # not simulated ball dynamics, and is deliberately not randomized
+            # until a matched model-identification pass is available.
+            hit_next_contact_drag_coefficient_m_inv=0.13,
+            hit_next_contact_anchor_penalty_weight=0.25 + 0.45 * progress,
+            hit_next_contact_anchor_sigma_m=0.13 - 0.035 * progress,
+        )
+        if index == 0:
+            cfg = replace(
+                cfg,
+                ball_reset_mode="falling_contact",
+                episode_target_x_range_m=(0.0, 0.0),
+                episode_target_y_range_m=(0.0, 0.0),
+                falling_reset_time_to_contact_range_s=(0.20, 0.28),
+                falling_reset_apex_height_range_m=(0.20, 0.28),
+                falling_reset_vxy_max=0.0,
+                falling_reset_contact_xy_jitter=0.0,
+                falling_reset_contact_local_y_offset_range_m=(0.0, 0.0),
+                falling_reset_contact_rel_height=0.065,
+                falling_reset_min_downward_speed=0.12,
+            )
+            stage_name = "qvel_v9_centered_falling_full_orbit"
+            extra_note = (
+                " V9 starts directly with a centered falling-ball contact, but "
+                "retains the V3 full>=0.02 recurrent-orbit proof; it is not a "
+                "one-hit or stationary auxiliary stage."
+            )
+        else:
+            stage_name = stage.name.replace("qvel_", "qvel_v9_", 1)
+            extra_note = (
+                " V9 adds a drag-aware next-contact anchor reward to the "
+                "unchanged V3 contact/recovery curriculum; no hard vxy "
+                "termination is introduced."
+            )
+        shaped.append(
+            replace(stage, name=stage_name, cfg=cfg, notes=stage.notes + extra_note)
+        )
+    return shaped
+
+
+def _sport_taskspace_qvel_vertical_v10_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Paper-adaptive qdot course with an explicit early contact-quality ladder.
+
+    V9 learned a clean reset-dominated first hit but moved the instability to
+    hits three and four because first-hit vxy was masked, no early speed gate
+    existed, and fixed-anchor Center-Strategy credit dominated the partial
+    paper model.  V10 first preserves a positive contact-acquisition objective,
+    then proves first-hit quality and recurrent FULL>=0.02 quality before the
+    remaining documented course.  Simulated flight and the reward model share
+    the paper's 0.13 1/m drag coefficient, and the desired outgoing velocity
+    uses Eqs. (11)--(18) rather than exact recentering alone.
+    """
+
+    v9 = _sport_taskspace_qvel_vertical_v9_stages(stages)
+    if len(v9) != 21:
+        raise ValueError("qvel vertical V10 expects the documented 21-stage course")
+
+    early_specs = (
+        dict(
+            name="qvel_v10_contact_acquisition",
+            hits=0.95,
+            length=0.10,
+            hit1=0.75,
+            hit3=None,
+            full=None,
+            mean_vxy=None,
+            rms_vxy=None,
+            first_mean=None,
+            first_rms=None,
+            racket_mean=None,
+            racket_rms=None,
+            angular=None,
+            min_updates=100,
+            vxy_weight=0.0,
+            zero_weight=0.0,
+            racket_weight=0.0,
+            angular_weight=0.0,
+            vxy_loss="pseudo_huber",
+            reflected_weight=0.0,
+            reset_vxy=0.0,
+            reset_jitter=0.0,
+        ),
+        dict(
+            name="qvel_v10_first_hit_low_motion",
+            hits=0.95,
+            length=0.10,
+            hit1=0.85,
+            hit3=None,
+            full=None,
+            mean_vxy=None,
+            rms_vxy=None,
+            first_mean=0.090,
+            first_rms=0.120,
+            racket_mean=0.18,
+            racket_rms=0.24,
+            angular=1.20,
+            min_updates=140,
+            vxy_weight=0.20,
+            zero_weight=0.20,
+            racket_weight=0.10,
+            angular_weight=0.15,
+            vxy_loss="pseudo_huber",
+            reflected_weight=0.10,
+            reset_vxy=0.02,
+            reset_jitter=0.010,
+        ),
+        dict(
+            name="qvel_v10_recurrent_full_low_motion_proof",
+            hits=2.70,
+            length=0.22,
+            hit1=0.85,
+            hit3=0.10,
+            full=0.02,
+            mean_vxy=0.110,
+            rms_vxy=0.150,
+            first_mean=None,
+            first_rms=None,
+            racket_mean=0.18,
+            racket_rms=0.24,
+            angular=1.20,
+            min_updates=180,
+            vxy_weight=0.40,
+            zero_weight=0.30,
+            racket_weight=0.15,
+            angular_weight=0.25,
+            vxy_loss="squared",
+            reflected_weight=0.20,
+            reset_vxy=0.05,
+            reset_jitter=0.025,
+        ),
+    )
+
+    shaped: list[CurriculumStage] = []
+    for index, stage in enumerate(v9):
+        progress = min(1.0, index / 5.0)
+        cfg = replace(
+            stage.cfg,
+            ball_flight_drag_coefficient_m_inv=0.13,
+            hit_next_contact_drag_coefficient_m_inv=0.13,
+            # The adaptive reflected-velocity target supersedes V9's pure
+            # fixed-anchor Center-Strategy penalty.  A small posterior term
+            # remains after recurrent contacts as a model-free outcome check.
+            hit_next_contact_anchor_penalty_weight=0.0,
+            hit_adaptive_reflected_velocity_penalty_weight=0.40 + 0.35 * progress,
+            hit_adaptive_reflected_velocity_xy_sigma_m_s=0.10,
+            hit_adaptive_reflected_velocity_z_sigma_m_s=0.30,
+            hit_adaptive_reflected_velocity_center_coefficient_m_inv=5.0,
+            hit_posterior_contact_anchor_penalty_weight=(
+                0.0 if index == 0 else 0.15 + 0.15 * progress
+            ),
+            hit_posterior_contact_anchor_sigma_m=0.10,
+            hit_recoverability_min_count=1,
+            hit_vxy_apply_from_first_hit=True,
+            hit_racket_vxy_apply_from_first_hit=True,
+            hit_vxy_penalty_loss="squared",
+            hit_vxy_soft_limit_m_s=min(
+                0.08, float(stage.cfg.hit_vxy_soft_limit_m_s)
+            ),
+            hit_vxy_penalty_scale_m_s=min(
+                0.075, float(stage.cfg.hit_vxy_penalty_scale_m_s)
+            ),
+            hit_vxy_penalty_weight=max(
+                0.45, float(stage.cfg.hit_vxy_penalty_weight)
+            ),
+            hit_vxy_zero_reward_weight=max(
+                0.45, float(stage.cfg.hit_vxy_zero_reward_weight)
+            ),
+            hit_vxy_zero_reward_sigma_m_s=min(
+                0.060, float(stage.cfg.hit_vxy_zero_reward_sigma_m_s)
+            ),
+            hit_racket_vxy_soft_limit_m_s=min(
+                0.12, float(stage.cfg.hit_racket_vxy_soft_limit_m_s)
+            ),
+            hit_racket_vxy_penalty_scale_m_s=min(
+                0.16, float(stage.cfg.hit_racket_vxy_penalty_scale_m_s)
+            ),
+            hit_racket_vxy_penalty_weight=max(
+                0.20, float(stage.cfg.hit_racket_vxy_penalty_weight)
+            ),
+            hit_racket_angular_speed_penalty_weight=max(
+                0.40, float(stage.cfg.hit_racket_angular_speed_penalty_weight)
+            ),
+            hit_racket_angular_speed_soft_limit_rad_s=min(
+                0.80, float(stage.cfg.hit_racket_angular_speed_soft_limit_rad_s)
+            ),
+            hit_racket_angular_speed_scale_rad_s=min(
+                0.90, float(stage.cfg.hit_racket_angular_speed_scale_rad_s)
+            ),
+        )
+        if index < len(early_specs):
+            spec = early_specs[index]
+            cfg = replace(
+                cfg,
+                ball_reset_mode="falling_contact",
+                episode_target_x_range_m=(0.0, 0.0),
+                episode_target_y_range_m=(0.0, 0.0),
+                falling_reset_time_to_contact_range_s=(0.20, 0.28),
+                falling_reset_apex_height_range_m=(0.20, 0.28),
+                falling_reset_vxy_max=spec["reset_vxy"],
+                falling_reset_contact_xy_jitter=spec["reset_jitter"],
+                falling_reset_contact_local_y_offset_range_m=(
+                    -spec["reset_jitter"],
+                    spec["reset_jitter"],
+                ),
+                falling_reset_contact_rel_height=0.065,
+                falling_reset_min_downward_speed=0.12,
+                hit_vxy_penalty_weight=spec["vxy_weight"],
+                hit_vxy_zero_reward_weight=spec["zero_weight"],
+                hit_vxy_penalty_loss=spec["vxy_loss"],
+                hit_racket_vxy_penalty_weight=spec["racket_weight"],
+                hit_racket_angular_speed_penalty_weight=spec[
+                    "angular_weight"
+                ],
+                hit_adaptive_reflected_velocity_penalty_weight=spec[
+                    "reflected_weight"
+                ],
+            )
+            shaped.append(
+                replace(
+                    stage,
+                    name=spec["name"],
+                    cfg=cfg,
+                    target_mean_hits=spec["hits"],
+                    target_mean_len_frac=spec["length"],
+                    target_hit1_rate=spec["hit1"],
+                    target_hit3_rate=spec["hit3"],
+                    target_mean_hits_ge3=None,
+                    target_episode_truncation_rate=spec["full"],
+                    max_recent_mean_hit_vxy=spec["mean_vxy"],
+                    max_recent_rms_hit_vxy=spec["rms_vxy"],
+                    max_recent_mean_first_hit_ball_vxy=spec["first_mean"],
+                    max_recent_rms_first_hit_ball_vxy=spec["first_rms"],
+                    max_recent_mean_hit_racket_vxy=spec["racket_mean"],
+                    max_recent_rms_hit_racket_vxy=spec["racket_rms"],
+                    max_recent_hit_racket_angular_speed_rad_s=spec["angular"],
+                    min_updates=spec["min_updates"],
+                    convergence_hold_updates=12,
+                    best_checkpoint_mean_hit_vxy_weight=700.0,
+                    best_checkpoint_rms_hit_vxy_weight=550.0,
+                    notes=(
+                        stage.notes
+                        + " QVEL-V10 early ladder: contact acquisition -> "
+                        "first-hit low motion -> recurrent low-motion/FULL "
+                        "proof. The acquisition stage intentionally avoids "
+                        "the no-contact optimum exposed by the first V10 run."
+                    ),
+                )
+            )
+        else:
+            shaped.append(
+                replace(
+                    stage,
+                    name=stage.name.replace("qvel_v9_", "qvel_v10_", 1),
+                    cfg=cfg,
+                    notes=(
+                        stage.notes
+                        + " QVEL-V10 retains physical quadratic drag, adaptive "
+                        "reflected-velocity credit, first-hit low-motion shaping, "
+                        "and the original downstream course/gates."
+                    ),
+                )
+            )
+    return shaped
+
+
+def _sport_taskspace_qvel_vertical_v11_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Repair V10's low-motion first-hit to recurrent-rebound discontinuity.
+
+    V10 reached 476.6M steps safely and learned a clean deterministic first
+    hit (0.069 m/s ball vxy), but its outgoing vertical speed decayed from
+    1.85 m/s at hit 1 to 1.36/0.99 m/s at hits 2/3. In a 128-episode
+    deterministic audit every episode then failed after two to four hits,
+    almost always because the ball was too low. Hit-view occupancy also fell
+    from 0.93 to 0.81. The third V10 stage simultaneously widened the reset,
+    demanded a full episode, and provided no cadence or event-level view
+    credit, creating a curriculum gap rather than an action-authority limit.
+
+    V11 keeps qdot actions, the fitted plant, physical limits, paper drag, and
+    paper adaptive reflected-velocity direction. It adds two narrow-reset
+    recurrent bridges, lowers the desired apex to an in-view 0.18 m, and
+    aligns vertical rebound, cadence, and predicted-apex view credit before
+    returning to the remaining V10 domain-randomization course. The first
+    formal V11 pass improved rolling hits from 3.85 to 5.22, but traded view
+    0.878 -> 0.766 and mean hit-vxy 0.124 -> 0.136 while contact angular speed
+    stayed near 1.52 rad/s. The revised first bridge therefore locks those
+    three quality dimensions and relaxes the overly aggressive 0.42 s cadence
+    target to 0.50 s; it does not weaken the recurrent-hit requirement.
+    The quality-lock continuation then reached 8--9 hits with view about 0.97
+    and mean/rms hit-vxy about 0.118/0.141, but contact angular speed plateaued
+    at 1.27--1.32 rad/s versus the 1.20 gate. A dedicated angular polish now
+    follows the balanced update-150 checkpoint instead of increasing every
+    motion penalty again.
+    """
+
+    v10 = _sport_taskspace_qvel_vertical_v10_stages(stages)
+    if len(v10) != 21:
+        raise ValueError("qvel vertical V11 expects the documented V10 course")
+
+    def recurrent_cfg(cfg: MjxJuggleConfig) -> MjxJuggleConfig:
+        return replace(
+            cfg,
+            target_height=0.18,
+            hit_height_center=0.18,
+            hit_cadence_reward_weight=max(
+                0.12, float(cfg.hit_cadence_reward_weight)
+            ),
+            hit_cadence_target_interval=0.42,
+            hit_cadence_sigma=0.09,
+            hit_adaptive_reflected_velocity_penalty_weight=max(
+                0.50, float(cfg.hit_adaptive_reflected_velocity_penalty_weight)
+            ),
+            hit_adaptive_reflected_velocity_z_sigma_m_s=min(
+                0.22, float(cfg.hit_adaptive_reflected_velocity_z_sigma_m_s)
+            ),
+            hit_apex_view_center_penalty_weight=max(
+                0.20, float(cfg.hit_apex_view_center_penalty_weight)
+            ),
+            hit_apex_view_center_sigma_m=min(
+                0.12, float(cfg.hit_apex_view_center_sigma_m)
+            ),
+            ball_view_xy_center_penalty_weight=max(
+                0.10, float(cfg.ball_view_xy_center_penalty_weight)
+            ),
+            ball_view_bounds_penalty_weight=max(
+                0.35, float(cfg.ball_view_bounds_penalty_weight)
+            ),
+            ball_view_out_of_bounds_penalty_weight=max(
+                0.60, float(cfg.ball_view_out_of_bounds_penalty_weight)
+            ),
+        )
+
+    def quality_lock_cfg(cfg: MjxJuggleConfig) -> MjxJuggleConfig:
+        cfg = recurrent_cfg(cfg)
+        return replace(
+            cfg,
+            # The stopped V11 run made cadence/hits by accepting lateral and
+            # rotational motion. Put direct event credit on the failed
+            # dimensions while retaining the already-learned rebound model.
+            hit_vxy_penalty_weight=max(0.80, float(cfg.hit_vxy_penalty_weight)),
+            hit_racket_vxy_penalty_weight=max(
+                0.35, float(cfg.hit_racket_vxy_penalty_weight)
+            ),
+            hit_racket_angular_speed_penalty_weight=max(
+                0.80, float(cfg.hit_racket_angular_speed_penalty_weight)
+            ),
+            racket_stability_angular_speed_penalty_weight=max(
+                0.03, float(cfg.racket_stability_angular_speed_penalty_weight)
+            ),
+            # The previous Gaussian-only cadence signal vanished after the
+            # policy drifted from a 0.59 s orbit to about 0.95 s.  Preserve a
+            # broad recoverable bonus and add an explicit late-contact loss.
+            # Two bounded trials showed that an event-only loss is assigned
+            # too late to shorten the descending/interception phase, so keep
+            # that term modest and charge a small dense loss while a recurrent
+            # contact is overdue.  The lower-bound side remains unconstrained
+            # here, so cadence cannot be purchased with hard/fast strokes.
+            hit_cadence_reward_weight=max(
+                0.22, float(cfg.hit_cadence_reward_weight)
+            ),
+            hit_cadence_target_interval=0.50,
+            hit_cadence_sigma=0.16,
+            hit_max_interval_penalty_weight=max(
+                0.40, float(cfg.hit_max_interval_penalty_weight)
+            ),
+            hit_max_interval=0.54,
+            hit_max_interval_penalty_scale=0.15,
+            post_hit_overdue_penalty_weight=max(
+                0.04, float(cfg.post_hit_overdue_penalty_weight)
+            ),
+            post_hit_overdue_soft_limit_s=0.50,
+            post_hit_overdue_penalty_scale_s=0.15,
+            # Keep every rebound in a symmetric, camera-safe apex band.  At
+            # the old 60 mm dead band a 0.227 m apex relative height incurred
+            # no event loss despite the intended 0.18 m target.
+            hit_height_tolerance=min(0.035, float(cfg.hit_height_tolerance)),
+            hit_height_penalty_weight=max(
+                16.0, float(cfg.hit_height_penalty_weight)
+            ),
+            first_hit_apex_reward_weight=max(
+                0.25, float(cfg.first_hit_apex_reward_weight)
+            ),
+            apex_soft_limit_margin=min(
+                0.035, float(cfg.apex_soft_limit_margin)
+            ),
+            apex_soft_penalty_weight=max(
+                6.0, float(cfg.apex_soft_penalty_weight)
+            ),
+            hit_apex_view_center_penalty_weight=max(
+                0.80, float(cfg.hit_apex_view_center_penalty_weight)
+            ),
+            ball_view_xy_center_penalty_weight=max(
+                0.35, float(cfg.ball_view_xy_center_penalty_weight)
+            ),
+            ball_view_out_of_bounds_penalty_weight=max(
+                2.00, float(cfg.ball_view_out_of_bounds_penalty_weight)
+            ),
+        )
+
+    def angular_lock_cfg(cfg: MjxJuggleConfig) -> MjxJuggleConfig:
+        cfg = quality_lock_cfg(cfg)
+        return replace(
+            cfg,
+            # The quality-lock plateau leaves only contact face rotation over
+            # target. Tighten the active soft region and its continuous
+            # counterpart without changing rebound, cadence, vxy, or view.
+            hit_racket_angular_speed_penalty_weight=max(
+                1.60, float(cfg.hit_racket_angular_speed_penalty_weight)
+            ),
+            hit_racket_angular_speed_soft_limit_rad_s=min(
+                0.65, float(cfg.hit_racket_angular_speed_soft_limit_rad_s)
+            ),
+            hit_racket_angular_speed_scale_rad_s=min(
+                0.75, float(cfg.hit_racket_angular_speed_scale_rad_s)
+            ),
+            racket_stability_angular_speed_penalty_weight=max(
+                0.10, float(cfg.racket_stability_angular_speed_penalty_weight)
+            ),
+            racket_stability_angular_speed_soft_limit_rad_s=min(
+                0.55, float(cfg.racket_stability_angular_speed_soft_limit_rad_s)
+            ),
+            racket_stability_angular_speed_scale_rad_s=min(
+                0.75, float(cfg.racket_stability_angular_speed_scale_rad_s)
+            ),
+        )
+
+    source = v10[2]
+    bridge_specs = (
+        dict(
+            name="qvel_v11_quality_lock_after_rebound",
+            hits=4.50,
+            hits_ge3=4.60,
+            length=0.45,
+            hit3=0.80,
+            full=None,
+            view=0.84,
+            interval=0.62,
+            mean_vxy=0.120,
+            rms_vxy=0.160,
+            min_updates=100,
+            angular_polish=False,
+        ),
+        dict(
+            name="qvel_v11_angular_velocity_polish",
+            hits=5.50,
+            hits_ge3=5.80,
+            length=0.52,
+            hit3=0.84,
+            full=None,
+            view=0.88,
+            interval=0.62,
+            mean_vxy=0.120,
+            rms_vxy=0.155,
+            min_updates=120,
+            angular_polish=True,
+        ),
+        dict(
+            name="qvel_v11_low_motion_full_orbit_proof",
+            hits=4.50,
+            hits_ge3=4.80,
+            length=0.48,
+            hit3=0.82,
+            full=0.02,
+            view=0.86,
+            interval=0.60,
+            mean_vxy=0.115,
+            rms_vxy=0.155,
+            min_updates=120,
+            angular_polish=True,
+        ),
+    )
+    result: list[CurriculumStage] = []
+    for spec in bridge_specs:
+        cfg = (
+            angular_lock_cfg(source.cfg)
+            if spec["angular_polish"]
+            else quality_lock_cfg(source.cfg)
+        )
+        cfg = replace(
+            cfg,
+            falling_reset_vxy_max=0.05,
+            falling_reset_contact_xy_jitter=0.025,
+            falling_reset_contact_local_y_offset_range_m=(-0.025, 0.025),
+        )
+        result.append(
+            replace(
+                source,
+                name=spec["name"],
+                cfg=cfg,
+                target_mean_hits=spec["hits"],
+                target_mean_hits_ge3=spec["hits_ge3"],
+                target_mean_len_frac=spec["length"],
+                target_hit1_rate=0.90,
+                target_hit3_rate=spec["hit3"],
+                target_hit12_rate=None,
+                target_episode_truncation_rate=spec["full"],
+                target_max_hit_interval_s=spec["interval"],
+                target_ball_view_in_bounds=spec["view"],
+                max_recent_mean_hit_vxy=spec["mean_vxy"],
+                max_recent_rms_hit_vxy=spec["rms_vxy"],
+                min_updates=spec["min_updates"],
+                max_updates=None,
+                convergence_hold_updates=12,
+                best_checkpoint_mean_hit_vxy_weight=900.0,
+                best_checkpoint_rms_hit_vxy_weight=700.0,
+                notes=(
+                    "QVEL-V11 quality-locked recurrent bridge: preserve the "
+                    "paper adaptive reflected-velocity model and recurrent "
+                    "rebound while preventing cadence from being purchased "
+                    "with ball-vxy, racket angular speed, or lost view."
+                ),
+            )
+        )
+
+    # Independent validation at updates 177 and 187 showed that the polished
+    # falling-contact policy retained view (about 0.97) but reached only
+    # 0.255/0.315 first-hit rate after the discontinuous switch to
+    # racket_launch.  Continuing the old stage cannot optimize that unseen
+    # reset. Admit the measured non-collapsed policy into a dedicated entry
+    # bridge, then require it to repair first-hit and motion quality before
+    # the original launch03 course.
+    launch_entry_source = v10[3]
+    result.append(
+        replace(
+            launch_entry_source,
+            name="qvel_v11_racket_launch_first_hit_bridge",
+            cfg=angular_lock_cfg(launch_entry_source.cfg),
+            target_mean_hits=2.50,
+            target_mean_hits_ge3=3.50,
+            target_mean_len_frac=0.20,
+            target_camera_visible=max(
+                0.90, float(launch_entry_source.target_camera_visible or 0.0)
+            ),
+            target_ball_view_in_bounds=max(
+                0.86, float(launch_entry_source.target_ball_view_in_bounds or 0.0)
+            ),
+            target_hit1_rate=0.60,
+            target_hit3_rate=0.18,
+            target_hit12_rate=None,
+            target_episode_truncation_rate=None,
+            max_recent_mean_hit_vxy=0.150,
+            max_recent_rms_hit_vxy=0.200,
+            max_recent_mean_first_hit_ball_vxy=0.180,
+            max_recent_rms_first_hit_ball_vxy=0.220,
+            require_aggregate_hit_vxy_with_first_hit=True,
+            max_recent_hit_racket_angular_speed_rad_s=1.20,
+            min_updates=80,
+            max_updates=None,
+            convergence_hold_updates=12,
+            advance_gate_mode="collapse",
+            advance_collapse_target_hit1_rate=0.30,
+            best_checkpoint_mean_hit_vxy_weight=900.0,
+            best_checkpoint_rms_hit_vxy_weight=700.0,
+            notes=(
+                "QVEL-V11 racket-launch entry bridge: train the reset mode "
+                "that failed two independent next-stage probes while "
+                "preserving first-hit/aggregate low-vxy, low angular speed, "
+                "and in-view rebound. The 0.30 collapse threshold is only "
+                "the measured entry floor; this stage itself requires 0.60."
+            ),
+        )
+    )
+
+    for stage in v10[3:]:
+        # Align only stages with a completed long-run low-motion orbit.
+        # launch05 proved 0.571 s over 600 updates. launch07 then retained
+        # 0.98 view occupancy, 0.107/0.129 m/s mean/RMS hit-vxy, about
+        # 1.02 rad/s racket angular speed and 0.89 full episodes over 900
+        # updates, but its inherited 0.54 s ceiling rejected the demonstrated
+        # 0.66--0.68 s low-motion orbit.  These evidence-based ceilings do not
+        # weaken hit-count, survival, view, motion, or validation gates.
+        low_motion_interval = {
+            "qvel_v10_launch05_actuator_pd_mild": 0.58,
+            "qvel_v10_launch07_observation_calibration_mild": 0.72,
+        }.get(
+            stage.name,
+            stage.target_max_hit_interval_s,
+        )
+        result.append(
+            replace(
+                stage,
+                name=stage.name.replace("qvel_v10_", "qvel_v11_", 1),
+                cfg=angular_lock_cfg(stage.cfg),
+                target_max_hit_interval_s=low_motion_interval,
+                target_ball_view_in_bounds=max(
+                    0.82, float(stage.target_ball_view_in_bounds or 0.0)
+                ),
+                max_recent_mean_hit_vxy=min(
+                    0.150,
+                    float(stage.max_recent_mean_hit_vxy)
+                    if stage.max_recent_mean_hit_vxy is not None
+                    else 0.150,
+                ),
+                max_recent_rms_hit_vxy=min(
+                    0.200,
+                    float(stage.max_recent_rms_hit_vxy)
+                    if stage.max_recent_rms_hit_vxy is not None
+                    else 0.200,
+                ),
+                max_recent_hit_racket_angular_speed_rad_s=min(
+                    1.20,
+                    float(stage.max_recent_hit_racket_angular_speed_rad_s)
+                    if stage.max_recent_hit_racket_angular_speed_rad_s is not None
+                    else 1.20,
+                ),
+                notes=(
+                    stage.notes
+                    + " QVEL-V11 retains the 0.18 m in-view apex, paper "
+                    "reflected-velocity rebound, cadence, event-level "
+                    "apex-view objectives, and explicit low-motion/view "
+                    "gates throughout downstream DR."
+                ),
+            )
+        )
+    return result
+
+
+def _sport_taskspace_qvel_vertical_v12_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Escape V11's low-apex, long-period local optimum.
+
+    The stopped V11 continuation was stable and low-motion, but a matched
+    deterministic rollout exposed 0.779 s mean hit intervals and only 0.055 m
+    mean apex height above the racket versus the intended 0.18 m.  Its
+    center/flat contact reward was about twice the adaptive-reflection loss,
+    while both height losses were numerically negligible.  V12 preserves the
+    learned actuator-safe orbit and every motion/view gate, but caps generic
+    contact credit and makes a rebound below the symmetric target band costly.
+    """
+
+    result = _sport_taskspace_qvel_vertical_v11_stages(stages)
+    shaped: list[CurriculumStage] = []
+    for stage in result:
+        shaped.append(
+            replace(
+                stage,
+                name=stage.name.replace("qvel_v11_", "qvel_v12_", 1),
+                cfg=replace(
+                    stage.cfg,
+                    center_flat_hit_reward_weight=min(
+                        0.80, float(stage.cfg.center_flat_hit_reward_weight)
+                    ),
+                    hit_height_tolerance=min(
+                        0.035, float(stage.cfg.hit_height_tolerance)
+                    ),
+                    hit_height_penalty_weight=max(
+                        64.0, float(stage.cfg.hit_height_penalty_weight)
+                    ),
+                    low_hit_apex_margin=min(
+                        0.035, float(stage.cfg.low_hit_apex_margin)
+                    ),
+                    low_hit_penalty_weight=max(
+                        64.0, float(stage.cfg.low_hit_penalty_weight)
+                    ),
+                    first_hit_apex_reward_weight=max(
+                        0.35, float(stage.cfg.first_hit_apex_reward_weight)
+                    ),
+                ),
+                notes=(
+                    "QVEL-V12 vertical-orbit repair: keep the V11 plant, "
+                    "cadence, view, lateral-speed, and angular constraints, "
+                    "but rebalance contact credit toward the 0.18 m symmetric "
+                    "predicted-apex band. "
+                    + stage.notes
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_qvel_vertical_v13_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Align QVEL hit credit with height-confirmed physical juggling events.
+
+    V12's 0.32 s count dead-time silently discarded about one third of
+    height-confirmed launches in the long run.  The ignored events received no
+    hit-conditioned reward or quality terms and did not reset counted-hit
+    overdue shaping.  A 0.22 s debounce remains well above the observed 0.06 s
+    double-contact artifact but below the 0.28--0.40 s normal contact cycles.
+    """
+
+    result = _sport_taskspace_qvel_vertical_v12_stages(stages)
+    shaped: list[CurriculumStage] = []
+    for stage in result:
+        old_interval = float(stage.cfg.hit_min_count_interval)
+        cfg = replace(
+            stage.cfg,
+            hit_min_count_interval=(
+                min(0.22, old_interval) if old_interval > 0.0 else 0.0
+            ),
+            fast_hit_penalty_weight=(
+                max(0.20, float(stage.cfg.fast_hit_penalty_weight))
+                if old_interval > 0.0
+                else float(stage.cfg.fast_hit_penalty_weight)
+            ),
+        )
+        shaped.append(
+            replace(
+                stage,
+                name=stage.name.replace("qvel_v12_", "qvel_v13_", 1),
+                cfg=cfg,
+                notes=(
+                    "QVEL-V13 hit-credit alignment: count ordinary "
+                    "height-confirmed low-height juggling above a 0.22 s "
+                    "anti-chatter debounce, and explicitly penalize only "
+                    "residual faster recontacts. "
+                    + stage.notes
+                ),
+            )
+        )
+    return shaped
+
+
+def _sport_taskspace_qvel_vertical_v14_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """V13 plus measured heavy-ball mass/elasticity bridge and target stages."""
+
+    base = _sport_taskspace_qvel_vertical_v13_stages(stages)
+    renamed = [
+        replace(stage, name=stage.name.replace("qvel_v13_", "qvel_v14_", 1))
+        for stage in base
+    ]
+    result = _append_measured_heavy_ball_stages(
+        renamed,
+        name_prefix="qvel_v14",
+    )
+    bridge = result[-2]
+    result[-2] = replace(
+        bridge,
+        target_mean_hits=min(11.5, float(bridge.target_mean_hits)),
+        target_mean_hits_ge3=min(
+            10.5,
+            float(bridge.target_mean_hits_ge3 or 10.5),
+        ),
+        target_mean_len_frac=min(0.90, float(bridge.target_mean_len_frac)),
+        target_episode_truncation_rate=min(
+            0.78,
+            float(bridge.target_episode_truncation_rate or 0.78),
+        ),
+    )
+    return result
+
+
+def _sport_homotopy_full_plant_view_repair_stages(
+    stages: list[CurriculumStage],
+) -> list[CurriculumStage]:
+    """Close the high-hit/low-view loophole after actuator homotopy.
+
+    The first five stages deliberately retain the original acquisition and
+    actuator-continuation objective.  At launch05 the homotopy has reached the
+    complete fitted actuator delay/overshoot plant, so the reason for skipping
+    the pure-actuator view repair no longer applies.  Add only the view terms
+    that were missing from the homotopy branch; do not change task stages,
+    gates, joint limits, teacher terms, or the control stack.
+    """
+
+    repaired: list[CurriculumStage] = []
+    for index, stage in enumerate(stages):
+        if index < 5:
+            repaired.append(stage)
+            continue
+        cfg = replace(
+            stage.cfg,
+            ball_view_xy_center_penalty_weight=max(
+                0.075, float(stage.cfg.ball_view_xy_center_penalty_weight)
+            ),
+            ball_view_out_of_bounds_penalty_weight=max(
+                0.30, float(stage.cfg.ball_view_out_of_bounds_penalty_weight)
+            ),
+            # This event-level term gives each hit causal credit for where the
+            # resulting ballistic arc will apex.  The continuous bounds loss
+            # is O(distance^2 * dt) and was too weak to prevent a policy from
+            # trading view_y against extra hits and survival time.
+            hit_apex_view_center_penalty_weight=max(
+                0.12, float(stage.cfg.hit_apex_view_center_penalty_weight)
+            ),
+        )
+        repaired.append(
+            replace(
+                stage,
+                cfg=cfg,
+                notes=(
+                    f"{stage.notes} Full-plant homotopy view repair: from "
+                    "launch05, penalize the predicted hit apex outside the "
+                    "D455 view center and retain a nonzero out-of-bounds cost; "
+                    "the curriculum gates and uncompensated actuator path are "
+                    "unchanged."
                 ),
             )
         )
@@ -12916,6 +21494,81 @@ def _apply_arm_safety_overrides(
     return [replace(stage, cfg=replace(stage.cfg, **updates)) for stage in stages]
 
 
+def _apply_ball_velocity_observer_overrides(
+    stages: list[CurriculumStage],
+    *,
+    mode_override: str | None,
+    tau_ms_override: float | None,
+    max_innovation_m_s_override: float | None,
+) -> list[CurriculumStage]:
+    """Apply the matched 67-D causal-observer contract to every stage."""
+
+    if (
+        mode_override is None
+        and tau_ms_override is None
+        and max_innovation_m_s_override is None
+    ):
+        return stages
+    mode = (
+        str(mode_override).strip().lower().replace("-", "_")
+        if mode_override is not None
+        else None
+    )
+    if mode is not None and mode not in {"raw", "ema_xy", "innovation_clip_xy"}:
+        raise ValueError(
+            "ball_obs_velocity_observer_mode must be 'raw', 'ema_xy', or "
+            "'innovation_clip_xy'"
+        )
+    if tau_ms_override is not None and (
+        not np.isfinite(float(tau_ms_override)) or float(tau_ms_override) < 0.0
+    ):
+        raise ValueError("ball_obs_velocity_observer_tau_ms must be finite and >= 0")
+    if max_innovation_m_s_override is not None and (
+        not np.isfinite(float(max_innovation_m_s_override))
+        or float(max_innovation_m_s_override) < 0.0
+    ):
+        raise ValueError(
+            "ball_obs_velocity_observer_max_innovation_m_s must be finite and >= 0"
+        )
+
+    updated: list[CurriculumStage] = []
+    for stage in stages:
+        stage_mode = mode or str(
+            stage.cfg.ball_obs_velocity_observer_mode
+        ).strip().lower().replace("-", "_")
+        tau_ms = (
+            float(tau_ms_override)
+            if tau_ms_override is not None
+            else float(stage.cfg.ball_obs_velocity_observer_tau_ms)
+        )
+        max_innovation_m_s = (
+            float(max_innovation_m_s_override)
+            if max_innovation_m_s_override is not None
+            else float(stage.cfg.ball_obs_velocity_observer_max_innovation_m_s)
+        )
+        if stage_mode == "ema_xy" and tau_ms <= 0.0:
+            raise ValueError("ema_xy ball velocity observer requires tau_ms > 0")
+        if stage_mode == "innovation_clip_xy" and max_innovation_m_s <= 0.0:
+            raise ValueError(
+                "innovation_clip_xy ball velocity observer requires "
+                "max_innovation_m_s > 0"
+            )
+        updated.append(
+            replace(
+                stage,
+                cfg=replace(
+                    stage.cfg,
+                    ball_obs_velocity_observer_mode=stage_mode,
+                    ball_obs_velocity_observer_tau_ms=tau_ms,
+                    ball_obs_velocity_observer_max_innovation_m_s=max_innovation_m_s,
+                ),
+                notes=(stage.notes + " " if stage.notes else "")
+                + "Timestamped lateral ball-velocity observer override applied.",
+            )
+        )
+    return updated
+
+
 def build_curriculum(
     stage_steps_override: int | None = None,
     gate_preset: str = "v7_strict",
@@ -12978,6 +21631,9 @@ def build_curriculum(
     arm_actual_jerk_limit_deg_s3: float | None = None,
     right_arm_pd_profile: str | None = None,
     actuator_model_inverse_mlp_path: str | None = None,
+    ball_obs_velocity_observer_mode: str | None = None,
+    ball_obs_velocity_observer_tau_ms: float | None = None,
+    ball_obs_velocity_observer_max_innovation_m_s: float | None = None,
 ) -> list[CurriculumStage]:
     if curriculum_profile in GOAL_D455_IDEALPD_PROFILES:
         preserve_deployed_67d = curriculum_profile in GOAL_D455_IDEALPD67_PROFILES
@@ -13118,10 +21774,122 @@ def build_curriculum(
         )
 
     if curriculum_profile in GOAL_D455_AUTOLAUNCH_SPORT_ACTUATOR_PROFILES:
-        sport_direct_nocomp = (
-            curriculum_profile
-            == GOAL_D455_SPORT_TASKSPACE_OBSRES2MM_NOCOMP_DIRECT_PROFILE
-        )
+        sport_direct_nocomp = curriculum_profile in {
+            GOAL_D455_SPORT_TASKSPACE_OBSRES2MM_NOCOMP_DIRECT_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_DEPLOY_POLISH_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_DEPLOY_POLISH_V2_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_DEPLOY_POLISH_V3_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V2_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V3_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V4_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V5_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V6_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V7_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V8_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V9_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V10_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V11_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V12_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V13_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V14_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V15_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V16_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V17_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V18_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V19_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V20_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V21_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V22_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V23_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V24_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V25_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V26_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V27_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V28_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V29_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V30_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V31_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V32_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V33_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V34_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V35_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V36_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V37_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V38_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V39_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V41_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V42_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V43_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_VERTICAL_STRIKE_V44_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V44_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_FOV_APEX_V45_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_NOISE_ADAPT_V46_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_NOISE_FOV_V47_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_V48_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_FOV_V49_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_INVARIANT_V50_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_GATED_V52_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_VIEWCENTER_V59_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YTIGHT_V60_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YTARGET_V61_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YPROGRESS_V62_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YPROSPECTIVE_V63_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YDIRECTIONAL_V64_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YOUTCOME_V65_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_SINGLEHIT_V66_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_OUTCOME_V67_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_FALLING_ADAPT_V68_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_PREHITBRAKE_V69_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_ANCHOR_V70_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V71_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V72_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V73_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V74_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V75_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V76_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_CONTRACTION_V77_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_JOINT_QUALITY_V78_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_CONSTRAINED_V79_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_EVENT_ALIGNED_V80_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_COMBO_V81A_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_FLOOR_V81B_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_SQUARED_V81C_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_EARLY_V81D_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_TRANSIENT_RESAMPLE_V82_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_BOUNDED_RESIDUAL_V83_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_BOUNDED_RESIDUAL_V84_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_FEEDBACK_BREAK_V85_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_FEEDBACK_DC_V88_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_WORLD_HOLD_V90_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RELEASE_ROBUST_V92_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_EXEC_RATE_V93_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_IMPACT_ANGULAR_V94_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_ANGULAR_POSITIVE_V95_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_VIEW_V96_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_LATERAL_V96_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_BALANCED_V96_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_PLATEAU_V97_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_COUNT_ALIGNED_V98_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_HEAVY_BALL_V99_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_HEAVY_BALL_GUIDED_V100_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_HEAVY_BALL_VIEW_ANGULAR_V101_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_HEAVY_BALL_EFFECTIVE_HIT_V102_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V1_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V2_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V3_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V4_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V5_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V6_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V7_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V8_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V9_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V10_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V11_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V12_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V13_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V14_PROFILE,
+        }
         if sport_direct_nocomp and actuator_compensation_mode not in (None, "none"):
             raise ValueError(
                 f"{curriculum_profile} requires uncompensated policy output"
@@ -13392,15 +22160,652 @@ def build_curriculum(
             )
         if curriculum_profile in {
             GOAL_D455_SPORT_TASKSPACE_OBSRES2MM_NOCOMP_DIRECT_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_VERTICAL_STRIKE_V44_PROFILE,
             GOAL_D455_SPORT_TASKSPACE_OBSRES2MM_ANALYTIC_DIRECT_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_DEPLOY_POLISH_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_DEPLOY_POLISH_V2_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_DEPLOY_POLISH_V3_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V2_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V3_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V4_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V5_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V6_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V7_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V8_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V9_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V10_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V11_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V12_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V13_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V14_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V15_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V16_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V17_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V18_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V19_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V20_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V21_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V22_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V23_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V24_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V25_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V26_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V27_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V28_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V29_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V30_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V31_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V32_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V33_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V34_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V35_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V36_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V37_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V38_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V39_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V41_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V42_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V43_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V44_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_FOV_APEX_V45_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_NOISE_ADAPT_V46_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_NOISE_FOV_V47_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_V48_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_FOV_V49_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_INVARIANT_V50_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_GATED_V52_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_VIEWCENTER_V59_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YTIGHT_V60_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YTARGET_V61_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YPROGRESS_V62_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YPROSPECTIVE_V63_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YDIRECTIONAL_V64_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YOUTCOME_V65_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_SINGLEHIT_V66_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_OUTCOME_V67_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_FALLING_ADAPT_V68_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_PREHITBRAKE_V69_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_ANCHOR_V70_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V71_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V72_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V73_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V74_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V75_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V76_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_CONTRACTION_V77_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_JOINT_QUALITY_V78_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_CONSTRAINED_V79_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_EVENT_ALIGNED_V80_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_COMBO_V81A_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_FLOOR_V81B_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_SQUARED_V81C_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_EARLY_V81D_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_TRANSIENT_RESAMPLE_V82_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_BOUNDED_RESIDUAL_V83_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_BOUNDED_RESIDUAL_V84_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_FEEDBACK_BREAK_V85_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_BELIEF_FEEDBACK_DC_V88_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_WORLD_HOLD_V90_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RELEASE_ROBUST_V92_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_EXEC_RATE_V93_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_IMPACT_ANGULAR_V94_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_ANGULAR_POSITIVE_V95_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_VIEW_V96_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_LATERAL_V96_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_BALANCED_V96_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_PLATEAU_V97_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_COUNT_ALIGNED_V98_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_HEAVY_BALL_V99_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_HEAVY_BALL_GUIDED_V100_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_HEAVY_BALL_VIEW_ANGULAR_V101_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_HEAVY_BALL_EFFECTIVE_HIT_V102_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V1_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V2_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V3_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V4_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V5_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V6_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V7_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V8_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V9_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V10_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V11_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V12_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V13_PROFILE,
+    GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V14_PROFILE,
         }:
             stages = _sport_taskspace_obsres2mm_nocomp_direct_v1_stages(stages)
         if (
-            curriculum_profile
-            == GOAL_D455_SPORT_TASKSPACE_OBSRES2MM_NOCOMP_DIRECT_PROFILE
+            curriculum_profile in {
+                GOAL_D455_SPORT_TASKSPACE_OBSRES2MM_NOCOMP_DIRECT_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_DEPLOY_POLISH_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_DEPLOY_POLISH_V2_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_DEPLOY_POLISH_V3_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V2_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V3_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V4_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V5_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V6_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V7_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V8_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V9_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V10_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V11_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V12_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V13_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V14_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V15_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V16_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V17_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V18_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V19_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V20_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V21_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V22_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V23_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V24_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V25_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V26_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V27_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V28_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V29_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V30_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V31_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V32_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V33_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V34_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V35_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V36_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_EXEC_RATE_V93_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_IMPACT_ANGULAR_V94_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_ANGULAR_POSITIVE_V95_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_VIEW_V96_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_LATERAL_V96_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_BALANCED_V96_PROFILE,
+            }
             and selected_sport_preset == "sport_actuator_replay_dr"
         ):
             stages = _sport_pure_actuator_quality_repair_stages(stages)
+        if curriculum_profile in {
+            GOAL_D455_SPORT_TASKSPACE_DEPLOY_POLISH_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_DEPLOY_POLISH_V2_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_DEPLOY_POLISH_V3_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V2_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V3_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V4_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V5_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V6_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V7_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V8_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V9_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V10_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V11_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V12_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V13_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V14_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V15_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V16_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V17_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V18_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V19_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V20_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V21_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V22_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V23_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V24_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V25_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V26_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V27_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V28_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V29_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V30_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V31_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V32_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V33_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V34_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V35_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V36_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V37_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V38_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V39_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V41_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V42_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V43_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V44_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_FOV_APEX_V45_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_NOISE_ADAPT_V46_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_NOISE_FOV_V47_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_V48_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_FOV_V49_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_INVARIANT_V50_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_GATED_V52_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_VIEWCENTER_V59_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YTIGHT_V60_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YTARGET_V61_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YPROGRESS_V62_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YPROSPECTIVE_V63_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YDIRECTIONAL_V64_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YOUTCOME_V65_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_SINGLEHIT_V66_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_OUTCOME_V67_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_FALLING_ADAPT_V68_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_PREHITBRAKE_V69_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_ANCHOR_V70_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V71_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V72_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V73_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V74_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V75_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V76_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_CONTRACTION_V77_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_JOINT_QUALITY_V78_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_CONSTRAINED_V79_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_EVENT_ALIGNED_V80_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_COMBO_V81A_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_FLOOR_V81B_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_SQUARED_V81C_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_EARLY_V81D_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_TRANSIENT_RESAMPLE_V82_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_BOUNDED_RESIDUAL_V83_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_BOUNDED_RESIDUAL_V84_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_FEEDBACK_BREAK_V85_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_FEEDBACK_DC_V88_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_WORLD_HOLD_V90_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_RELEASE_ROBUST_V92_PROFILE,
+        }:
+            if selected_sport_preset != "sport_actuator_replay_dr":
+                raise ValueError(
+                    f"{curriculum_profile} requires --delay-ablation-preset "
+                    "sport_actuator_replay_dr to match the GPU1 best checkpoint"
+                )
+            stages = _sport_taskspace_deploy_polish_v1_stages(
+                stages,
+                stage_steps_override=stage_steps_override,
+                pure_vxy_first=(
+                    curriculum_profile
+                    in {
+                        GOAL_D455_SPORT_TASKSPACE_DEPLOY_POLISH_V2_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_DEPLOY_POLISH_V3_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V2_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V3_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V4_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V5_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V6_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V7_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V8_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V9_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V10_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V11_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V12_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V13_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V14_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V15_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V16_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V17_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V18_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V19_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V20_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V21_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V22_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V23_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V24_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V25_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V26_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V27_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V28_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V29_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V30_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V31_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V32_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V33_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V34_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V35_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V36_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V37_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V38_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V39_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V41_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V42_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V43_PROFILE,
+                    }
+                ),
+                observation_vxy_curriculum=(
+                    curriculum_profile
+                    in {
+                        GOAL_D455_SPORT_TASKSPACE_DEPLOY_POLISH_V3_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V2_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V3_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V4_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V5_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V6_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V7_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V8_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V9_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V10_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V11_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V12_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V13_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V14_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V15_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V16_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V17_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V18_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V19_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V20_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V21_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V22_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V23_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V24_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V25_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V26_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V27_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V28_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V29_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V30_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V31_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V32_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V33_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V34_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V35_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V36_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V37_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V38_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V39_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V41_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V42_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V43_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V44_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_FOV_APEX_V45_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_NOISE_ADAPT_V46_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_NOISE_FOV_V47_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_ESTNOISE_V48_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_ESTNOISE_FOV_V49_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_ESTNOISE_INVARIANT_V50_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_ESTNOISE_GATED_V52_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_ESTNOISE_VIEWCENTER_V59_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YTIGHT_V60_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YTARGET_V61_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YPROGRESS_V62_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YPROSPECTIVE_V63_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YDIRECTIONAL_V64_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YOUTCOME_V65_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_SINGLEHIT_V66_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_OUTCOME_V67_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_FALLING_ADAPT_V68_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_PREHITBRAKE_V69_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_ANCHOR_V70_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V71_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V72_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V73_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V74_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V75_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V76_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_BELIEF_CONTRACTION_V77_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_BELIEF_JOINT_QUALITY_V78_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_BELIEF_CONSTRAINED_V79_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_BELIEF_EVENT_ALIGNED_V80_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_COMBO_V81A_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_FLOOR_V81B_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_SQUARED_V81C_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_EARLY_V81D_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_BELIEF_TRANSIENT_RESAMPLE_V82_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_BELIEF_BOUNDED_RESIDUAL_V83_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_BELIEF_BOUNDED_RESIDUAL_V84_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_BELIEF_FEEDBACK_BREAK_V85_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_BELIEF_FEEDBACK_DC_V88_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_WORLD_HOLD_V90_PROFILE,
+                        GOAL_D455_SPORT_TASKSPACE_RELEASE_ROBUST_V92_PROFILE,
+                    }
+                ),
+            )
+            if curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v1_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V2_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v2_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V3_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v3_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V4_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v4_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V5_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v5_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V6_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v6_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V7_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v7_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V8_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v8_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V9_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v9_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V10_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v10_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V11_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v11_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V12_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v12_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V13_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v13_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V14_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v14_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V15_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v15_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V16_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v16_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V17_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v17_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V18_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v18_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V19_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v19_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V20_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v20_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V21_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v21_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V22_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v22_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V23_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v23_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V24_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v24_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V25_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v25_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V26_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v26_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V27_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v27_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V28_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v28_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V29_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v29_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V30_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v30_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V31_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v31_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V32_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v32_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V33_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v33_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V34_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v34_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V35_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v35_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V36_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v36_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V37_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v37_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V38_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v38_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V39_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v39_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V41_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v41_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V42_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v42_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V43_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v43_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RACKET_XY_POLISH_V44_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v44_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_FOV_APEX_V45_PROFILE:
+                stages = _sport_taskspace_racket_xy_polish_v44_stages(stages)
+                stages = _sport_taskspace_fov_apex_v45_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_NOISE_ADAPT_V46_PROFILE:
+                stages = _sport_taskspace_noise_adapt_v46_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_NOISE_FOV_V47_PROFILE:
+                stages = _sport_taskspace_noise_fov_v47_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_ESTNOISE_V48_PROFILE:
+                stages = _sport_taskspace_estnoise_v48_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_ESTNOISE_FOV_V49_PROFILE:
+                stages = _sport_taskspace_estnoise_fov_v49_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_ESTNOISE_INVARIANT_V50_PROFILE:
+                stages = _sport_taskspace_estnoise_invariant_v50_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_ESTNOISE_GATED_V52_PROFILE:
+                stages = _sport_taskspace_estnoise_gated_v52_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_ESTNOISE_VIEWCENTER_V59_PROFILE:
+                stages = _sport_taskspace_estnoise_viewcenter_v59_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YTIGHT_V60_PROFILE:
+                stages = _sport_taskspace_estnoise_ytight_v60_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YTARGET_V61_PROFILE:
+                stages = _sport_taskspace_estnoise_ytarget_v61_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YPROGRESS_V62_PROFILE:
+                stages = _sport_taskspace_estnoise_yprogress_v62_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YPROSPECTIVE_V63_PROFILE:
+                stages = _sport_taskspace_estnoise_yprospective_v63_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YDIRECTIONAL_V64_PROFILE:
+                stages = _sport_taskspace_estnoise_ydirectional_v64_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YOUTCOME_V65_PROFILE:
+                stages = _sport_taskspace_estnoise_youtcome_v65_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_SINGLEHIT_V66_PROFILE:
+                stages = _sport_taskspace_estnoise_yreturn_singlehit_v66_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_OUTCOME_V67_PROFILE:
+                stages = _sport_taskspace_estnoise_yreturn_outcome_v67_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_FALLING_ADAPT_V68_PROFILE:
+                stages = _sport_taskspace_estnoise_yreturn_falling_adapt_v68_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_PREHITBRAKE_V69_PROFILE:
+                stages = _sport_taskspace_estnoise_yreturn_prehitbrake_v69_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_ANCHOR_V70_PROFILE:
+                stages = _sport_taskspace_estnoise_yreturn_anchor_v70_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V71_PROFILE:
+                stages = _sport_taskspace_estnoise_yreturn_staticanchor_v71_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V72_PROFILE:
+                stages = _sport_taskspace_estnoise_yreturn_staticanchor_v72_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V73_PROFILE:
+                stages = _sport_taskspace_estnoise_yreturn_staticanchor_v73_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V74_PROFILE:
+                stages = _sport_taskspace_estnoise_yreturn_staticanchor_v74_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V75_PROFILE:
+                stages = _sport_taskspace_estnoise_yreturn_staticanchor_v75_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_ESTNOISE_YRETURN_STATICANCHOR_V76_PROFILE:
+                stages = _sport_taskspace_estnoise_yreturn_staticanchor_v76_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_BELIEF_CONTRACTION_V77_PROFILE:
+                stages = _sport_taskspace_belief_contraction_v77_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_BELIEF_JOINT_QUALITY_V78_PROFILE:
+                stages = _sport_taskspace_belief_joint_quality_v78_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_BELIEF_CONSTRAINED_V79_PROFILE:
+                stages = _sport_taskspace_belief_constrained_v79_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_BELIEF_EVENT_ALIGNED_V80_PROFILE:
+                stages = _sport_taskspace_belief_event_aligned_v80_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_COMBO_V81A_PROFILE:
+                stages = _sport_taskspace_belief_component_ablation_stages(
+                    stages, component="combo"
+                )
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_FLOOR_V81B_PROFILE:
+                stages = _sport_taskspace_belief_component_ablation_stages(
+                    stages, component="floor"
+                )
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_SQUARED_V81C_PROFILE:
+                stages = _sport_taskspace_belief_component_ablation_stages(
+                    stages, component="squared"
+                )
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_BELIEF_ABLATE_EARLY_V81D_PROFILE:
+                stages = _sport_taskspace_belief_component_ablation_stages(
+                    stages, component="early"
+                )
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_BELIEF_TRANSIENT_RESAMPLE_V82_PROFILE:
+                stages = _sport_taskspace_belief_transient_resample_v82_stages(
+                    stages
+                )
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_BELIEF_BOUNDED_RESIDUAL_V83_PROFILE:
+                stages = _sport_taskspace_belief_bounded_residual_v83_stages(
+                    stages
+                )
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_BELIEF_BOUNDED_RESIDUAL_V84_PROFILE:
+                stages = _sport_taskspace_belief_bounded_residual_v84_stages(
+                    stages
+                )
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_BELIEF_FEEDBACK_BREAK_V85_PROFILE:
+                stages = _sport_taskspace_belief_feedback_break_v85_stages(
+                    stages
+                )
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_BELIEF_FEEDBACK_DC_V88_PROFILE:
+                stages = _sport_taskspace_belief_feedback_dc_v88_stages(
+                    stages
+                )
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_WORLD_HOLD_V90_PROFILE:
+                stages = _sport_taskspace_world_hold_v90_stages(stages)
+            elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RELEASE_ROBUST_V92_PROFILE:
+                stages = _sport_taskspace_release_robust_v92_stages(stages)
+        if curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_EXEC_RATE_V93_PROFILE:
+            stages = _sport_taskspace_record_new3_exec_rate_v93_stages(stages)
+        if curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_IMPACT_ANGULAR_V94_PROFILE:
+            stages = _sport_taskspace_record_new3_impact_angular_v94_stages(stages)
+        if curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_ANGULAR_POSITIVE_V95_PROFILE:
+            stages = _sport_taskspace_record_new3_angular_positive_v95_stages(stages)
+        if curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_VIEW_V96_PROFILE:
+            stages = _sport_taskspace_record_new3_deployment_v96_stages(
+                stages, variant="view"
+            )
+        if curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_LATERAL_V96_PROFILE:
+            stages = _sport_taskspace_record_new3_deployment_v96_stages(
+                stages, variant="lateral"
+            )
+        if curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_BALANCED_V96_PROFILE:
+            stages = _sport_taskspace_record_new3_deployment_v96_stages(
+                stages, variant="balanced"
+            )
+        if curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_PLATEAU_V97_PROFILE:
+            stages = _sport_taskspace_record_new3_plateau_v97_stages(stages)
+        elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_COUNT_ALIGNED_V98_PROFILE:
+            stages = _sport_taskspace_record_new3_count_aligned_v98_stages(stages)
+        elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_HEAVY_BALL_V99_PROFILE:
+            stages = _sport_taskspace_record_new3_heavy_ball_v99_stages(stages)
+        elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_HEAVY_BALL_GUIDED_V100_PROFILE:
+            stages = _sport_taskspace_record_new3_heavy_ball_guided_v100_stages(stages)
+        elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_HEAVY_BALL_VIEW_ANGULAR_V101_PROFILE:
+            stages = _sport_taskspace_record_new3_heavy_ball_view_angular_v101_stages(stages)
+        elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_RECORD_NEW3_HEAVY_BALL_EFFECTIVE_HIT_V102_PROFILE:
+            stages = _sport_taskspace_record_new3_heavy_ball_effective_hit_v102_stages(stages)
+        if curriculum_profile == GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V1_PROFILE:
+            stages = _sport_taskspace_qvel_vertical_v1_stages(stages)
+        elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V2_PROFILE:
+            stages = _sport_taskspace_qvel_vertical_v2_stages(stages)
+        elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V3_PROFILE:
+            stages = _sport_taskspace_qvel_vertical_v3_stages(stages)
+        elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V4_PROFILE:
+            stages = _sport_taskspace_qvel_vertical_v4_stages(stages)
+        elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V5_PROFILE:
+            stages = _sport_taskspace_qvel_vertical_v5_stages(stages)
+        elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V6_PROFILE:
+            stages = _sport_taskspace_qvel_vertical_v6_stages(stages)
+        elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V7_PROFILE:
+            stages = _sport_taskspace_qvel_vertical_v7_stages(stages)
+        elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V8_PROFILE:
+            stages = _sport_taskspace_qvel_vertical_v8_stages(stages)
+        elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V9_PROFILE:
+            stages = _sport_taskspace_qvel_vertical_v9_stages(stages)
+        elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V10_PROFILE:
+            stages = _sport_taskspace_qvel_vertical_v10_stages(stages)
+        elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V11_PROFILE:
+            stages = _sport_taskspace_qvel_vertical_v11_stages(stages)
+        elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V12_PROFILE:
+            stages = _sport_taskspace_qvel_vertical_v12_stages(stages)
+        elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V13_PROFILE:
+            stages = _sport_taskspace_qvel_vertical_v13_stages(stages)
+        elif curriculum_profile == GOAL_D455_SPORT_TASKSPACE_QVEL_VERTICAL_V14_PROFILE:
+            stages = _sport_taskspace_qvel_vertical_v14_stages(stages)
         if selected_sport_preset == "sport_actuator_replay_homotopy_dr":
             # Same 21 task stages, with a smooth actuator-only continuation in
             # the first five slots.  The old 0.65 -> 1.00 jump simultaneously
@@ -13445,6 +22850,10 @@ def build_curriculum(
                     )
                 )
             stages = homotopy_stages
+            if sport_direct_nocomp:
+                stages = _sport_homotopy_full_plant_view_repair_stages(stages)
+            if curriculum_profile == GOAL_D455_SPORT_TASKSPACE_VERTICAL_STRIKE_V44_PROFILE:
+                stages = _sport_taskspace_vertical_strike_homotopy_v44_stages(stages)
         for stage in stages:
             cfg = stage.cfg
             learning_ablation = selected_sport_preset.startswith(
@@ -13477,7 +22886,12 @@ def build_curriculum(
                 raise ValueError(
                     f"{stage.name} escaped the sport/{expected_compensation}/no-planner contract"
                 )
-        return stages
+        return _apply_ball_velocity_observer_overrides(
+            stages,
+            mode_override=ball_obs_velocity_observer_mode,
+            tau_ms_override=ball_obs_velocity_observer_tau_ms,
+            max_innovation_m_s_override=ball_obs_velocity_observer_max_innovation_m_s,
+        )
 
     if curriculum_profile in (ROBUST_JUGGLE_PROFILE, *D455_67D_INVERSE_MPC_PROFILES):
         if bool(high_latency_obs):
@@ -13825,7 +23239,12 @@ def build_curriculum(
                     raise ValueError(
                         f"{stage.name} escaped the no-governor success-reference reward contract"
                     )
-        return stages
+        return _apply_ball_velocity_observer_overrides(
+            stages,
+            mode_override=ball_obs_velocity_observer_mode,
+            tau_ms_override=ball_obs_velocity_observer_tau_ms,
+            max_innovation_m_s_override=ball_obs_velocity_observer_max_innovation_m_s,
+        )
 
     base = MjxJuggleConfig(domain_randomization=False, arm_action_limiter=True)
 
@@ -15021,6 +24440,12 @@ def build_curriculum(
 
     if stage_steps_override is not None:
         stages = [replace(stage, total_steps=int(stage_steps_override)) for stage in stages]
+    stages = _apply_ball_velocity_observer_overrides(
+        stages,
+        mode_override=ball_obs_velocity_observer_mode,
+        tau_ms_override=ball_obs_velocity_observer_tau_ms,
+        max_innovation_m_s_override=ball_obs_velocity_observer_max_innovation_m_s,
+    )
     return _apply_arm_safety_overrides(
         stages,
         arm_post_compensation_limiter=arm_post_compensation_limiter,
@@ -15100,6 +24525,7 @@ def parse_args() -> argparse.Namespace:
             "goal_d455_autolaunch_viewdense_constrained_mpc_drbridge_v2_countcredit_v1 is W020: it preserves the complete W019 V2 plant/course/gates and replaces hit-count-growing terminal costs with fixed target-count barriers so every additional valid hit has positive marginal credit; "
             "goal_d455_autolaunch_viewdense_constrained_mpc_launch17_obsres2mm_servo_v5 resumes the proven launch17 policy on the unchanged inverse-MPC plus servo-planner plant, removes synthetic camera-frame distortion beyond the measured 2 mm observation residual, and then trains the original widest final physical/reward domain; "
             "goal_d455_sport_taskspace_successref_obsres2mm_nocomp_v1 trains the sport task-space second-order actuator from scratch without compensation or servo planning, using a repeated-contact acquisition ladder and monotone success-reference gates through the measured 2 mm final task; "
+            "goal_d455_sport_taskspace_deploy_polish_v1 resumes the completed GPU1 direct-actuator policy and strictly solves hit horizontal velocity, absolute contact height <=1.20 m, then D455 view retention in that order; "
             "goal_d455_autolaunch_idealpd_v1 reuses the original 20260716 goal_d455_autolaunch_v1 curriculum/gates/rewards while disabling actuator command filtering, delay conditioning, and compensation for the ideal-PD policy->real compensator ablation; "
             "goal_d455_autolaunch_idealpd67_v1 keeps that original course and the deployed 67D 72 ms command-history/error/phase observation contract, but applies the current position command immediately with XML PD and no actuator filter or compensation; "
             "goal_d455_autolaunch_idealpd67_viewdense_v1 preserves that ideal-PD67 plant and the original full-horizon gates, while adding mild view/next-contact shaping and measured launch14/15 minimum-update floors; "
@@ -15397,6 +24823,30 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--high-latency-history-frames", type=int, default=3)
     p.add_argument(
+        "--ball-obs-velocity-observer-mode",
+        choices=["raw", "ema_xy", "innovation_clip_xy"],
+        default=None,
+        help=(
+            "Override the causal lateral ball-velocity observer while preserving "
+            "the 67-D actor interface. It updates only on valid camera frames."
+        ),
+    )
+    p.add_argument(
+        "--ball-obs-velocity-observer-tau-ms",
+        type=float,
+        default=None,
+        help="Physical-time EMA constant for --ball-obs-velocity-observer-mode ema_xy.",
+    )
+    p.add_argument(
+        "--ball-obs-velocity-observer-max-innovation-m-s",
+        type=float,
+        default=None,
+        help=(
+            "Maximum lateral velocity innovation accepted per fresh camera frame "
+            "for --ball-obs-velocity-observer-mode innovation_clip_xy."
+        ),
+    )
+    p.add_argument(
         "--high-latency-obs-history-frames",
         type=int,
         default=None,
@@ -15436,11 +24886,29 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--resume-from", type=Path, default=None, help="MJX curriculum .pkl checkpoint to continue from.")
     p.add_argument(
+        "--resume-curriculum-state",
+        action="store_true",
+        help=(
+            "Resume the same curriculum stage rather than merely warm-starting weights: "
+            "restore stage_update and convergence history from curriculum_progress.csv "
+            "beside --resume-from. Rows newer than the checkpoint global step are ignored."
+        ),
+    )
+    p.add_argument(
         "--reset-optimizer-on-resume",
         action="store_true",
         help=(
             "Keep resumed policy/critic parameters but rebuild zero-moment Adam state. "
             "Use when the resumed profile intentionally changes the reward objective."
+        ),
+    )
+    p.add_argument(
+        "--reset-critic-on-resume",
+        action="store_true",
+        help=(
+            "Keep the resumed actor but reinitialize the value network and Adam state "
+            "at the first resumed stage. Use when that stage has an intentionally "
+            "out-of-distribution reward/state distribution."
         ),
     )
     p.add_argument(
@@ -15479,7 +24947,10 @@ def parse_args() -> argparse.Namespace:
         "--max-stage-updates",
         type=int,
         default=0,
-        help="CLI safety cap per stage in converged mode. 0 uses a profile-specific cap when declared, otherwise trains until convergence.",
+        help=(
+            "CLI safety cap per stage in converged mode. 0 uses a profile-specific cap; "
+            "-1 disables update caps and trains until convergence/safe-stop."
+        ),
     )
     p.add_argument("--minibatch-size", type=int, default=8192)
     p.add_argument("--update-epochs", type=int, default=4)
@@ -15574,6 +25045,16 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        "--max-log-std",
+        type=float,
+        default=None,
+        help=(
+            "Optional upper bound for Gaussian policy log standard deviation. "
+            "Use during late policy polishing when excess exploration masks "
+            "strict task-space motion gates."
+        ),
+    )
+    p.add_argument(
         "--actor-anchor-kl-coef",
         type=float,
         default=0.0,
@@ -15623,6 +25104,92 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=1.0,
         help="Absolute clip for teacher action targets; 0 disables target clipping.",
+    )
+    p.add_argument(
+        "--counterfactual-replay-obs",
+        type=Path,
+        default=None,
+        help=(
+            "Counterfactual-prefix .npy observations [samples, obs_dim]. These are paired "
+            "with task-space teacher actions and are used only as an auxiliary actor loss."
+        ),
+    )
+    p.add_argument(
+        "--counterfactual-replay-actions",
+        type=Path,
+        default=None,
+        help="Counterfactual task-space teacher actions [samples, act_dim] in normalized units.",
+    )
+    p.add_argument(
+        "--counterfactual-supervision-coef",
+        type=float,
+        default=0.0,
+        help="MSE coefficient for paired counterfactual-prefix action supervision.",
+    )
+    p.add_argument(
+        "--counterfactual-focus-tail-rows",
+        type=int,
+        default=0,
+        help="Number of final replay rows treated as focused closed-loop DAgger states.",
+    )
+    p.add_argument(
+        "--counterfactual-focus-prob",
+        type=float,
+        default=0.0,
+        help="Fraction of each auxiliary minibatch drawn from the focused replay tail.",
+    )
+    p.add_argument(
+        "--counterfactual-vxy-weight-mode",
+        choices=("high_vxy", "low_vxy"),
+        default="high_vxy",
+        help=(
+            "How to weight counterfactual supervision by ball lateral speed in obs[23:25]. "
+            "high_vxy upweights fast lateral states; low_vxy upweights near-zero-vxy states."
+        ),
+    )
+    p.add_argument(
+        "--noise-invariance-clean-obs",
+        type=Path,
+        default=None,
+        help=(
+            "Clean member of exact real-prefix measurement-noise pairs [samples, obs_dim]."
+        ),
+    )
+    p.add_argument(
+        "--noise-invariance-noisy-obs",
+        type=Path,
+        default=None,
+        help=(
+            "Noisy member of exact real-prefix measurement-noise pairs [samples, obs_dim]."
+        ),
+    )
+    p.add_argument(
+        "--noise-invariance-coef",
+        type=float,
+        default=0.0,
+        help=(
+            "MSE coefficient matching noisy policy means to stop-gradient clean means "
+            "for the same real-prefix state."
+        ),
+    )
+    p.add_argument(
+        "--actor-action-feedback-sensitivity-coef",
+        type=float,
+        default=0.0,
+        help=(
+            "On-policy local robustness coefficient for coherent perturbations "
+            "of every previous-action/action-history copy. Rollout and deployment "
+            "observations remain unchanged."
+        ),
+    )
+    p.add_argument(
+        "--actor-action-feedback-perturb-scale",
+        type=float,
+        default=0.02,
+        help=(
+            "Symmetric normalized-action perturbation used only by the on-policy "
+            "action-feedback sensitivity auxiliary loss."
+        ),
     )
     p.add_argument(
         "--phase-teacher-reference",
@@ -15741,6 +25308,26 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--advance-eval-min-hits", type=float, default=1.5)
     p.add_argument("--advance-eval-len-ratio", type=float, default=0.25)
     p.add_argument("--advance-eval-min-len-frac", type=float, default=0.10)
+    p.add_argument(
+        "--advance-eval-final-min-len-frac",
+        type=float,
+        default=None,
+        help=(
+            "Optional hard minimum mean episode-length fraction for the final "
+            "self-validation probe only. It does not change training or "
+            "intermediate-stage convergence gates."
+        ),
+    )
+    p.add_argument(
+        "--advance-eval-final-min-ball-view-in-bounds",
+        type=float,
+        default=None,
+        help=(
+            "Optional hard minimum ball-view-in-bounds rate for the final "
+            "self-validation probe only. It does not change training or "
+            "intermediate-stage convergence gates."
+        ),
+    )
     p.add_argument("--advance-eval-min-return", type=float, default=-2.0)
     p.add_argument(
         "--advance-eval-hit-rate-margin",
@@ -15846,6 +25433,33 @@ def parse_args() -> argparse.Namespace:
         help="Stop safely if any per-step reward/* metric exceeds this absolute value. Use <=0 to disable.",
     )
     p.add_argument(
+        "--max-recent-rms-hit-vxy-safety",
+        type=float,
+        default=0.0,
+        help=(
+            "Stop safely when the completed convergence window's true hit-vxy "
+            "RMS exceeds this value. 0 disables the guard."
+        ),
+    )
+    p.add_argument(
+        "--max-recent-rms-hit-racket-vxy-safety",
+        type=float,
+        default=0.0,
+        help=(
+            "Stop safely when the completed convergence window's physical "
+            "contact-point racket-vxy RMS exceeds this value. 0 disables."
+        ),
+    )
+    p.add_argument(
+        "--max-recent-hit-posterior-anchor-err-safety",
+        type=float,
+        default=0.0,
+        help=(
+            "Stop safely when the completed convergence window's measured "
+            "posterior contact-anchor error exceeds this value. 0 disables."
+        ),
+    )
+    p.add_argument(
         "--gpu-max-temp-c",
         type=float,
         default=0.0,
@@ -15858,6 +25472,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--wandb-name", type=str, default="mjx-curriculum")
     p.add_argument("--wandb-tags", nargs="*", default=["curriculum"])
     p.add_argument("--wandb-mode", type=str, default="online", choices=["online", "offline", "disabled"])
+    p.add_argument(
+        "--wandb-metrics-only",
+        action="store_true",
+        help=(
+            "Sync scalar metrics/config to W&B but never upload checkpoint, progress, "
+            "or other local files. Combine with WANDB_DISABLE_CODE=true for private runs."
+        ),
+    )
     p.add_argument(
         "--sb3-parity",
         action="store_true",
@@ -15917,8 +25539,97 @@ def parse_args() -> argparse.Namespace:
         p.error("--actor-anchor-replay-kl-coef must be >= 0")
     if args.teacher_distill_coef < 0.0:
         p.error("--teacher-distill-coef must be >= 0")
+    if (
+        args.ball_obs_velocity_observer_tau_ms is not None
+        and (
+            not np.isfinite(float(args.ball_obs_velocity_observer_tau_ms))
+            or float(args.ball_obs_velocity_observer_tau_ms) < 0.0
+        )
+    ):
+        p.error("--ball-obs-velocity-observer-tau-ms must be finite and >= 0")
+    if (
+        args.ball_obs_velocity_observer_mode == "ema_xy"
+        and (
+            args.ball_obs_velocity_observer_tau_ms is None
+            or float(args.ball_obs_velocity_observer_tau_ms) <= 0.0
+        )
+    ):
+        p.error("ema_xy requires --ball-obs-velocity-observer-tau-ms > 0")
+    if (
+        args.ball_obs_velocity_observer_max_innovation_m_s is not None
+        and (
+            not np.isfinite(
+                float(args.ball_obs_velocity_observer_max_innovation_m_s)
+            )
+            or float(args.ball_obs_velocity_observer_max_innovation_m_s) < 0.0
+        )
+    ):
+        p.error(
+            "--ball-obs-velocity-observer-max-innovation-m-s must be finite and >= 0"
+        )
+    if (
+        args.ball_obs_velocity_observer_mode == "innovation_clip_xy"
+        and (
+            args.ball_obs_velocity_observer_max_innovation_m_s is None
+            or float(args.ball_obs_velocity_observer_max_innovation_m_s) <= 0.0
+        )
+    ):
+        p.error(
+            "innovation_clip_xy requires "
+            "--ball-obs-velocity-observer-max-innovation-m-s > 0"
+        )
     if args.teacher_distill_action_clip < 0.0:
         p.error("--teacher-distill-action-clip must be >= 0")
+    if args.counterfactual_supervision_coef < 0.0:
+        p.error("--counterfactual-supervision-coef must be >= 0")
+    if args.noise_invariance_coef < 0.0:
+        p.error("--noise-invariance-coef must be >= 0")
+    if args.actor_action_feedback_sensitivity_coef < 0.0:
+        p.error("--actor-action-feedback-sensitivity-coef must be >= 0")
+    if args.actor_action_feedback_perturb_scale < 0.0:
+        p.error("--actor-action-feedback-perturb-scale must be >= 0")
+    if (
+        args.actor_action_feedback_sensitivity_coef > 0.0
+        and args.actor_action_feedback_perturb_scale <= 0.0
+    ):
+        p.error(
+            "--actor-action-feedback-sensitivity-coef > 0 requires a positive "
+            "--actor-action-feedback-perturb-scale"
+        )
+    if args.counterfactual_focus_tail_rows < 0:
+        p.error("--counterfactual-focus-tail-rows must be >= 0")
+    if not 0.0 <= args.counterfactual_focus_prob <= 1.0:
+        p.error("--counterfactual-focus-prob must be in [0, 1]")
+    if args.counterfactual_focus_prob > 0.0 and args.counterfactual_focus_tail_rows == 0:
+        p.error("--counterfactual-focus-prob > 0 requires --counterfactual-focus-tail-rows")
+    counterfactual_enabled = float(args.counterfactual_supervision_coef) > 0.0
+    if counterfactual_enabled:
+        if args.counterfactual_replay_obs is None:
+            p.error("--counterfactual-supervision-coef > 0 requires --counterfactual-replay-obs")
+        if args.counterfactual_replay_actions is None:
+            p.error("--counterfactual-supervision-coef > 0 requires --counterfactual-replay-actions")
+    for counterfactual_path in (
+        args.counterfactual_replay_obs,
+        args.counterfactual_replay_actions,
+    ):
+        if counterfactual_path is not None and not counterfactual_path.exists():
+            p.error(f"counterfactual replay file not found: {counterfactual_path}")
+    noise_invariance_enabled = float(args.noise_invariance_coef) > 0.0
+    if (args.noise_invariance_clean_obs is None) != (args.noise_invariance_noisy_obs is None):
+        p.error(
+            "--noise-invariance-clean-obs and --noise-invariance-noisy-obs must be provided together"
+        )
+    if noise_invariance_enabled:
+        if args.noise_invariance_clean_obs is None:
+            p.error("--noise-invariance-coef > 0 requires --noise-invariance-clean-obs")
+        if args.noise_invariance_noisy_obs is None:
+            p.error("--noise-invariance-coef > 0 requires --noise-invariance-noisy-obs")
+    for noise_invariance_path in (
+        args.noise_invariance_clean_obs,
+        args.noise_invariance_noisy_obs,
+    ):
+        if noise_invariance_path is not None and not noise_invariance_path.exists():
+            p.error(f"noise invariance replay file not found: {noise_invariance_path}")
     if args.phase_teacher_strength < 0.0:
         p.error("--phase-teacher-strength must be >= 0")
     teacher_distill_enabled = float(args.teacher_distill_coef) > 0.0
@@ -15950,6 +25661,22 @@ def parse_args() -> argparse.Namespace:
             p.error("--residual-teacher-checkpoint cannot be combined with --resume-from")
         if not args.residual_teacher_checkpoint.exists():
             p.error(f"residual teacher checkpoint not found: {args.residual_teacher_checkpoint}")
+    if (
+        args.curriculum_profile
+        in {
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_BOUNDED_RESIDUAL_V83_PROFILE,
+            GOAL_D455_SPORT_TASKSPACE_BELIEF_BOUNDED_RESIDUAL_V84_PROFILE,
+        }
+        and args.residual_teacher_checkpoint is None
+        and args.resume_from is None
+    ):
+        p.error(
+            f"{args.curriculum_profile} requires either "
+            "--residual-teacher-checkpoint for initialization or --resume-from "
+            "for an existing residual checkpoint"
+        )
+    if args.reset_critic_on_resume and args.resume_from is None:
+        p.error("--reset-critic-on-resume requires --resume-from")
     if args.curriculum_profile == GOAL_D455_AUTOLAUNCH_TEACHER_STUDENT_PROFILE:
         if not teacher_distill_enabled:
             p.error(f"{args.curriculum_profile} requires --teacher-distill-coef > 0")
@@ -16254,6 +25981,7 @@ RESET_BUCKET_COMMON_FIELDS = (
 )
 RESET_BUCKET_AUTOLAUNCH_FIELDS = (
     *RESET_BUCKET_COMMON_FIELDS,
+    "reset_racket_launch_hold_time_s",
     "reset_ball_surface_gap",
     "reset_ball_racket_center_offset",
     "reset_ball_vxy",
@@ -16512,6 +26240,78 @@ def mean_rollout_metrics(transitions) -> dict[str, float]:
         float(missing.sum()) / refresh_count if refresh_count > 0.0 else float("nan")
     )
 
+    confirmed_hit_events = np.asarray(
+        host_metrics.get("confirmed_hit", np.zeros_like(done)),
+        dtype=np.float64,
+    )
+    physical_contact_edge_events = np.asarray(
+        host_metrics.get("physical_contact_edge", np.zeros_like(done)),
+        dtype=np.float64,
+    )
+    launch_clearance_crossing_events = np.asarray(
+        host_metrics.get("launch_clearance_crossing", np.zeros_like(done)),
+        dtype=np.float64,
+    )
+    low_survival_launch_events = np.asarray(
+        host_metrics.get("low_survival_launch", np.zeros_like(done)),
+        dtype=np.float64,
+    )
+    subfloor_launch_events = np.asarray(
+        host_metrics.get("subfloor_launch", np.zeros_like(done)),
+        dtype=np.float64,
+    )
+    failed_hit_events = np.asarray(
+        host_metrics.get("failed_hit", np.zeros_like(done)),
+        dtype=np.float64,
+    )
+    ignored_fast_hit_events = np.asarray(
+        host_metrics.get("ignored_fast_hit", np.zeros_like(done)),
+        dtype=np.float64,
+    )
+    confirmed_hit_event_count = float(confirmed_hit_events.sum())
+    physical_contact_edge_event_count = float(physical_contact_edge_events.sum())
+    launch_clearance_crossing_event_count = float(
+        launch_clearance_crossing_events.sum()
+    )
+    low_survival_launch_event_count = float(low_survival_launch_events.sum())
+    subfloor_launch_event_count = float(subfloor_launch_events.sum())
+    failed_hit_event_count = float(failed_hit_events.sum())
+    ignored_fast_hit_event_count = float(ignored_fast_hit_events.sum())
+    ignored_fast_hit_fraction = (
+        ignored_fast_hit_event_count / confirmed_hit_event_count
+        if confirmed_hit_event_count > 0.0
+        else float("nan")
+    )
+    metrics["hit_credit/confirmed_events"] = confirmed_hit_event_count
+    metrics["hit_credit/physical_contact_edges"] = physical_contact_edge_event_count
+    metrics["hit_credit/launch_clearance_crossings"] = (
+        launch_clearance_crossing_event_count
+    )
+    metrics["hit_credit/low_survival_launches"] = low_survival_launch_event_count
+    metrics["hit_credit/subfloor_launches"] = subfloor_launch_event_count
+    effective_hit_event_count = (
+        confirmed_hit_event_count + low_survival_launch_event_count
+    )
+    metrics["hit_credit/effective_events"] = effective_hit_event_count
+    metrics["hit_credit/quality_fraction_of_effective"] = (
+        confirmed_hit_event_count / effective_hit_event_count
+        if effective_hit_event_count > 0.0
+        else float("nan")
+    )
+    metrics["hit_credit/failed_events"] = failed_hit_event_count
+    metrics["hit_credit/confirmation_fraction"] = (
+        confirmed_hit_event_count / physical_contact_edge_event_count
+        if physical_contact_edge_event_count > 0.0
+        else float("nan")
+    )
+    metrics["hit_credit/ignored_fast_events"] = ignored_fast_hit_event_count
+    metrics["hit_credit/ignored_fast_fraction"] = ignored_fast_hit_fraction
+    metrics["hit_credit/counted_fraction"] = (
+        1.0 - ignored_fast_hit_fraction
+        if np.isfinite(ignored_fast_hit_fraction)
+        else float("nan")
+    )
+
     hit_events = np.asarray(host_metrics.get("hit_camera_event", np.zeros_like(done)), dtype=np.float64)
     visible_events = np.asarray(
         host_metrics.get("hit_camera_visible_event", np.zeros_like(done)),
@@ -16554,6 +26354,183 @@ def mean_rollout_metrics(transitions) -> dict[str, float]:
         if hit_event_count > 0.0
         else float("nan")
     )
+    hit_vxy_sq_sum = np.asarray(
+        host_metrics.get("hit_vxy_sq_sum", np.zeros_like(done)),
+        dtype=np.float64,
+    )
+    metrics["rms_hit_vxy"] = (
+        float(np.sqrt(hit_vxy_sq_sum.sum() / hit_event_count))
+        if hit_event_count > 0.0
+        else float("nan")
+    )
+    hit_vxy_zero_score_sum = np.asarray(
+        host_metrics.get("hit_vxy_zero_score_sum", np.zeros_like(done)),
+        dtype=np.float64,
+    )
+    metrics["mean_hit_vxy_zero_score"] = (
+        float(hit_vxy_zero_score_sum.sum() / hit_event_count)
+        if hit_event_count > 0.0
+        else float("nan")
+    )
+    hit_racket_vxy_sum = np.asarray(
+        host_metrics.get("hit_racket_vxy_sum", np.zeros_like(done)),
+        dtype=np.float64,
+    )
+    hit_racket_vxy_sq_sum = np.asarray(
+        host_metrics.get("hit_racket_vxy_sq_sum", np.zeros_like(done)),
+        dtype=np.float64,
+    )
+    metrics["mean_hit_racket_vxy"] = (
+        float(hit_racket_vxy_sum.sum() / hit_event_count)
+        if hit_event_count > 0.0
+        else 0.0
+    )
+    metrics["rms_hit_racket_vxy"] = (
+        float(np.sqrt(hit_racket_vxy_sq_sum.sum() / hit_event_count))
+        if hit_event_count > 0.0
+        else 0.0
+    )
+    # Steady-state-only RMS: scored over hits at/after the steady hit index so
+    # early recovery swings do not inflate the advance gate. Reported as 0.0
+    # when no steady hits occurred; the gate additionally requires
+    # steady_hit_events >= STEADY_HIT_MIN_EVENTS before it trusts this value.
+    steady_hit_events = np.asarray(
+        host_metrics.get("steady_hit_events", np.zeros_like(done)),
+        dtype=np.float64,
+    )
+    steady_hit_racket_vxy_sq_sum = np.asarray(
+        host_metrics.get("steady_hit_racket_vxy_sq_sum", np.zeros_like(done)),
+        dtype=np.float64,
+    )
+    steady_hit_event_count = float(steady_hit_events.sum())
+    metrics["steady_hit_events"] = steady_hit_event_count
+    metrics["rms_steady_hit_racket_vxy"] = (
+        float(np.sqrt(steady_hit_racket_vxy_sq_sum.sum() / steady_hit_event_count))
+        if steady_hit_event_count > 0.0
+        else 0.0
+    )
+    rollout_hit_count = np.asarray(
+        host_metrics.get("hit_count", np.zeros_like(done)), dtype=np.float64
+    )
+    rollout_hit_event = np.asarray(
+        host_metrics.get("hit_event_count", np.zeros_like(done)), dtype=np.float64
+    ) > 0.5
+    for prefix, phase_mask in (
+        ("first_hit", rollout_hit_event & (rollout_hit_count < 1.5)),
+        ("recurrent_hit", rollout_hit_event & (rollout_hit_count >= 1.5)),
+        # ``recurrent_hit`` mixes the post-spawn recentering transient (hits 2-3,
+        # racket vxy ~0.197) with the steady cycle (hits 4+, ~0.109), so its RMS
+        # is dominated by whichever population the rollout happens to contain.
+        # ``steady_hit`` isolates the population the lateral-quality gate is
+        # actually meant to constrain.
+        ("steady_hit", rollout_hit_event & (rollout_hit_count >= STEADY_HIT_MIN_COUNT - 0.5)),
+    ):
+        event_count = float(phase_mask.sum())
+        racket_values = np.where(phase_mask, hit_racket_vxy_sum, 0.0)
+        racket_sq_values = np.where(phase_mask, hit_racket_vxy_sq_sum, 0.0)
+        ball_values = np.where(phase_mask, hit_vxy_sum, 0.0)
+        racket_sum = float(racket_values.sum())
+        racket_sq_sum = float(racket_sq_values.sum())
+        ball_sum = float(ball_values.sum())
+        metrics[f"{prefix}_events"] = event_count
+        metrics[f"mean_{prefix}_racket_vxy"] = (
+            racket_sum / event_count if event_count > 0.0 else 0.0
+        )
+        metrics[f"rms_{prefix}_racket_vxy"] = (
+            float(np.sqrt(racket_sq_sum / event_count))
+            if event_count > 0.0
+            else 0.0
+        )
+        metrics[f"mean_{prefix}_ball_vxy"] = (
+            ball_sum / event_count if event_count > 0.0 else 0.0
+        )
+        ball_sq_values = np.where(phase_mask, hit_vxy_sq_sum, 0.0)
+        ball_sq_sum = float(ball_sq_values.sum())
+        metrics[f"rms_{prefix}_ball_vxy"] = (
+            float(np.sqrt(ball_sq_sum / event_count))
+            if event_count > 0.0
+            else 0.0
+        )
+    for ordinal_name, ordinal_mask in (
+        ("hit1", rollout_hit_event & (rollout_hit_count < 1.5)),
+        (
+            "hit2",
+            rollout_hit_event
+            & (rollout_hit_count >= 1.5)
+            & (rollout_hit_count < 2.5),
+        ),
+        (
+            "hit3",
+            rollout_hit_event
+            & (rollout_hit_count >= 2.5)
+            & (rollout_hit_count < 3.5),
+        ),
+        ("hit4plus", rollout_hit_event & (rollout_hit_count >= 3.5)),
+    ):
+        ordinal_count = float(ordinal_mask.sum())
+        metrics[f"{ordinal_name}_events"] = ordinal_count
+        metrics[f"mean_{ordinal_name}_racket_vxy"] = (
+            float(np.where(ordinal_mask, hit_racket_vxy_sum, 0.0).sum())
+            / ordinal_count
+            if ordinal_count > 0.0
+            else 0.0
+        )
+        metrics[f"mean_{ordinal_name}_ball_vxy"] = (
+            float(np.where(ordinal_mask, hit_vxy_sum, 0.0).sum())
+            / ordinal_count
+            if ordinal_count > 0.0
+            else 0.0
+        )
+    cycle_eligible = np.asarray(
+        host_metrics.get("hit_cycle_eligible", np.zeros_like(done)),
+        dtype=np.float64,
+    )
+    cycle_event_count = float(cycle_eligible.sum())
+    for source_name, result_name in (
+        ("hit_cycle_racket_xy_path_excess_m", "mean_hit_cycle_racket_xy_path_excess_m"),
+        ("hit_cycle_racket_xy_area_m2", "mean_hit_cycle_racket_xy_area_m2"),
+    ):
+        values = np.asarray(
+            host_metrics.get(source_name, np.zeros_like(done)),
+            dtype=np.float64,
+        )
+        metrics[result_name] = (
+            float(values.sum() / cycle_event_count)
+            if cycle_event_count > 0.0
+            else 0.0
+        )
+    cycle_motion_active = np.asarray(
+        host_metrics.get("racket_cycle_motion_active", np.zeros_like(done)),
+        dtype=np.float64,
+    )
+    cycle_motion_count = float(cycle_motion_active.sum())
+    racket_cycle_vxy = np.asarray(
+        host_metrics.get("racket_cycle_vxy_m_s", np.zeros_like(done)),
+        dtype=np.float64,
+    )
+    metrics["mean_racket_cycle_vxy"] = (
+        float(racket_cycle_vxy.sum() / cycle_motion_count)
+        if cycle_motion_count > 0.0
+        else 0.0
+    )
+    hit_ball_z_sum = np.asarray(
+        host_metrics.get("hit_ball_z_sum", np.zeros_like(done)),
+        dtype=np.float64,
+    )
+    hit_ball_z_over_limit = np.asarray(
+        host_metrics.get("hit_ball_z_over_limit_event", np.zeros_like(done)),
+        dtype=np.float64,
+    )
+    metrics["mean_hit_ball_z"] = (
+        float(hit_ball_z_sum.sum() / hit_event_count)
+        if hit_event_count > 0.0
+        else float("nan")
+    )
+    metrics["hit_ball_z_over_limit_rate"] = (
+        float(hit_ball_z_over_limit.sum() / hit_event_count)
+        if hit_event_count > 0.0
+        else float("nan")
+    )
     hit_next_contact_anchor_err_sum = np.asarray(
         host_metrics.get("hit_next_contact_anchor_err_sum", np.zeros_like(done)),
         dtype=np.float64,
@@ -16561,6 +26538,60 @@ def mean_rollout_metrics(transitions) -> dict[str, float]:
     metrics["mean_hit_next_contact_anchor_err"] = (
         float(hit_next_contact_anchor_err_sum.sum() / hit_event_count)
         if hit_event_count > 0.0
+        else float("nan")
+    )
+    adaptive_velocity_error_sum = np.asarray(
+        host_metrics.get(
+            "hit_adaptive_reflected_velocity_error_sum",
+            np.zeros_like(done),
+        ),
+        dtype=np.float64,
+    )
+    adaptive_velocity_target_vxy_sum = np.asarray(
+        host_metrics.get(
+            "hit_adaptive_reflected_velocity_target_vxy_sum",
+            np.zeros_like(done),
+        ),
+        dtype=np.float64,
+    )
+    metrics["mean_hit_adaptive_reflected_velocity_error"] = (
+        float(adaptive_velocity_error_sum.sum() / hit_event_count)
+        if hit_event_count > 0.0
+        else float("nan")
+    )
+    metrics["mean_hit_adaptive_reflected_velocity_target_vxy"] = (
+        float(adaptive_velocity_target_vxy_sum.sum() / hit_event_count)
+        if hit_event_count > 0.0
+        else float("nan")
+    )
+    posterior_contact_events = np.asarray(
+        host_metrics.get("hit_posterior_contact_event", np.zeros_like(done)),
+        dtype=np.float64,
+    )
+    posterior_contact_count = float(posterior_contact_events.sum())
+    posterior_contact_anchor_err_sum = np.asarray(
+        host_metrics.get(
+            "hit_posterior_contact_anchor_err_sum",
+            np.zeros_like(done),
+        ),
+        dtype=np.float64,
+    )
+    contact_anchor_contraction_sum = np.asarray(
+        host_metrics.get(
+            "hit_contact_anchor_contraction_sum",
+            np.zeros_like(done),
+        ),
+        dtype=np.float64,
+    )
+    metrics["posterior_contact_events"] = posterior_contact_count
+    metrics["mean_hit_posterior_contact_anchor_err"] = (
+        float(posterior_contact_anchor_err_sum.sum() / posterior_contact_count)
+        if posterior_contact_count > 0.0
+        else float("nan")
+    )
+    metrics["mean_hit_contact_anchor_contraction"] = (
+        float(contact_anchor_contraction_sum.sum() / posterior_contact_count)
+        if posterior_contact_count > 0.0
         else float("nan")
     )
     return metrics
@@ -16693,15 +26724,80 @@ def convergence_status(
     recent_hit_camera_lower_band_rate = _recent_mean(recent, "hit_camera_lower_band_rate")
     recent_mean_hit_camera_v_frac = _recent_mean(recent, "mean_hit_camera_v_frac")
     recent_mean_hit_vxy = _recent_mean(recent, "mean_hit_vxy")
+    recent_rms_hit_vxy = _recent_mean(recent, "rms_hit_vxy")
+    recent_mean_hit_racket_vxy = _recent_mean(recent, "mean_hit_racket_vxy")
+    recent_rms_hit_racket_vxy = _recent_mean(recent, "rms_hit_racket_vxy")
+    recent_mean_first_hit_ball_vxy = _recent_mean(recent, "mean_first_hit_ball_vxy")
+    recent_rms_first_hit_ball_vxy = _recent_mean(recent, "rms_first_hit_ball_vxy")
+    recent_mean_recurrent_hit_racket_vxy = _recent_mean(
+        recent, "mean_recurrent_hit_racket_vxy"
+    )
+    recent_rms_recurrent_hit_racket_vxy = _recent_mean(
+        recent, "rms_recurrent_hit_racket_vxy"
+    )
+    recent_rms_steady_hit_racket_vxy = _recent_mean(
+        recent, "rms_steady_hit_racket_vxy"
+    )
+    # Phase-mask RMS metrics report 0.0 (not NaN) when the phase population is
+    # empty, so a policy with no steady-regime hits would score a perfect 0.0.
+    # Require a non-trivial steady population before trusting the gate.
+    recent_steady_hit_events = _recent_mean(recent, "steady_hit_events")
+    recent_hit_cycle_racket_xy_path_excess_m = _recent_mean(
+        recent, "mean_hit_cycle_racket_xy_path_excess_m"
+    )
+    recent_hit_cycle_racket_xy_area_m2 = _recent_mean(
+        recent, "mean_hit_cycle_racket_xy_area_m2"
+    )
+    recent_mean_racket_cycle_vxy = _recent_mean(
+        recent, "mean_racket_cycle_vxy"
+    )
+    recent_stationary_racket_vxy_m_s = _recent_mean(
+        recent, "stationary_racket_vxy_m_s"
+    )
+    recent_stationary_racket_xy_error_m = _recent_mean(
+        recent, "stationary_racket_xy_error_m"
+    )
+    recent_mean_hit_ball_z = _recent_mean(recent, "mean_hit_ball_z")
+    recent_hit_ball_z_over_limit_rate = _recent_mean(
+        recent,
+        "hit_ball_z_over_limit_rate",
+    )
     recent_mean_hit_next_contact_anchor_err = _recent_mean(
         recent,
         "mean_hit_next_contact_anchor_err",
+    )
+    recent_mean_hit_posterior_contact_anchor_err = _recent_mean(
+        recent,
+        "mean_hit_posterior_contact_anchor_err",
+    )
+    recent_mean_hit_contact_anchor_contraction = _recent_mean(
+        recent,
+        "mean_hit_contact_anchor_contraction",
     )
     recent_racket_up_cos = _recent_mean(recent, "racket_up_cos")
     recent_hit_racket_angular_speed_rad_s = _recent_event_conditional_mean(
         recent,
         "hit_racket_angular_speed_rad_s",
         "new_hit",
+    )
+    recent_hit_racket_full_angular_speed_rad_s = _recent_event_conditional_mean(
+        recent,
+        "hit_racket_full_angular_speed_rad_s",
+        "new_hit",
+    )
+    recent_hit_racket_local_y_angular_speed_rad_s = (
+        _recent_event_conditional_mean(
+            recent,
+            "hit_racket_local_y_angular_speed_rad_s",
+            "new_hit",
+        )
+    )
+    recent_hit_racket_local_xz_angular_speed_rad_s = (
+        _recent_event_conditional_mean(
+            recent,
+            "hit_racket_local_xz_angular_speed_rad_s",
+            "new_hit",
+        )
     )
     recent_arm_posture_error_deg = np.degrees(
         _recent_mean(recent, "arm_posture_error_max_rad")
@@ -16810,12 +26906,148 @@ def convergence_status(
             and recent_hit_camera_lower_band_rate >= float(stage.target_hit_camera_lower_band_rate)
         )
     )
-    hit_vxy_ok = (
+    first_hit_vxy_ok = (
+        True
+        if stage.max_recent_mean_first_hit_ball_vxy is None
+        else bool(
+            np.isfinite(recent_mean_first_hit_ball_vxy)
+            and recent_mean_first_hit_ball_vxy
+            <= float(stage.max_recent_mean_first_hit_ball_vxy)
+        )
+    )
+    aggregate_hit_vxy_ok = (
         True
         if stage.max_recent_mean_hit_vxy is None
         else bool(
             np.isfinite(recent_mean_hit_vxy)
             and recent_mean_hit_vxy <= float(stage.max_recent_mean_hit_vxy)
+        )
+    )
+    if stage.max_recent_mean_first_hit_ball_vxy is None:
+        hit_vxy_ok = aggregate_hit_vxy_ok
+    elif bool(stage.require_aggregate_hit_vxy_with_first_hit):
+        hit_vxy_ok = first_hit_vxy_ok and aggregate_hit_vxy_ok
+    else:
+        hit_vxy_ok = first_hit_vxy_ok
+
+    first_hit_vxy_rms_ok = (
+        True
+        if stage.max_recent_rms_first_hit_ball_vxy is None
+        else bool(
+            np.isfinite(recent_rms_first_hit_ball_vxy)
+            and recent_rms_first_hit_ball_vxy
+            <= float(stage.max_recent_rms_first_hit_ball_vxy)
+        )
+    )
+    aggregate_hit_vxy_rms_ok = (
+        True
+        if stage.max_recent_rms_hit_vxy is None
+        else bool(
+            np.isfinite(recent_rms_hit_vxy)
+            and recent_rms_hit_vxy <= float(stage.max_recent_rms_hit_vxy)
+        )
+    )
+    if stage.max_recent_rms_first_hit_ball_vxy is None:
+        hit_vxy_rms_ok = aggregate_hit_vxy_rms_ok
+    elif bool(stage.require_aggregate_hit_vxy_with_first_hit):
+        hit_vxy_rms_ok = first_hit_vxy_rms_ok and aggregate_hit_vxy_rms_ok
+    else:
+        hit_vxy_rms_ok = first_hit_vxy_rms_ok
+    if stage.max_recent_mean_recurrent_hit_racket_vxy is not None:
+        hit_racket_vxy_ok = bool(
+            np.isfinite(recent_mean_recurrent_hit_racket_vxy)
+            and recent_mean_recurrent_hit_racket_vxy
+            <= float(stage.max_recent_mean_recurrent_hit_racket_vxy)
+        )
+    elif stage.max_recent_mean_hit_racket_vxy is None:
+        hit_racket_vxy_ok = True
+    else:
+        hit_racket_vxy_ok = bool(
+            np.isfinite(recent_mean_hit_racket_vxy)
+            and recent_mean_hit_racket_vxy
+            <= float(stage.max_recent_mean_hit_racket_vxy)
+        )
+    if stage.max_recent_rms_steady_hit_racket_vxy is not None:
+        hit_racket_vxy_rms_ok = bool(
+            np.isfinite(recent_rms_steady_hit_racket_vxy)
+            and recent_steady_hit_events >= STEADY_HIT_MIN_EVENTS
+            and recent_rms_steady_hit_racket_vxy
+            <= float(stage.max_recent_rms_steady_hit_racket_vxy)
+        )
+    elif stage.max_recent_rms_recurrent_hit_racket_vxy is not None:
+        hit_racket_vxy_rms_ok = bool(
+            np.isfinite(recent_rms_recurrent_hit_racket_vxy)
+            and recent_rms_recurrent_hit_racket_vxy
+            <= float(stage.max_recent_rms_recurrent_hit_racket_vxy)
+        )
+    elif stage.max_recent_rms_hit_racket_vxy is None:
+        hit_racket_vxy_rms_ok = True
+    else:
+        hit_racket_vxy_rms_ok = bool(
+            np.isfinite(recent_rms_hit_racket_vxy)
+            and recent_rms_hit_racket_vxy
+            <= float(stage.max_recent_rms_hit_racket_vxy)
+        )
+    hit_cycle_racket_xy_path_ok = (
+        True
+        if stage.max_recent_hit_cycle_racket_xy_path_excess_m is None
+        else bool(
+            np.isfinite(recent_hit_cycle_racket_xy_path_excess_m)
+            and recent_hit_cycle_racket_xy_path_excess_m
+            <= float(stage.max_recent_hit_cycle_racket_xy_path_excess_m)
+        )
+    )
+    hit_cycle_racket_xy_area_ok = (
+        True
+        if stage.max_recent_hit_cycle_racket_xy_area_m2 is None
+        else bool(
+            np.isfinite(recent_hit_cycle_racket_xy_area_m2)
+            and recent_hit_cycle_racket_xy_area_m2
+            <= float(stage.max_recent_hit_cycle_racket_xy_area_m2)
+        )
+    )
+    racket_cycle_vxy_ok = (
+        True
+        if stage.max_recent_mean_racket_cycle_vxy is None
+        else bool(
+            np.isfinite(recent_mean_racket_cycle_vxy)
+            and recent_mean_racket_cycle_vxy
+            <= float(stage.max_recent_mean_racket_cycle_vxy)
+        )
+    )
+    stationary_racket_vxy_ok = (
+        True
+        if stage.max_recent_stationary_racket_vxy_m_s is None
+        else bool(
+            np.isfinite(recent_stationary_racket_vxy_m_s)
+            and recent_stationary_racket_vxy_m_s
+            <= float(stage.max_recent_stationary_racket_vxy_m_s)
+        )
+    )
+    stationary_racket_xy_error_ok = (
+        True
+        if stage.max_recent_stationary_racket_xy_error_m is None
+        else bool(
+            np.isfinite(recent_stationary_racket_xy_error_m)
+            and recent_stationary_racket_xy_error_m
+            <= float(stage.max_recent_stationary_racket_xy_error_m)
+        )
+    )
+    hit_ball_z_ok = (
+        True
+        if stage.max_recent_mean_hit_ball_z is None
+        else bool(
+            np.isfinite(recent_mean_hit_ball_z)
+            and recent_mean_hit_ball_z <= float(stage.max_recent_mean_hit_ball_z)
+        )
+    )
+    hit_ball_z_over_limit_ok = (
+        True
+        if stage.max_recent_hit_ball_z_over_limit_rate is None
+        else bool(
+            np.isfinite(recent_hit_ball_z_over_limit_rate)
+            and recent_hit_ball_z_over_limit_rate
+            <= float(stage.max_recent_hit_ball_z_over_limit_rate)
         )
     )
     hit_next_contact_anchor_ok = (
@@ -16825,6 +27057,24 @@ def convergence_status(
             np.isfinite(recent_mean_hit_next_contact_anchor_err)
             and recent_mean_hit_next_contact_anchor_err
             <= float(stage.max_recent_hit_next_contact_anchor_err)
+        )
+    )
+    hit_posterior_contact_anchor_ok = (
+        True
+        if stage.max_recent_mean_hit_posterior_contact_anchor_err is None
+        else bool(
+            np.isfinite(recent_mean_hit_posterior_contact_anchor_err)
+            and recent_mean_hit_posterior_contact_anchor_err
+            <= float(stage.max_recent_mean_hit_posterior_contact_anchor_err)
+        )
+    )
+    hit_contact_anchor_contraction_ok = (
+        True
+        if stage.min_recent_mean_hit_contact_anchor_contraction is None
+        else bool(
+            np.isfinite(recent_mean_hit_contact_anchor_contraction)
+            and recent_mean_hit_contact_anchor_contraction
+            >= float(stage.min_recent_mean_hit_contact_anchor_contraction)
         )
     )
     hit_camera_v_frac_ok = (
@@ -16837,7 +27087,14 @@ def convergence_status(
         )
     )
     hit_recoverability_ok = bool(
-        hit_vxy_ok and hit_next_contact_anchor_ok and hit_camera_v_frac_ok
+        hit_vxy_ok
+        and hit_vxy_rms_ok
+        and hit_ball_z_ok
+        and hit_ball_z_over_limit_ok
+        and hit_next_contact_anchor_ok
+        and hit_posterior_contact_anchor_ok
+        and hit_contact_anchor_contraction_ok
+        and hit_camera_v_frac_ok
     )
     # The intermediate GPU0 tail uses the exact next-contact metric as a
     # finite diagnostic, while the unchanged stochastic next-stage probe is
@@ -16893,6 +27150,13 @@ def convergence_status(
     )
     behavior_quality_ok = bool(
         hit_racket_angular_speed_ok
+        and hit_racket_vxy_ok
+        and hit_racket_vxy_rms_ok
+        and hit_cycle_racket_xy_path_ok
+        and hit_cycle_racket_xy_area_ok
+        and racket_cycle_vxy_ok
+        and stationary_racket_vxy_ok
+        and stationary_racket_xy_error_ok
         and arm_posture_error_ok
         and phase_teacher_q_error_ok
     )
@@ -17118,10 +27382,59 @@ def convergence_status(
         "convergence/recent_hit_camera_lower_band_rate": recent_hit_camera_lower_band_rate,
         "convergence/recent_mean_hit_camera_v_frac": recent_mean_hit_camera_v_frac,
         "convergence/recent_mean_hit_vxy": recent_mean_hit_vxy,
+        "convergence/recent_rms_hit_vxy": recent_rms_hit_vxy,
+        "convergence/recent_mean_hit_racket_vxy": recent_mean_hit_racket_vxy,
+        "convergence/recent_rms_hit_racket_vxy": recent_rms_hit_racket_vxy,
+        "convergence/recent_mean_first_hit_ball_vxy": recent_mean_first_hit_ball_vxy,
+        "convergence/recent_rms_first_hit_ball_vxy": recent_rms_first_hit_ball_vxy,
+        "convergence/recent_mean_recurrent_hit_racket_vxy": (
+            recent_mean_recurrent_hit_racket_vxy
+        ),
+        "convergence/recent_rms_recurrent_hit_racket_vxy": (
+            recent_rms_recurrent_hit_racket_vxy
+        ),
+        "convergence/recent_rms_steady_hit_racket_vxy": (
+            recent_rms_steady_hit_racket_vxy
+        ),
+        "convergence/recent_steady_hit_events": recent_steady_hit_events,
+        "convergence/recent_hit_cycle_racket_xy_path_excess_m": (
+            recent_hit_cycle_racket_xy_path_excess_m
+        ),
+        "convergence/recent_hit_cycle_racket_xy_area_m2": (
+            recent_hit_cycle_racket_xy_area_m2
+        ),
+        "convergence/recent_mean_racket_cycle_vxy": (
+            recent_mean_racket_cycle_vxy
+        ),
+        "convergence/recent_stationary_racket_vxy_m_s": (
+            recent_stationary_racket_vxy_m_s
+        ),
+        "convergence/recent_stationary_racket_xy_error_m": (
+            recent_stationary_racket_xy_error_m
+        ),
+        "convergence/recent_mean_hit_ball_z": recent_mean_hit_ball_z,
+        "convergence/recent_hit_ball_z_over_limit_rate": (
+            recent_hit_ball_z_over_limit_rate
+        ),
         "convergence/recent_mean_hit_next_contact_anchor_err": recent_mean_hit_next_contact_anchor_err,
+        "convergence/recent_mean_hit_posterior_contact_anchor_err": (
+            recent_mean_hit_posterior_contact_anchor_err
+        ),
+        "convergence/recent_mean_hit_contact_anchor_contraction": (
+            recent_mean_hit_contact_anchor_contraction
+        ),
         "convergence/recent_racket_up_cos": recent_racket_up_cos,
         "convergence/recent_hit_racket_angular_speed_rad_s": (
             recent_hit_racket_angular_speed_rad_s
+        ),
+        "convergence/recent_hit_racket_full_angular_speed_rad_s": (
+            recent_hit_racket_full_angular_speed_rad_s
+        ),
+        "convergence/recent_hit_racket_local_y_angular_speed_rad_s": (
+            recent_hit_racket_local_y_angular_speed_rad_s
+        ),
+        "convergence/recent_hit_racket_local_xz_angular_speed_rad_s": (
+            recent_hit_racket_local_xz_angular_speed_rad_s
         ),
         "convergence/recent_arm_posture_error_deg": recent_arm_posture_error_deg,
         "convergence/recent_phase_teacher_q_norm_error": (
@@ -17187,9 +27500,94 @@ def convergence_status(
             if stage.max_recent_mean_hit_vxy is not None
             else 0.0
         ),
+        "convergence/max_recent_rms_hit_vxy": (
+            float(stage.max_recent_rms_hit_vxy)
+            if stage.max_recent_rms_hit_vxy is not None
+            else 0.0
+        ),
+        "convergence/max_recent_mean_hit_racket_vxy": (
+            float(stage.max_recent_mean_hit_racket_vxy)
+            if stage.max_recent_mean_hit_racket_vxy is not None
+            else 0.0
+        ),
+        "convergence/max_recent_rms_hit_racket_vxy": (
+            float(stage.max_recent_rms_hit_racket_vxy)
+            if stage.max_recent_rms_hit_racket_vxy is not None
+            else 0.0
+        ),
+        "convergence/max_recent_mean_first_hit_ball_vxy": (
+            float(stage.max_recent_mean_first_hit_ball_vxy)
+            if stage.max_recent_mean_first_hit_ball_vxy is not None
+            else 0.0
+        ),
+        "convergence/max_recent_rms_first_hit_ball_vxy": (
+            float(stage.max_recent_rms_first_hit_ball_vxy)
+            if stage.max_recent_rms_first_hit_ball_vxy is not None
+            else 0.0
+        ),
+        "convergence/max_recent_mean_recurrent_hit_racket_vxy": (
+            float(stage.max_recent_mean_recurrent_hit_racket_vxy)
+            if stage.max_recent_mean_recurrent_hit_racket_vxy is not None
+            else 0.0
+        ),
+        "convergence/max_recent_rms_steady_hit_racket_vxy": (
+            float(stage.max_recent_rms_steady_hit_racket_vxy)
+            if stage.max_recent_rms_steady_hit_racket_vxy is not None
+            else 0.0
+        ),
+        "convergence/max_recent_rms_recurrent_hit_racket_vxy": (
+            float(stage.max_recent_rms_recurrent_hit_racket_vxy)
+            if stage.max_recent_rms_recurrent_hit_racket_vxy is not None
+            else 0.0
+        ),
+        "convergence/max_recent_hit_cycle_racket_xy_path_excess_m": (
+            float(stage.max_recent_hit_cycle_racket_xy_path_excess_m)
+            if stage.max_recent_hit_cycle_racket_xy_path_excess_m is not None
+            else 0.0
+        ),
+        "convergence/max_recent_hit_cycle_racket_xy_area_m2": (
+            float(stage.max_recent_hit_cycle_racket_xy_area_m2)
+            if stage.max_recent_hit_cycle_racket_xy_area_m2 is not None
+            else 0.0
+        ),
+        "convergence/max_recent_mean_racket_cycle_vxy": (
+            float(stage.max_recent_mean_racket_cycle_vxy)
+            if stage.max_recent_mean_racket_cycle_vxy is not None
+            else 0.0
+        ),
+        "convergence/max_recent_stationary_racket_vxy_m_s": (
+            float(stage.max_recent_stationary_racket_vxy_m_s)
+            if stage.max_recent_stationary_racket_vxy_m_s is not None
+            else 0.0
+        ),
+        "convergence/max_recent_stationary_racket_xy_error_m": (
+            float(stage.max_recent_stationary_racket_xy_error_m)
+            if stage.max_recent_stationary_racket_xy_error_m is not None
+            else 0.0
+        ),
+        "convergence/max_recent_mean_hit_ball_z": (
+            float(stage.max_recent_mean_hit_ball_z)
+            if stage.max_recent_mean_hit_ball_z is not None
+            else 0.0
+        ),
+        "convergence/max_recent_hit_ball_z_over_limit_rate": (
+            float(stage.max_recent_hit_ball_z_over_limit_rate)
+            if stage.max_recent_hit_ball_z_over_limit_rate is not None
+            else 0.0
+        ),
         "convergence/max_recent_hit_next_contact_anchor_err": (
             float(stage.max_recent_hit_next_contact_anchor_err)
             if stage.max_recent_hit_next_contact_anchor_err is not None
+            else 0.0
+        ),
+        "convergence/max_recent_mean_hit_posterior_contact_anchor_err": (
+            float(stage.max_recent_mean_hit_posterior_contact_anchor_err)
+            if stage.max_recent_mean_hit_posterior_contact_anchor_err is not None
+            else 0.0
+        ),
+        "convergence/min_recent_mean_hit_contact_anchor_contraction": (
+            float(stage.min_recent_mean_hit_contact_anchor_contraction)
+            if stage.min_recent_mean_hit_contact_anchor_contraction is not None
             else 0.0
         ),
         "convergence/max_recent_mean_hit_camera_v_frac": (
@@ -17248,7 +27646,29 @@ def convergence_status(
         "convergence/hit_camera_visible_ok": float(hit_camera_visible_ok),
         "convergence/hit_camera_lower_band_ok": float(hit_camera_lower_band_ok),
         "convergence/hit_vxy_ok": float(hit_vxy_ok),
+        "convergence/hit_vxy_rms_ok": float(hit_vxy_rms_ok),
+        "convergence/hit_racket_vxy_ok": float(hit_racket_vxy_ok),
+        "convergence/hit_racket_vxy_rms_ok": float(hit_racket_vxy_rms_ok),
+        "convergence/hit_cycle_racket_xy_path_ok": float(
+            hit_cycle_racket_xy_path_ok
+        ),
+        "convergence/hit_cycle_racket_xy_area_ok": float(
+            hit_cycle_racket_xy_area_ok
+        ),
+        "convergence/racket_cycle_vxy_ok": float(racket_cycle_vxy_ok),
+        "convergence/stationary_racket_vxy_ok": float(stationary_racket_vxy_ok),
+        "convergence/stationary_racket_xy_error_ok": float(
+            stationary_racket_xy_error_ok
+        ),
+        "convergence/hit_ball_z_ok": float(hit_ball_z_ok),
+        "convergence/hit_ball_z_over_limit_ok": float(hit_ball_z_over_limit_ok),
         "convergence/hit_next_contact_anchor_ok": float(hit_next_contact_anchor_ok),
+        "convergence/hit_posterior_contact_anchor_ok": float(
+            hit_posterior_contact_anchor_ok
+        ),
+        "convergence/hit_contact_anchor_contraction_ok": float(
+            hit_contact_anchor_contraction_ok
+        ),
         "convergence/hit_camera_v_frac_ok": float(hit_camera_v_frac_ok),
         "convergence/hit_recoverability_ok": float(hit_recoverability_ok),
         "convergence/episode_truncation_ok": float(episode_truncation_ok),
@@ -17412,9 +27832,77 @@ def stage_best_score(row: dict[str, object], stage: CurriculumStage) -> float | 
         4.0,
     )
     score += _upper_gate_metric_score(
+        _finite_float(row, "convergence/recent_rms_hit_vxy"),
+        stage.max_recent_rms_hit_vxy,
+        6.0,
+    )
+    score += _upper_gate_metric_score(
+        _finite_float(row, "convergence/recent_mean_hit_vxy"),
+        stage.max_recent_mean_hit_vxy,
+        float(stage.best_checkpoint_mean_hit_vxy_weight),
+    )
+    score += _upper_gate_metric_score(
+        _finite_float(row, "convergence/recent_rms_hit_vxy"),
+        stage.max_recent_rms_hit_vxy,
+        float(stage.best_checkpoint_rms_hit_vxy_weight),
+    )
+    score += _upper_gate_metric_score(
+        _finite_float(row, "convergence/recent_mean_hit_racket_vxy"),
+        stage.max_recent_mean_hit_racket_vxy,
+        200.0,
+    )
+    score += _upper_gate_metric_score(
+        _finite_float(row, "convergence/recent_rms_hit_racket_vxy"),
+        stage.max_recent_rms_hit_racket_vxy,
+        150.0,
+    )
+    score += _upper_gate_metric_score(
+        _finite_float(
+            row, "convergence/recent_hit_cycle_racket_xy_path_excess_m"
+        ),
+        stage.max_recent_hit_cycle_racket_xy_path_excess_m,
+        300.0,
+    )
+    score += _upper_gate_metric_score(
+        _finite_float(row, "convergence/recent_hit_cycle_racket_xy_area_m2"),
+        stage.max_recent_hit_cycle_racket_xy_area_m2,
+        5000.0,
+    )
+    score += _upper_gate_metric_score(
+        _finite_float(row, "convergence/recent_mean_racket_cycle_vxy"),
+        stage.max_recent_mean_racket_cycle_vxy,
+        50.0,
+    )
+    score += _upper_gate_metric_score(
+        _finite_float(row, "convergence/recent_mean_hit_ball_z"),
+        stage.max_recent_mean_hit_ball_z,
+        5.0,
+    )
+    score += _upper_gate_metric_score(
+        _finite_float(row, "convergence/recent_hit_ball_z_over_limit_rate"),
+        stage.max_recent_hit_ball_z_over_limit_rate,
+        8.0,
+    )
+    score += _upper_gate_metric_score(
         _finite_float(row, "convergence/recent_mean_hit_next_contact_anchor_err"),
         stage.max_recent_hit_next_contact_anchor_err,
         8.0,
+    )
+    score += _upper_gate_metric_score(
+        _finite_float(
+            row,
+            "convergence/recent_mean_hit_posterior_contact_anchor_err",
+        ),
+        stage.max_recent_mean_hit_posterior_contact_anchor_err,
+        100.0,
+    )
+    score += _gate_metric_score(
+        _finite_float(
+            row,
+            "convergence/recent_mean_hit_contact_anchor_contraction",
+        ),
+        stage.min_recent_mean_hit_contact_anchor_contraction,
+        4.0,
     )
     score += _upper_gate_metric_score(
         _finite_float(row, "convergence/recent_mean_hit_camera_v_frac"),
@@ -17494,6 +27982,10 @@ def advance_validation_defaults(
         "target_episode_truncation_rate",
         "target_racket_up_cos",
         "max_mean_hit_vxy",
+        "max_mean_hit_racket_vxy",
+        "max_hit_cycle_racket_xy_path_excess_m",
+        "max_hit_cycle_racket_xy_area_m2",
+        "max_mean_racket_cycle_vxy",
         "max_mean_hit_camera_v_frac",
         "max_mean_hit_next_contact_anchor_err",
         "min_ball_obs_missing_refresh_rate",
@@ -17550,6 +28042,13 @@ def advance_validation_defaults(
         "hit_camera_lower_band_rate",
         "mean_hit_camera_v_frac",
         "mean_hit_vxy",
+        "rms_hit_vxy",
+        "mean_first_hit_ball_vxy",
+        "rms_first_hit_ball_vxy",
+        "mean_hit_racket_vxy",
+        "mean_hit_cycle_racket_xy_path_excess_m",
+        "mean_hit_cycle_racket_xy_area_m2",
+        "mean_racket_cycle_vxy",
         "mean_hit_contact_center_dist",
         "mean_hit_racket_up_cos",
         "mean_hit_apex_rel_height",
@@ -17590,6 +28089,13 @@ def advance_validation_defaults(
         "hit_camera_lower_band_ok",
         "hit_next_contact_anchor_ok",
         "hit_vxy_ok",
+        "hit_vxy_rms_ok",
+        "first_hit_vxy_ok",
+        "first_hit_vxy_rms_ok",
+        "hit_racket_vxy_ok",
+        "hit_cycle_racket_xy_path_ok",
+        "hit_cycle_racket_xy_area_ok",
+        "racket_cycle_vxy_ok",
         "hit_camera_v_frac_ok",
         "racket_up_cos_ok",
         "episode_truncation_ok",
@@ -17640,7 +28146,7 @@ def advance_validation_thresholds(
         target_camera_visible = float("nan")
         target_ball_view_in_bounds = float("nan")
         target_ball_view_z_ideal = float("nan")
-        target_hit1_rate = 0.50
+        target_hit1_rate = float(probe_stage.advance_collapse_target_hit1_rate)
         target_hit3_rate = float("nan")
         target_hit12_rate = float("nan")
         target_hit_camera_visible_rate = float("nan")
@@ -17649,6 +28155,13 @@ def advance_validation_thresholds(
         target_episode_truncation_rate = float("nan")
         target_racket_up_cos = float("nan")
         max_mean_hit_vxy = float("nan")
+        max_rms_hit_vxy = float("nan")
+        max_mean_first_hit_ball_vxy = float("nan")
+        max_rms_first_hit_ball_vxy = float("nan")
+        max_mean_hit_racket_vxy = float("nan")
+        max_hit_cycle_racket_xy_path_excess_m = float("nan")
+        max_hit_cycle_racket_xy_area_m2 = float("nan")
+        max_mean_racket_cycle_vxy = float("nan")
         max_mean_hit_camera_v_frac = float("nan")
         max_mean_hit_next_contact_anchor_err = float("nan")
         max_ball_obs_lost_rate = (
@@ -17703,10 +28216,52 @@ def advance_validation_thresholds(
             probe_stage.target_racket_up_cos,
             margin=0.015,
         )
+        motion_margin = (
+            0.0
+            if probe_stage.require_aggregate_hit_vxy_with_first_hit
+            else 0.05
+        )
         max_mean_hit_vxy = (
             float("nan")
             if probe_stage.max_recent_mean_hit_vxy is None
-            else float(probe_stage.max_recent_mean_hit_vxy) + 0.05
+            else float(probe_stage.max_recent_mean_hit_vxy) + motion_margin
+        )
+        max_rms_hit_vxy = (
+            float("nan")
+            if probe_stage.max_recent_rms_hit_vxy is None
+            else float(probe_stage.max_recent_rms_hit_vxy) + motion_margin
+        )
+        max_mean_first_hit_ball_vxy = (
+            float("nan")
+            if probe_stage.max_recent_mean_first_hit_ball_vxy is None
+            else float(probe_stage.max_recent_mean_first_hit_ball_vxy)
+        )
+        max_rms_first_hit_ball_vxy = (
+            float("nan")
+            if probe_stage.max_recent_rms_first_hit_ball_vxy is None
+            else float(probe_stage.max_recent_rms_first_hit_ball_vxy)
+        )
+        max_mean_hit_racket_vxy = (
+            float("nan")
+            if probe_stage.max_recent_mean_hit_racket_vxy is None
+            else float(probe_stage.max_recent_mean_hit_racket_vxy) + 0.030
+        )
+        max_hit_cycle_racket_xy_path_excess_m = (
+            float("nan")
+            if probe_stage.max_recent_hit_cycle_racket_xy_path_excess_m is None
+            else float(probe_stage.max_recent_hit_cycle_racket_xy_path_excess_m)
+            + 0.010
+        )
+        max_hit_cycle_racket_xy_area_m2 = (
+            float("nan")
+            if probe_stage.max_recent_hit_cycle_racket_xy_area_m2 is None
+            else float(probe_stage.max_recent_hit_cycle_racket_xy_area_m2)
+            + 0.00010
+        )
+        max_mean_racket_cycle_vxy = (
+            float("nan")
+            if probe_stage.max_recent_mean_racket_cycle_vxy is None
+            else float(probe_stage.max_recent_mean_racket_cycle_vxy) + 0.030
         )
         max_mean_hit_camera_v_frac = (
             float("nan")
@@ -17750,10 +28305,55 @@ def advance_validation_thresholds(
         target_min_hit_interval_s = float("nan")
         target_max_hit_interval_s = float("nan")
         min_ball_obs_missing_refresh_rate = float("nan")
+    if force_strict:
+        final_min_len_frac = getattr(
+            args,
+            "advance_eval_final_min_len_frac",
+            None,
+        )
+        final_min_ball_view = getattr(
+            args,
+            "advance_eval_final_min_ball_view_in_bounds",
+            None,
+        )
+
+        def require_unit_interval(name: str, value: float | None) -> float | None:
+            if value is None:
+                return None
+            numeric = float(value)
+            if not np.isfinite(numeric) or not 0.0 <= numeric <= 1.0:
+                raise ValueError(f"{name} must be finite and within [0, 1], got {value}")
+            return numeric
+
+        final_min_len_frac = require_unit_interval(
+            "--advance-eval-final-min-len-frac",
+            final_min_len_frac,
+        )
+        final_min_ball_view = require_unit_interval(
+            "--advance-eval-final-min-ball-view-in-bounds",
+            final_min_ball_view,
+        )
+        if final_min_len_frac is not None:
+            target_len_frac = max(target_len_frac, final_min_len_frac)
+        if final_min_ball_view is not None:
+            target_ball_view_in_bounds = max(
+                final_min_ball_view,
+                (
+                    target_ball_view_in_bounds
+                    if np.isfinite(target_ball_view_in_bounds)
+                    else 0.0
+                ),
+            )
+    min_mean_return = float(args.advance_eval_min_return)
+    if (
+        not force_strict
+        and probe_stage.advance_transfer_min_mean_return is not None
+    ):
+        min_mean_return = float(probe_stage.advance_transfer_min_mean_return)
     return {
         "target_mean_hits": target_hits,
         "target_mean_len_frac": target_len_frac,
-        "min_mean_return": float("nan") if collapse else float(args.advance_eval_min_return),
+        "min_mean_return": float("nan") if collapse else min_mean_return,
         "target_camera_visible": target_camera_visible,
         "min_camera_reward_dense": min_camera_reward,
         "target_ball_view_in_bounds": target_ball_view_in_bounds,
@@ -17769,6 +28369,15 @@ def advance_validation_thresholds(
         "target_episode_truncation_rate": target_episode_truncation_rate,
         "target_racket_up_cos": target_racket_up_cos,
         "max_mean_hit_vxy": max_mean_hit_vxy,
+        "max_rms_hit_vxy": max_rms_hit_vxy,
+        "max_mean_first_hit_ball_vxy": max_mean_first_hit_ball_vxy,
+        "max_rms_first_hit_ball_vxy": max_rms_first_hit_ball_vxy,
+        "max_mean_hit_racket_vxy": max_mean_hit_racket_vxy,
+        "max_hit_cycle_racket_xy_path_excess_m": (
+            max_hit_cycle_racket_xy_path_excess_m
+        ),
+        "max_hit_cycle_racket_xy_area_m2": max_hit_cycle_racket_xy_area_m2,
+        "max_mean_racket_cycle_vxy": max_mean_racket_cycle_vxy,
         "max_mean_hit_camera_v_frac": max_mean_hit_camera_v_frac,
         "max_mean_hit_next_contact_anchor_err": max_mean_hit_next_contact_anchor_err,
         "min_ball_obs_missing_refresh_rate": min_ball_obs_missing_refresh_rate,
@@ -17827,6 +28436,9 @@ def advance_validation_env_cfg(probe_stage: CurriculumStage) -> MjxJuggleConfig:
         probe_stage.cfg,
         ball_obs_noise_warmup_ratio=0.0,
         ball_obs_noise_ramp_ratio=0.0,
+        ball_obs_vel_xy_noise_min_scale=1.0,
+        ball_obs_vel_xy_noise_warmup_env_steps=0,
+        ball_obs_vel_xy_noise_ramp_env_steps=1,
         total_training_steps=1,
     )
 
@@ -17865,6 +28477,42 @@ def summarize_eval_outputs(
         if den <= 0.0:
             return float("nan")
         return float(np.asarray(numerator_arr, dtype=np.float64).sum()) / den
+
+    hit_events = np.asarray(
+        metrics.get("hit_event_count", np.zeros_like(hit_count)),
+        dtype=np.float64,
+    )
+    hit_vxy_sum = np.asarray(
+        metrics.get("hit_vxy_sum", np.zeros_like(hit_count)),
+        dtype=np.float64,
+    )
+    hit_vxy_sq_sum = np.asarray(
+        metrics.get("hit_vxy_sq_sum", np.zeros_like(hit_count)),
+        dtype=np.float64,
+    )
+    all_hit_count = float(hit_events.sum())
+    first_hit_mask = (hit_events > 0.0) & (hit_count < 1.5)
+    first_hit_count = float(first_hit_mask.sum())
+    eval_rms_hit_vxy = (
+        float(np.sqrt(hit_vxy_sq_sum.sum() / all_hit_count))
+        if all_hit_count > 0.0
+        else float("nan")
+    )
+    eval_mean_first_hit_ball_vxy = (
+        float(np.where(first_hit_mask, hit_vxy_sum, 0.0).sum() / first_hit_count)
+        if first_hit_count > 0.0
+        else float("nan")
+    )
+    eval_rms_first_hit_ball_vxy = (
+        float(
+            np.sqrt(
+                np.where(first_hit_mask, hit_vxy_sq_sum, 0.0).sum()
+                / first_hit_count
+            )
+        )
+        if first_hit_count > 0.0
+        else float("nan")
+    )
 
     mean_len = float(ep_len[done].mean()) if done_count > 0 else float("nan")
     hit_stats = {
@@ -17908,6 +28556,29 @@ def summarize_eval_outputs(
             "hit_vxy_sum",
             "hit_event_count",
         ),
+        "advance_eval/rms_hit_vxy": eval_rms_hit_vxy,
+        "advance_eval/mean_first_hit_ball_vxy": (
+            eval_mean_first_hit_ball_vxy
+        ),
+        "advance_eval/rms_first_hit_ball_vxy": (
+            eval_rms_first_hit_ball_vxy
+        ),
+        "advance_eval/mean_hit_racket_vxy": metric_ratio(
+            "hit_racket_vxy_sum",
+            "hit_event_count",
+        ),
+        "advance_eval/mean_hit_cycle_racket_xy_path_excess_m": metric_ratio(
+            "hit_cycle_racket_xy_path_excess_m",
+            "hit_cycle_eligible",
+        ),
+        "advance_eval/mean_hit_cycle_racket_xy_area_m2": metric_ratio(
+            "hit_cycle_racket_xy_area_m2",
+            "hit_cycle_eligible",
+        ),
+        "advance_eval/mean_racket_cycle_vxy": metric_ratio(
+            "racket_cycle_vxy_m_s",
+            "racket_cycle_motion_active",
+        ),
         "advance_eval/mean_hit_contact_center_dist": metric_ratio(
             "hit_contact_center_dist_sum",
             "hit_event_count",
@@ -17924,6 +28595,14 @@ def summarize_eval_outputs(
         "advance_eval/mean_hit_next_contact_anchor_err": metric_ratio(
             "hit_next_contact_anchor_err_sum",
             "hit_event_count",
+        ),
+        "advance_eval/mean_hit_posterior_contact_anchor_err": metric_ratio(
+            "hit_posterior_contact_anchor_err_sum",
+            "hit_posterior_contact_event",
+        ),
+        "advance_eval/mean_hit_contact_anchor_contraction": metric_ratio(
+            "hit_contact_anchor_contraction_sum",
+            "hit_posterior_contact_event",
         ),
         "advance_eval/episode_truncation_rate": (
             float(np.asarray(metrics.get("truncated", np.zeros_like(done))).sum()) / float(done_count)
@@ -18062,6 +28741,21 @@ def run_advance_validation(
     hit_camera_visible_rate = float(result["advance_eval/hit_camera_visible_rate"])
     hit_camera_lower_band_rate = float(result["advance_eval/hit_camera_lower_band_rate"])
     mean_hit_vxy = float(result["advance_eval/mean_hit_vxy"])
+    rms_hit_vxy = float(result["advance_eval/rms_hit_vxy"])
+    mean_first_hit_ball_vxy = float(
+        result["advance_eval/mean_first_hit_ball_vxy"]
+    )
+    rms_first_hit_ball_vxy = float(
+        result["advance_eval/rms_first_hit_ball_vxy"]
+    )
+    mean_hit_racket_vxy = float(result["advance_eval/mean_hit_racket_vxy"])
+    mean_hit_cycle_racket_xy_path_excess_m = float(
+        result["advance_eval/mean_hit_cycle_racket_xy_path_excess_m"]
+    )
+    mean_hit_cycle_racket_xy_area_m2 = float(
+        result["advance_eval/mean_hit_cycle_racket_xy_area_m2"]
+    )
+    mean_racket_cycle_vxy = float(result["advance_eval/mean_racket_cycle_vxy"])
     mean_hit_camera_v_frac = float(result["advance_eval/mean_hit_camera_v_frac"])
     racket_up_cos = float(result["advance_eval/racket_up_cos"])
     episode_truncation_rate = float(result["advance_eval/episode_truncation_rate"])
@@ -18113,6 +28807,34 @@ def run_advance_validation(
         thresholds["target_hit_camera_lower_band_rate"],
     )
     hit_vxy_ok = upper_ok(mean_hit_vxy, thresholds["max_mean_hit_vxy"])
+    hit_vxy_rms_ok = upper_ok(
+        rms_hit_vxy,
+        thresholds["max_rms_hit_vxy"],
+    )
+    first_hit_vxy_ok = upper_ok(
+        mean_first_hit_ball_vxy,
+        thresholds["max_mean_first_hit_ball_vxy"],
+    )
+    first_hit_vxy_rms_ok = upper_ok(
+        rms_first_hit_ball_vxy,
+        thresholds["max_rms_first_hit_ball_vxy"],
+    )
+    hit_racket_vxy_ok = upper_ok(
+        mean_hit_racket_vxy,
+        thresholds["max_mean_hit_racket_vxy"],
+    )
+    hit_cycle_racket_xy_path_ok = upper_ok(
+        mean_hit_cycle_racket_xy_path_excess_m,
+        thresholds["max_hit_cycle_racket_xy_path_excess_m"],
+    )
+    hit_cycle_racket_xy_area_ok = upper_ok(
+        mean_hit_cycle_racket_xy_area_m2,
+        thresholds["max_hit_cycle_racket_xy_area_m2"],
+    )
+    racket_cycle_vxy_ok = upper_ok(
+        mean_racket_cycle_vxy,
+        thresholds["max_mean_racket_cycle_vxy"],
+    )
     hit_camera_v_frac_ok = upper_ok(
         mean_hit_camera_v_frac,
         thresholds["max_mean_hit_camera_v_frac"],
@@ -18161,6 +28883,13 @@ def run_advance_validation(
         and hit_interval_max_ok
         and episode_truncation_ok
         and hit_vxy_ok
+        and hit_vxy_rms_ok
+        and first_hit_vxy_ok
+        and first_hit_vxy_rms_ok
+        and hit_racket_vxy_ok
+        and hit_cycle_racket_xy_path_ok
+        and hit_cycle_racket_xy_area_ok
+        and racket_cycle_vxy_ok
         and hit_camera_v_frac_ok
         and racket_up_cos_ok
         and hit_next_contact_anchor_ok
@@ -18193,6 +28922,19 @@ def run_advance_validation(
                 hit_camera_lower_band_ok
             ),
             "advance_eval/hit_vxy_ok": float(hit_vxy_ok),
+            "advance_eval/hit_vxy_rms_ok": float(hit_vxy_rms_ok),
+            "advance_eval/first_hit_vxy_ok": float(first_hit_vxy_ok),
+            "advance_eval/first_hit_vxy_rms_ok": float(
+                first_hit_vxy_rms_ok
+            ),
+            "advance_eval/hit_racket_vxy_ok": float(hit_racket_vxy_ok),
+            "advance_eval/hit_cycle_racket_xy_path_ok": float(
+                hit_cycle_racket_xy_path_ok
+            ),
+            "advance_eval/hit_cycle_racket_xy_area_ok": float(
+                hit_cycle_racket_xy_area_ok
+            ),
+            "advance_eval/racket_cycle_vxy_ok": float(racket_cycle_vxy_ok),
             "advance_eval/hit_camera_v_frac_ok": float(hit_camera_v_frac_ok),
             "advance_eval/racket_up_cos_ok": float(racket_up_cos_ok),
             "advance_eval/episode_truncation_ok": float(episode_truncation_ok),
@@ -18210,6 +28952,8 @@ def run_advance_validation(
 def stage_update_cap(stage: CurriculumStage, args: argparse.Namespace, batch_steps: int) -> int | None:
     if args.advance_mode == "fixed":
         return max(1, int(stage.total_steps) // max(1, int(batch_steps)))
+    if int(args.max_stage_updates) < 0:
+        return None
     if int(args.max_stage_updates) > 0:
         return int(args.max_stage_updates)
     if stage.max_updates is not None:
@@ -18233,7 +28977,15 @@ def metric_safety_stop_reason(row: dict[str, object], args: argparse.Namespace) 
         "hit_camera_lower_band_rate",
         "mean_hit_camera_v_frac",
         "mean_hit_vxy",
+        "rms_hit_vxy",
+        "mean_hit_vxy_zero_score",
+        "mean_hit_ball_z",
+        "hit_ball_z_over_limit_rate",
         "mean_hit_next_contact_anchor_err",
+        "mean_hit_adaptive_reflected_velocity_error",
+        "mean_hit_adaptive_reflected_velocity_target_vxy",
+        "mean_hit_posterior_contact_anchor_err",
+        "mean_hit_contact_anchor_contraction",
     }
     for key, value in row.items():
         if isinstance(value, str):
@@ -18298,6 +29050,53 @@ def metric_safety_stop_reason(row: dict[str, object], args: argparse.Namespace) 
                 continue
             if np.isfinite(numeric) and abs(numeric) > max_abs_reward:
                 return f"|{key}|={abs(numeric):.3g} exceeded --max-abs-reward-metric={max_abs_reward:.3g}"
+    recent_updates = _finite_float(row, "convergence/recent_updates")
+    required_window = max(1, int(getattr(args, "convergence_window", 1)))
+    if recent_updates is not None and recent_updates >= required_window:
+        rms_hit_limit = float(args.max_recent_rms_hit_vxy_safety)
+        recent_rms_hit = _finite_float(row, "convergence/recent_rms_hit_vxy")
+        if (
+            rms_hit_limit > 0.0
+            and recent_rms_hit is not None
+            and recent_rms_hit > rms_hit_limit
+        ):
+            return (
+                f"recent true hit-vxy RMS={recent_rms_hit:.4f} exceeded "
+                f"--max-recent-rms-hit-vxy-safety={rms_hit_limit:.4f}"
+            )
+        rms_racket_limit = float(args.max_recent_rms_hit_racket_vxy_safety)
+        recent_rms_racket = _finite_float(
+            row,
+            "convergence/recent_rms_hit_racket_vxy",
+        )
+        if (
+            rms_racket_limit > 0.0
+            and recent_rms_racket is not None
+            and recent_rms_racket > rms_racket_limit
+        ):
+            return (
+                f"recent physical racket-vxy RMS={recent_rms_racket:.4f} "
+                "exceeded --max-recent-rms-hit-racket-vxy-safety="
+                f"{rms_racket_limit:.4f}"
+            )
+        posterior_limit = float(
+            getattr(args, "max_recent_hit_posterior_anchor_err_safety", 0.0)
+        )
+        recent_posterior = _finite_float(
+            row,
+            "convergence/recent_mean_hit_posterior_contact_anchor_err",
+        )
+        if (
+            posterior_limit > 0.0
+            and recent_posterior is not None
+            and recent_posterior > posterior_limit
+        ):
+            return (
+                f"recent measured posterior contact-anchor error="
+                f"{recent_posterior:.4f} exceeded "
+                "--max-recent-hit-posterior-anchor-err-safety="
+                f"{posterior_limit:.4f}"
+            )
     return None
 
 
@@ -18361,6 +29160,80 @@ def load_train_state(path: Path) -> tuple[TrainState, dict[str, object]]:
     return TrainState(params=params, opt=opt), payload
 
 
+def _progress_csv_value(value: str) -> object:
+    """Recover numeric CSV fields while preserving labels such as stage_name."""
+
+    if value == "":
+        return value
+    try:
+        return float(value)
+    except ValueError:
+        return value
+
+
+def load_resumed_curriculum_history(
+    checkpoint_path: Path,
+    checkpoint_payload: dict[str, object],
+    *,
+    stage_index: int,
+    stage_name: str,
+) -> tuple[list[dict[str, object]], int, int]:
+    """Load same-stage metrics that are causally no newer than a checkpoint.
+
+    Policy/optimizer checkpoints and the progress CSV are written separately.
+    A periodic checkpoint can therefore lag the CSV by a few updates.  Filtering
+    on the serialized global step prevents attaching future metrics to older
+    parameters while still allowing signal-created checkpoints from older
+    versions (which did not serialize the full convergence window) to resume
+    without resetting hundreds of curriculum updates.
+    """
+
+    progress_path = checkpoint_path.parent / "curriculum_progress.csv"
+    if not progress_path.is_file():
+        raise SystemExit(
+            "[mjx_curriculum] --resume-curriculum-state requires progress CSV: "
+            f"{progress_path}"
+        )
+    checkpoint_step = int(checkpoint_payload.get("step", 0))
+    payload_stage_index = checkpoint_payload.get("stage_index")
+    if payload_stage_index is not None and int(payload_stage_index) != int(stage_index):
+        raise SystemExit(
+            "[mjx_curriculum] resume curriculum stage mismatch: "
+            f"checkpoint stage={int(payload_stage_index)}, requested stage={stage_index}"
+        )
+    payload_stage_name = checkpoint_payload.get("stage_name")
+    if payload_stage_name is not None and str(payload_stage_name) != str(stage_name):
+        raise SystemExit(
+            "[mjx_curriculum] resume curriculum stage-name mismatch: "
+            f"checkpoint stage={payload_stage_name}, requested stage={stage_name}"
+        )
+
+    history: list[dict[str, object]] = []
+    with progress_path.open(newline="") as f:
+        for raw_row in csv.DictReader(f):
+            try:
+                row_stage_index = int(float(raw_row.get("stage_index", "nan")))
+                row_global_step = int(float(raw_row.get("global_step", "nan")))
+            except (TypeError, ValueError):
+                continue
+            if row_stage_index != int(stage_index):
+                continue
+            if str(raw_row.get("stage_name", "")) != str(stage_name):
+                continue
+            if row_global_step > checkpoint_step:
+                continue
+            history.append({key: _progress_csv_value(value) for key, value in raw_row.items()})
+    if not history:
+        raise SystemExit(
+            "[mjx_curriculum] no matching progress rows at or before checkpoint step "
+            f"{checkpoint_step} for stage {stage_index}:{stage_name} in {progress_path}"
+        )
+    last = history[-1]
+    stage_update = int(float(last["stage_update"]))
+    global_update = int(float(last.get("global_update", 0.0)))
+    return history, stage_update, global_update
+
+
 def _cfg_value(cfg: object | None, name: str, default: object = None) -> object:
     if cfg is None:
         return default
@@ -18369,19 +29242,38 @@ def _cfg_value(cfg: object | None, name: str, default: object = None) -> object:
     return getattr(cfg, name, default)
 
 
+def _delay_conditioning_input_dim(cfg: object | None) -> int:
+    """Return the actor-side delay feature count for checkpoint migration."""
+
+    if not bool(_cfg_value(cfg, "enable_delay_conditioning", False)):
+        return 0
+    dim = 0
+    dim += 1 if bool(_cfg_value(cfg, "include_tau_act_norm", False)) else 0
+    dim += 7 if bool(_cfg_value(cfg, "include_command_state", False)) else 0
+    dim += 7 if bool(_cfg_value(cfg, "include_active_command_error", False)) else 0
+    dim += 2 if bool(_cfg_value(cfg, "include_phase_features", False)) else 0
+    if bool(_cfg_value(cfg, "use_delay_embedding", False)):
+        dim += max(0, int(_cfg_value(cfg, "delay_embedding_dim", 0) or 0))
+    return dim
+
+
 def _high_latency_input_layout(obs_dim: int, cfg: object | None) -> dict[str, object]:
     base_dim = 50
     act_dim = 7
+    delay_dim = min(_delay_conditioning_input_dim(cfg), max(0, int(obs_dim)))
+    core_obs_dim = max(0, int(obs_dim) - delay_dim)
     prefix_dim = base_dim + 16
     high_latency_obs = bool(_cfg_value(cfg, "high_latency_obs", int(obs_dim) > base_dim))
-    if int(obs_dim) <= base_dim or not high_latency_obs:
+    if core_obs_dim <= base_dim or not high_latency_obs:
         return {
             "high_latency": False,
-            "prefix_dim": min(base_dim, int(obs_dim)),
+            "prefix_dim": min(base_dim, core_obs_dim),
             "obs_start": 0,
             "obs_prev": 0,
             "action_start": 0,
             "action_prev": 0,
+            "delay_start": core_obs_dim,
+            "delay_dim": delay_dim,
             "base_dim": base_dim,
             "act_dim": act_dim,
         }
@@ -18395,8 +29287,8 @@ def _high_latency_input_layout(obs_dim: int, cfg: object | None) -> dict[str, ob
     action_prev = max(0, action_frames - 1)
     expected_dim = prefix_dim + obs_prev * base_dim + action_prev * act_dim
 
-    if expected_dim != int(obs_dim):
-        extra_dim = int(obs_dim) - prefix_dim
+    if expected_dim != core_obs_dim:
+        extra_dim = core_obs_dim - prefix_dim
         if extra_dim >= 0 and extra_dim % (base_dim + act_dim) == 0:
             prev_frames = extra_dim // (base_dim + act_dim)
             obs_prev = prev_frames
@@ -18414,6 +29306,8 @@ def _high_latency_input_layout(obs_dim: int, cfg: object | None) -> dict[str, ob
         "obs_prev": obs_prev,
         "action_start": action_start,
         "action_prev": action_prev,
+        "delay_start": core_obs_dim,
+        "delay_dim": delay_dim,
         "base_dim": base_dim,
         "act_dim": act_dim,
     }
@@ -18481,6 +29375,16 @@ def warm_start_high_latency_l1_weights(
         act_dim = int(new_layout["act_dim"])
         new_w = _copy_history_weights(new_w, old_w, old_layout, new_layout, kind="obs", block_dim=base_dim)
         new_w = _copy_history_weights(new_w, old_w, old_layout, new_layout, kind="action", block_dim=act_dim)
+    delay_common = min(
+        int(old_layout["delay_dim"]),
+        int(new_layout["delay_dim"]),
+    )
+    if delay_common > 0:
+        old_start = int(old_layout["delay_start"])
+        new_start = int(new_layout["delay_start"])
+        new_w = new_w.at[new_start : new_start + delay_common, :].set(
+            old_w[old_start : old_start + delay_common, :]
+        )
     return new_w
 
 
@@ -18521,6 +29425,40 @@ def migrate_train_state_obs_dim(
     return TrainState(params=migrated_params, opt=adam_init(migrated_params))
 
 
+def reset_critic_on_resume(
+    train_state: TrainState,
+    key: jax.Array,
+    *,
+    obs_dim: int,
+    act_dim: int,
+    hidden_dim: int,
+    critic_obs_dim: int,
+) -> TrainState:
+    """Rebuild only the value function for an OOD resumed task.
+
+    A curriculum can deliberately switch from recurrent juggling to a
+    stationary, contact-free recovery objective.  The inherited actor remains
+    useful, but its value function has never seen the new state/reward
+    distribution and can invert early advantages.  Preserve every actor leaf
+    (including log standard deviation), use the ordinary initializer for the
+    critic, and reset Adam because its tree no longer matches the value head.
+    """
+
+    fresh_params = init_params(key, obs_dim, act_dim, hidden_dim, critic_obs_dim)
+    fresh_value = dict(fresh_params["v"])
+    fresh_value_out = dict(fresh_value["out"])
+    # A random value head is still an arbitrary advantage baseline on the
+    # first OOD rollout.  Start from the unbiased V=0 baseline; PPO then fits
+    # the new critic from observed stationary returns without moving the actor
+    # according to inherited recurrent-juggle value errors.
+    fresh_value_out["w"] = jnp.zeros_like(fresh_value_out["w"])
+    fresh_value_out["b"] = jnp.zeros_like(fresh_value_out["b"])
+    fresh_value["out"] = fresh_value_out
+    params = dict(train_state.params)
+    params["v"] = fresh_value
+    return TrainState(params=params, opt=adam_init(params))
+
+
 def resolve_resume_start_stage(args: argparse.Namespace, stages: list[CurriculumStage]) -> int:
     source_checkpoint = (
         args.resume_from
@@ -18546,6 +29484,9 @@ def resolve_resume_start_stage(args: argparse.Namespace, stages: list[Curriculum
 
 def finish_wandb_run(wandb_run, args: argparse.Namespace, progress_path: Path) -> None:
     if wandb_run is None:
+        return
+    if bool(getattr(args, "wandb_metrics_only", False)):
+        wandb_run.finish()
         return
     import wandb
 
@@ -18779,9 +29720,17 @@ def apply_phase_teacher_reference(
 
 def main() -> None:
     args = parse_args()
+    if args.resume_curriculum_state and args.resume_from is None:
+        raise SystemExit(
+            "[mjx_curriculum] --resume-curriculum-state requires --resume-from"
+        )
     args.save_dir.mkdir(parents=True, exist_ok=True)
     actor_anchor_replay_obs_np: np.ndarray | None = None
     teacher_distill_replay_obs_np: np.ndarray | None = None
+    counterfactual_replay_obs_np: np.ndarray | None = None
+    counterfactual_replay_actions_np: np.ndarray | None = None
+    noise_invariance_clean_obs_np: np.ndarray | None = None
+    noise_invariance_noisy_obs_np: np.ndarray | None = None
     if args.actor_anchor_replay_obs is not None:
         if (
             float(args.actor_anchor_kl_coef) <= 0.0
@@ -18814,6 +29763,34 @@ def main() -> None:
             raise SystemExit(
                 "[mjx_curriculum] teacher replay observations must have shape [samples, obs_dim]"
             )
+    if args.counterfactual_replay_obs is not None:
+        counterfactual_replay_obs_np = np.asarray(
+            np.load(args.counterfactual_replay_obs), dtype=np.float32
+        )
+        counterfactual_replay_actions_np = np.asarray(
+            np.load(args.counterfactual_replay_actions), dtype=np.float32
+        )
+        if counterfactual_replay_obs_np.ndim != 2:
+            raise SystemExit("[mjx_curriculum] counterfactual observations must be 2-D")
+        if counterfactual_replay_actions_np.ndim != 2:
+            raise SystemExit("[mjx_curriculum] counterfactual actions must be 2-D")
+        if counterfactual_replay_obs_np.shape[0] <= 0:
+            raise SystemExit("[mjx_curriculum] counterfactual replay cannot be empty")
+        if counterfactual_replay_obs_np.shape[0] != counterfactual_replay_actions_np.shape[0]:
+            raise SystemExit("[mjx_curriculum] counterfactual observations/actions row mismatch")
+    if args.noise_invariance_clean_obs is not None:
+        noise_invariance_clean_obs_np = np.asarray(
+            np.load(args.noise_invariance_clean_obs), dtype=np.float32
+        )
+        noise_invariance_noisy_obs_np = np.asarray(
+            np.load(args.noise_invariance_noisy_obs), dtype=np.float32
+        )
+        if noise_invariance_clean_obs_np.ndim != 2 or noise_invariance_noisy_obs_np.ndim != 2:
+            raise SystemExit("[mjx_curriculum] noise invariance observations must be 2-D")
+        if noise_invariance_clean_obs_np.shape[0] <= 0:
+            raise SystemExit("[mjx_curriculum] noise invariance replay cannot be empty")
+        if noise_invariance_clean_obs_np.shape != noise_invariance_noisy_obs_np.shape:
+            raise SystemExit("[mjx_curriculum] noise invariance clean/noisy shape mismatch")
     stages = build_curriculum(
         args.stage_steps,
         args.curriculum_gate_preset,
@@ -18880,6 +29857,11 @@ def main() -> None:
             if args.actuator_model_inverse_mlp_path is not None
             else None
         ),
+        ball_obs_velocity_observer_mode=args.ball_obs_velocity_observer_mode,
+        ball_obs_velocity_observer_tau_ms=args.ball_obs_velocity_observer_tau_ms,
+        ball_obs_velocity_observer_max_innovation_m_s=(
+            args.ball_obs_velocity_observer_max_innovation_m_s
+        ),
     )
     if args.phase_teacher_reference is not None:
         stages = apply_phase_teacher_reference(
@@ -18935,7 +29917,14 @@ def main() -> None:
                         "target_hit_camera_visible_rate": stage.target_hit_camera_visible_rate,
                         "target_hit_camera_lower_band_rate": stage.target_hit_camera_lower_band_rate,
                         "max_recent_mean_hit_vxy": stage.max_recent_mean_hit_vxy,
+                        "max_recent_rms_hit_vxy": stage.max_recent_rms_hit_vxy,
+                        "best_checkpoint_mean_hit_vxy_weight": stage.best_checkpoint_mean_hit_vxy_weight,
+                        "best_checkpoint_rms_hit_vxy_weight": stage.best_checkpoint_rms_hit_vxy_weight,
+                        "max_recent_mean_hit_ball_z": stage.max_recent_mean_hit_ball_z,
+                        "max_recent_hit_ball_z_over_limit_rate": stage.max_recent_hit_ball_z_over_limit_rate,
                         "max_recent_hit_next_contact_anchor_err": stage.max_recent_hit_next_contact_anchor_err,
+                        "max_recent_mean_hit_posterior_contact_anchor_err": stage.max_recent_mean_hit_posterior_contact_anchor_err,
+                        "min_recent_mean_hit_contact_anchor_contraction": stage.min_recent_mean_hit_contact_anchor_contraction,
                         "max_recent_mean_hit_camera_v_frac": stage.max_recent_mean_hit_camera_v_frac,
                         "min_ball_obs_missing_refresh_rate": stage.min_ball_obs_missing_refresh_rate,
                         "max_ball_obs_lost_rate": stage.max_ball_obs_lost_rate,
@@ -18958,12 +29947,27 @@ def main() -> None:
     train_state_env_cfg: object | None = None
     global_step = 0
     global_update = 0
+    resumed_stage_history: list[dict[str, object]] = []
+    resumed_stage_update = 0
     stop_request = install_stop_handlers()
+    critic_reset_pending = bool(args.reset_critic_on_resume)
     start_stage_idx = resolve_resume_start_stage(args, stages)
     if start_stage_idx < 1 or start_stage_idx > len(stages):
         raise SystemExit(f"[mjx_curriculum] --resume-start-stage resolved to {start_stage_idx}, outside 1..{len(stages)}")
     if args.resume_from is not None:
         train_state, resume_payload = load_train_state(args.resume_from)
+        if (
+            args.curriculum_profile
+            in {
+                GOAL_D455_SPORT_TASKSPACE_BELIEF_BOUNDED_RESIDUAL_V83_PROFILE,
+                GOAL_D455_SPORT_TASKSPACE_BELIEF_BOUNDED_RESIDUAL_V84_PROFILE,
+            }
+            and "teacher_pi" not in train_state.params
+        ):
+            raise SystemExit(
+                "[mjx_curriculum] bounded-residual resume checkpoint does not "
+                "contain frozen teacher_pi"
+            )
         if args.reset_optimizer_on_resume:
             train_state = TrainState(
                 params=train_state.params,
@@ -18983,6 +29987,30 @@ def main() -> None:
                 )
         train_state_env_cfg = resume_payload.get("env_cfg")
         global_step = int(resume_payload.get("step", 0))
+        if args.resume_curriculum_state:
+            resumed_stage_history, resumed_stage_update, resumed_global_update = (
+                load_resumed_curriculum_history(
+                    args.resume_from,
+                    resume_payload,
+                    stage_index=start_stage_idx,
+                    stage_name=stages[start_stage_idx - 1].name,
+                )
+            )
+            global_update = max(global_update, resumed_global_update)
+            # Runner/environment state was not serialized by historical
+            # checkpoints.  Salt the fresh runner key with the causal source
+            # step so a same-seed resume does not replay the original random
+            # reset/action sequence from update zero.
+            rng = jax.random.fold_in(rng, np.uint32(global_step & 0xFFFFFFFF))
+            rng = jax.random.fold_in(
+                rng, np.uint32((global_step >> 32) & 0xFFFFFFFF)
+            )
+            print(
+                "[mjx_curriculum] restored curriculum continuity: "
+                f"stage_update={resumed_stage_update}, "
+                f"history_rows={len(resumed_stage_history)}, "
+                f"global_update={global_update}; runner RNG salted by checkpoint step"
+            )
         print(
             f"[mjx_curriculum] resumed from {args.resume_from} "
             f"at global_step={global_step}; starting stage {start_stage_idx}/{len(stages)}: "
@@ -19102,6 +30130,24 @@ def main() -> None:
                     "high-latency rows warm-started/remapped; "
                     "optimizer state reinitialized"
                 )
+
+        if critic_reset_pending:
+            if train_state is None:
+                raise RuntimeError("critic reset requested without a resumed train state")
+            rng, critic_reset_key = jax.random.split(rng)
+            train_state = reset_critic_on_resume(
+                train_state,
+                critic_reset_key,
+                obs_dim=int(env.obs_dim),
+                act_dim=int(env.act_dim),
+                hidden_dim=int(args.hidden_dim),
+                critic_obs_dim=int(getattr(env, "critic_obs_dim", env.obs_dim)),
+            )
+            critic_reset_pending = False
+            print(
+                "[mjx_curriculum] reset resumed critic and Adam state for the "
+                "first stage; actor parameters and log_std were preserved"
+            )
 
         if train_state is None:
             params = init_params(
@@ -19254,7 +30300,10 @@ def main() -> None:
 
         rng, reset_key = jax.random.split(rng)
         reset_keys = jax.random.split(reset_key, args.n_envs)
-        env_state, obs = jax.jit(env.reset)(reset_keys)
+        # Stagger the first episode phase per env so hit-ordinal composition
+        # stops oscillating with the episode/rollout period; see
+        # MjxJuggleConfig.episode_phase_stagger_min_frac.
+        env_state, obs = jax.jit(env.reset, static_argnums=(1,))(reset_keys, True)
         critic_obs = env.get_critic_obs(env_state, obs)
         actor_anchor_replay_obs = None
         if actor_anchor_replay_obs_np is not None:
@@ -19302,6 +30351,43 @@ def main() -> None:
                 f"obs_dim={teacher_distill_replay_obs.shape[1]}, "
                 f"coef={args.teacher_distill_coef:.4g}, "
                 f"target_clip={args.teacher_distill_action_clip:.3g}"
+            )
+        noise_invariance_clean_obs = None
+        noise_invariance_noisy_obs = None
+        if noise_invariance_clean_obs_np is not None:
+            if noise_invariance_clean_obs_np.shape[1] != env.obs_dim:
+                raise SystemExit(
+                    "[mjx_curriculum] noise invariance observation dimension mismatch: "
+                    f"file={noise_invariance_clean_obs_np.shape[1]}, env={env.obs_dim}"
+                )
+            noise_invariance_clean_obs = jnp.asarray(noise_invariance_clean_obs_np)
+            noise_invariance_noisy_obs = jnp.asarray(noise_invariance_noisy_obs_np)
+            print(
+                "[mjx_curriculum] paired noise invariance: "
+                f"samples={noise_invariance_clean_obs.shape[0]}, "
+                f"obs_dim={noise_invariance_clean_obs.shape[1]}, "
+                f"coef={args.noise_invariance_coef:.4g}"
+            )
+        counterfactual_replay_obs = None
+        counterfactual_replay_actions = None
+        if counterfactual_replay_obs_np is not None:
+            if counterfactual_replay_obs_np.shape[1] != env.obs_dim:
+                raise SystemExit(
+                    "[mjx_curriculum] counterfactual obs_dim mismatch: "
+                    f"file={counterfactual_replay_obs_np.shape[1]}, env={env.obs_dim}"
+                )
+            if counterfactual_replay_actions_np.shape[1] != env.act_dim:
+                raise SystemExit(
+                    "[mjx_curriculum] counterfactual act_dim mismatch: "
+                    f"file={counterfactual_replay_actions_np.shape[1]}, env={env.act_dim}"
+                )
+            counterfactual_replay_obs = jnp.asarray(counterfactual_replay_obs_np)
+            counterfactual_replay_actions = jnp.asarray(counterfactual_replay_actions_np)
+            print(
+                "[mjx_curriculum] counterfactual prefix supervision: "
+                f"samples={counterfactual_replay_obs.shape[0]}, "
+                f"obs_dim={counterfactual_replay_obs.shape[1]}, "
+                f"coef={args.counterfactual_supervision_coef:.4g}"
             )
         runner = RunnerState(
             env_state=env_state,
@@ -19354,6 +30440,61 @@ def main() -> None:
                 f"phase={training_phase} n_envs={args.n_envs} "
                 f"n_steps={effective_n_steps} minibatch={args.minibatch_size}"
             )
+        stationary_aux_off = bool(
+            stage.cfg.stationary_ball_training
+            and stage.cfg.stationary_reward_only
+        )
+        effective_actor_anchor_kl_coef = (
+            0.0 if stationary_aux_off else float(args.actor_anchor_kl_coef)
+        )
+        effective_actor_anchor_replay_kl_coef = (
+            0.0 if stationary_aux_off else float(args.actor_anchor_replay_kl_coef)
+        )
+        effective_teacher_distill_coef = (
+            0.0 if stationary_aux_off else float(args.teacher_distill_coef)
+        )
+        effective_noise_invariance_coef = (
+            0.0 if stationary_aux_off else float(args.noise_invariance_coef)
+        )
+        effective_action_feedback_sensitivity_coef = (
+            0.0
+            if stationary_aux_off
+            else float(args.actor_action_feedback_sensitivity_coef)
+        )
+        action_feedback_obs_starts: tuple[int, ...] = ()
+        if effective_action_feedback_sensitivity_coef > 0.0:
+            if not env.high_latency_obs:
+                raise SystemExit(
+                    "action-feedback sensitivity requires high-latency temporal obs"
+                )
+            # Base obs holds the current previous action at 35:42. The same
+            # field appears in every 50-D base-observation history frame, then
+            # the explicit action history follows. Perturb all copies with the
+            # same per-joint offset so this is a coherent feedback-channel
+            # robustness loss rather than independent feature noise.
+            history_base = int(env.base_obs_dim) + 16
+            action_feedback_obs_starts = (
+                35,
+                *tuple(
+                    history_base + frame * int(env.base_obs_dim) + 35
+                    for frame in range(int(env.high_latency_obs_prev_frames))
+                ),
+                *tuple(
+                    history_base
+                    + int(env.high_latency_obs_prev_frames) * int(env.base_obs_dim)
+                    + frame * int(env.act_dim)
+                    for frame in range(int(env.high_latency_action_prev_frames))
+                ),
+            )
+        # The paired real-prefix actions encode the inherited juggling stroke.
+        # They are useful while transferring a learned contact policy, but
+        # directly oppose this isolated task's purpose: replacing that stroke
+        # with a zero-horizontal-velocity hold through the same actuator.
+        # Keep samples loaded for subsequent real-contact stages, where the
+        # configured coefficient resumes unchanged.
+        effective_counterfactual_supervision_coef = (
+            0.0 if stationary_aux_off else float(args.counterfactual_supervision_coef)
+        )
         print(
             "[mjx_curriculum] training_phase: "
             f"stage={stage_idx}/{len(stages)} "
@@ -19362,6 +30503,20 @@ def main() -> None:
             f"ent_coef={effective_ent_coef:.3g} "
             f"convergence_window={effective_convergence_window}"
         )
+        if effective_action_feedback_sensitivity_coef > 0.0:
+            print(
+                "[mjx_curriculum] on-policy action-feedback sensitivity: "
+                f"coef={effective_action_feedback_sensitivity_coef:.4g}, "
+                f"perturb={args.actor_action_feedback_perturb_scale:.4g}, "
+                f"starts={action_feedback_obs_starts}; rollout_obs=unchanged"
+            )
+        if stationary_aux_off:
+            print(
+                "[mjx_curriculum] isolated stationary objective: "
+                "actor/replay anchors, teacher distillation, noise invariance, "
+                "and counterfactual action supervision disabled for this stage; "
+                "they resume automatically in recurrent stages"
+            )
         collect_rollout, update = make_train_fns(
             env=env,
             n_steps=effective_n_steps,
@@ -19375,6 +30530,7 @@ def main() -> None:
             ent_coef=effective_ent_coef,
             max_grad_norm=args.max_grad_norm,
             min_log_std=args.min_log_std,
+            max_log_std=args.max_log_std,
             target_kl=args.target_kl,
             failure_focus_hit_threshold=args.failure_focus_hit_threshold,
             failure_focus_weight=args.failure_focus_weight,
@@ -19382,36 +30538,70 @@ def main() -> None:
             reference_params=(
                 train_state.params
                 if (
-                    float(args.actor_anchor_kl_coef) > 0.0
-                    or float(args.actor_anchor_replay_kl_coef) > 0.0
+                    effective_actor_anchor_kl_coef > 0.0
+                    or effective_actor_anchor_replay_kl_coef > 0.0
                 )
                 else None
             ),
-            actor_anchor_kl_coef=args.actor_anchor_kl_coef,
+            actor_anchor_kl_coef=effective_actor_anchor_kl_coef,
             actor_anchor_replay_obs=actor_anchor_replay_obs,
-            actor_anchor_replay_kl_coef=args.actor_anchor_replay_kl_coef,
+            actor_anchor_replay_kl_coef=effective_actor_anchor_replay_kl_coef,
             residual_l2_coef=args.residual_l2_coef,
             teacher_params=(
                 teacher_distill_state.params if teacher_distill_state is not None else None
             ),
             teacher_distill_replay_obs=teacher_distill_replay_obs,
-            teacher_distill_coef=args.teacher_distill_coef,
+            teacher_distill_coef=effective_teacher_distill_coef,
             teacher_distill_action_clip=args.teacher_distill_action_clip,
             time_limit_bootstrap=args.time_limit_bootstrap,
+            counterfactual_replay_obs=counterfactual_replay_obs,
+            counterfactual_replay_actions=counterfactual_replay_actions,
+            counterfactual_supervision_coef=effective_counterfactual_supervision_coef,
+            counterfactual_focus_tail_rows=args.counterfactual_focus_tail_rows,
+            counterfactual_focus_prob=args.counterfactual_focus_prob,
+            counterfactual_vxy_weight_mode=args.counterfactual_vxy_weight_mode,
+            noise_invariance_clean_obs=noise_invariance_clean_obs,
+            noise_invariance_noisy_obs=noise_invariance_noisy_obs,
+            noise_invariance_coef=effective_noise_invariance_coef,
+            action_feedback_sensitivity_coef=(
+                effective_action_feedback_sensitivity_coef
+            ),
+            action_feedback_perturb_scale=(
+                args.actor_action_feedback_perturb_scale
+            ),
+            action_feedback_obs_starts=action_feedback_obs_starts,
         )
         batch_steps = effective_batch_steps
         stage_updates = stage_update_cap(stage, args, batch_steps)
-        stage_history: list[dict[str, object]] = []
+        restoring_this_stage = bool(
+            args.resume_curriculum_state
+            and resume_payload is not None
+            and stage_idx == start_stage_idx
+        )
+        stage_history: list[dict[str, object]] = (
+            list(resumed_stage_history) if restoring_this_stage else []
+        )
         stage_metric_warmup_updates = (
             int(np.ceil(float(env.max_steps) / max(1, effective_n_steps)))
             if int(args.stage_metric_warmup_updates) < 0
             else int(args.stage_metric_warmup_updates)
         )
         stage_converged = args.advance_mode == "fixed"
-        last_advance_eval_update = -10**9
-        best_stage_score = -float("inf")
+        last_advance_eval_update = max(
+            (
+                int(float(prior.get("stage_update", 0.0)))
+                for prior in stage_history
+                if float(prior.get("advance_eval/ran", 0.0)) >= 0.5
+            ),
+            default=-10**9,
+        )
+        prior_scores = [stage_best_score(prior, stage) for prior in stage_history]
+        best_stage_score = max(
+            (score for score in prior_scores if score is not None),
+            default=-float("inf"),
+        )
 
-        stage_update = 0
+        stage_update = resumed_stage_update if restoring_this_stage else 0
         while True:
             if stop_request.requested:
                 reason = stop_request.reason or "stop requested"
@@ -19545,14 +30735,29 @@ def main() -> None:
             recover_label = ""
             if (
                 stage.max_recent_mean_hit_vxy is not None
+                or stage.max_recent_rms_hit_vxy is not None
+                or stage.max_recent_mean_hit_ball_z is not None
+                or stage.max_recent_hit_ball_z_over_limit_rate is not None
                 or stage.max_recent_hit_next_contact_anchor_err is not None
+                or stage.max_recent_mean_hit_posterior_contact_anchor_err is not None
+                or stage.min_recent_mean_hit_contact_anchor_contraction is not None
                 or stage.max_recent_mean_hit_camera_v_frac is not None
             ):
                 recover_label = (
                     f" rec_vxy={row['convergence/recent_mean_hit_vxy']:.2f}/"
                     f"{(stage.max_recent_mean_hit_vxy if stage.max_recent_mean_hit_vxy is not None else float('inf')):.2f}"
+                    f" rms={row['convergence/recent_rms_hit_vxy']:.2f}/"
+                    f"{(stage.max_recent_rms_hit_vxy if stage.max_recent_rms_hit_vxy is not None else float('inf')):.2f}"
+                    f" hit_z={row['convergence/recent_mean_hit_ball_z']:.3f}/"
+                    f"{(stage.max_recent_mean_hit_ball_z if stage.max_recent_mean_hit_ball_z is not None else float('inf')):.3f}"
+                    f" z_over={row['convergence/recent_hit_ball_z_over_limit_rate']:.3f}/"
+                    f"{(stage.max_recent_hit_ball_z_over_limit_rate if stage.max_recent_hit_ball_z_over_limit_rate is not None else float('inf')):.3f}"
                     f" rec_next={row['convergence/recent_mean_hit_next_contact_anchor_err']:.2f}/"
                     f"{(stage.max_recent_hit_next_contact_anchor_err if stage.max_recent_hit_next_contact_anchor_err is not None else float('inf')):.2f}"
+                    f" post={row['convergence/recent_mean_hit_posterior_contact_anchor_err']:.3f}/"
+                    f"{(stage.max_recent_mean_hit_posterior_contact_anchor_err if stage.max_recent_mean_hit_posterior_contact_anchor_err is not None else float('inf')):.3f}"
+                    f" contract={row['convergence/recent_mean_hit_contact_anchor_contraction']:.3f}/"
+                    f"{(stage.min_recent_mean_hit_contact_anchor_contraction if stage.min_recent_mean_hit_contact_anchor_contraction is not None else -float('inf')):.3f}"
                     f" rec_v={row['convergence/recent_mean_hit_camera_v_frac']:.2f}/"
                     f"{(stage.max_recent_mean_hit_camera_v_frac if stage.max_recent_mean_hit_camera_v_frac is not None else float('inf')):.2f}"
                 )
@@ -19576,6 +30781,12 @@ def main() -> None:
                     f" lost={row['convergence/recent_ball_obs_lost_rate']:.3f}/"
                     f"{stage.max_ball_obs_lost_rate:.3f}"
                 )
+            estimator_noise_label = ""
+            if float(stage.cfg.ball_obs_vel_xy_noise_std) > 0.0:
+                estimator_noise_label = (
+                    f" velxy_noise={row.get('ball_obs_velxy_noise_scale', 0.0):.3f}"
+                    f"*{float(stage.cfg.ball_obs_vel_xy_noise_std):.2f}"
+                )
             print(
                 f"[mjx_curriculum] {stage.name} update={update_label} "
                 f"global_step={global_step} sps={row['sps']:,.0f} "
@@ -19588,6 +30799,7 @@ def main() -> None:
                 f"{cadence_label}"
                 f"{survival_label}"
                 f"{missing_label}"
+                f"{estimator_noise_label}"
                 f"{hit_camera_label}"
                 f"{recover_label}"
                 f"{gate_label}"
@@ -19645,7 +30857,21 @@ def main() -> None:
                 return
 
             if stage_update % max(1, int(args.save_every_updates)) == 0:
-                save_checkpoint(args.save_dir / "mjx_curriculum_last.pkl", train_state, args, env, global_step)
+                continuity_extra = {
+                    "stage_index": stage_idx,
+                    "stage_name": stage.name,
+                    "stage_update": stage_update,
+                    "global_update": global_update,
+                    "last_row": row,
+                }
+                save_checkpoint(
+                    args.save_dir / "mjx_curriculum_last.pkl",
+                    train_state,
+                    args,
+                    env,
+                    global_step,
+                    extra=continuity_extra,
+                )
             if (
                 int(args.archive_every_updates) > 0
                 and stage_update % int(args.archive_every_updates) == 0

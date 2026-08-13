@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import pickle
+import subprocess
 import sys
 import time
 from dataclasses import fields, replace
@@ -59,9 +60,185 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--xml", type=Path, default=None, help="Override XML path. Defaults to the checkpoint XML.")
     p.add_argument("--episodes", type=int, default=20)
     p.add_argument("--n-envs", type=int, default=32)
+    p.add_argument(
+        "--one-episode-per-env",
+        action="store_true",
+        help=(
+            "Record only the first completed episode from each batched environment. "
+            "This avoids completion-time bias when a reset parameter changes episode length; "
+            "use --episodes equal to --n-envs for a matched reset sweep."
+        ),
+    )
     p.add_argument("--seed", type=int, default=1000)
     p.add_argument("--deterministic", action="store_true", help="Use policy mean instead of sampling.")
     p.add_argument("--action-gain", type=float, default=1.0, help="Multiply policy action before clipping.")
+    p.add_argument(
+        "--racket-launch-hold-time-s",
+        type=float,
+        default=None,
+        help="Evaluation-only racket-launch hold duration override.",
+    )
+    p.add_argument(
+        "--racket-launch-hold-mode",
+        choices=["racket_relative", "world_fixed"],
+        default=None,
+        help="Evaluation-only launch hold semantics override.",
+    )
+    p.add_argument(
+        "--racket-launch-hold-time-range-s",
+        type=float,
+        nargs=2,
+        default=None,
+        metavar=("LOW", "HIGH"),
+        help="Evaluation-only per-episode launch hold duration range.",
+    )
+    p.add_argument(
+        "--racket-launch-pre-release-control-mode",
+        choices=["policy", "hold_command"],
+        default=None,
+        help=(
+            "Evaluation-only release gate: hold_command executes neutral "
+            "commands/feedback until the world-fixed ball is released."
+        ),
+    )
+    p.add_argument(
+        "--ball-obs-rate-hz",
+        type=float,
+        default=None,
+        help="Evaluation-only override for the valid ball-state refresh frequency.",
+    )
+    p.add_argument("--ball-obs-pos-noise-std", type=float, default=None)
+    p.add_argument("--ball-obs-vel-noise-std", type=float, default=None)
+    p.add_argument("--ball-obs-vel-xy-noise-std", type=float, default=None)
+    p.add_argument(
+        "--proprio-dq-obs-noise-std",
+        type=float,
+        default=None,
+        help="Evaluation-only AR(1) arm-velocity observation noise standard deviation.",
+    )
+    p.add_argument(
+        "--proprio-racket-vel-obs-noise-std",
+        type=float,
+        default=None,
+        help="Evaluation-only AR(1) racket-velocity observation noise standard deviation.",
+    )
+    p.add_argument(
+        "--proprio-obs-noise-rho",
+        type=float,
+        default=None,
+        help="Evaluation-only correlation coefficient for proprioceptive observation noise.",
+    )
+    p.add_argument(
+        "--ball-obs-velocity-observer-mode",
+        choices=[
+            "raw",
+            "ema_xy",
+            "innovation_clip_xy",
+            "alpha_beta_xy",
+            "confidence_gate_xy",
+            "prospective_signal_xy",
+        ],
+        default=None,
+        help="Evaluation-only causal lateral ball-velocity observer override.",
+    )
+    p.add_argument(
+        "--ball-obs-velocity-observer-tau-ms",
+        type=float,
+        default=None,
+        help="Physical-time EMA constant for --ball-obs-velocity-observer-mode ema_xy.",
+    )
+    p.add_argument(
+        "--ball-obs-velocity-observer-max-innovation-m-s",
+        type=float,
+        default=None,
+        help="Per-fresh-sample lateral innovation limit for innovation_clip_xy.",
+    )
+    p.add_argument("--ball-obs-joint-observer-alpha", type=float, default=None)
+    p.add_argument("--ball-obs-joint-observer-beta", type=float, default=None)
+    p.add_argument(
+        "--ball-obs-joint-observer-raw-velocity-gain",
+        type=float,
+        default=None,
+    )
+    p.add_argument("--ball-obs-consistency-gate-threshold-m-s", type=float, default=None)
+    p.add_argument("--ball-obs-consistency-gate-direction-cosine", type=float, default=None)
+    p.add_argument("--ball-obs-consistency-gate-min-samples", type=int, default=None)
+    p.add_argument("--ball-obs-consistency-gate-correction-gain", type=float, default=None)
+    p.add_argument("--ball-obs-consistency-gate-max-correction-m-s", type=float, default=None)
+    p.add_argument("--ball-obs-consistency-gate-contact-guard-s", type=float, default=None)
+    p.add_argument("--ball-obs-prospective-window-samples", type=int, default=None)
+    p.add_argument("--ball-obs-prospective-prediction-margin-m", type=float, default=None)
+    p.add_argument(
+        "--ball-obs-prospective-velocity-disagreement-m-s",
+        type=float,
+        default=None,
+    )
+    p.add_argument("--ball-obs-prospective-candidate-gain", type=float, default=None)
+    p.add_argument(
+        "--ball-obs-prospective-max-correction-m-s",
+        type=float,
+        default=None,
+    )
+    p.add_argument("--ball-obs-prospective-max-sample-gap-s", type=float, default=None)
+    p.add_argument("--ball-obs-prospective-contact-guard-s", type=float, default=None)
+    p.add_argument(
+        "--dr-actuator-cmd-tau-range",
+        type=float,
+        nargs=2,
+        default=None,
+        metavar=("LOW", "HIGH"),
+    )
+    p.add_argument(
+        "--dr-actuator-cmd-gain-range",
+        type=float,
+        nargs=2,
+        default=None,
+        metavar=("LOW", "HIGH"),
+    )
+    p.add_argument(
+        "--dr-second-order-frequency-scale-range",
+        type=float,
+        nargs=2,
+        default=None,
+        metavar=("LOW", "HIGH"),
+    )
+    p.add_argument(
+        "--dr-second-order-damping-scale-range",
+        type=float,
+        nargs=2,
+        default=None,
+        metavar=("LOW", "HIGH"),
+    )
+    p.add_argument(
+        "--dr-ball-mass-range",
+        type=float,
+        nargs=2,
+        default=None,
+        metavar=("LOW_KG", "HIGH_KG"),
+        help=(
+            "Evaluation-only ball mass DR override in kilograms. Use equal "
+            "bounds for a fixed measured ball mass."
+        ),
+    )
+    p.add_argument(
+        "--dr-ball-solref-time-range",
+        type=float,
+        nargs=2,
+        default=None,
+        metavar=("LOW_S", "HIGH_S"),
+        help="Evaluation-only racket-ball contact solref time-constant range.",
+    )
+    p.add_argument(
+        "--dr-ball-solref-damping-range",
+        type=float,
+        nargs=2,
+        default=None,
+        metavar=("LOW", "HIGH"),
+        help=(
+            "Evaluation-only racket-ball contact solref damping-ratio range; "
+            "larger positive values produce a less elastic collision."
+        ),
+    )
     p.add_argument(
         "--actuator-compensation-mode",
         choices=[
@@ -166,6 +343,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument("--max-env-steps", type=int, default=0, help="0 means auto from episodes, envs, and horizon.")
     p.add_argument("--print-every", type=int, default=100)
+    p.add_argument(
+        "--gpu-max-temp-c",
+        type=float,
+        default=80.0,
+        help="Stop frozen validation if any visible host GPU reaches this temperature; <=0 disables.",
+    )
+    p.add_argument("--gpu-check-every-steps", type=int, default=100)
     p.add_argument("--log-hit-events", action="store_true")
     p.add_argument("--results-csv", type=Path, default=DEFAULT_RESULTS)
     p.add_argument("--no-save-csv", action="store_true")
@@ -262,6 +446,47 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         metavar=("VX", "VY", "VZ"),
         help="Optional nominal ball velocity observation bias in base coordinates.",
     )
+    p.add_argument(
+        "--disable-ball-state-dr",
+        action="store_true",
+        help=(
+            "Evaluation-only ablation: use a nominal deterministic ball reset, disable "
+            "ball dynamics/contact DR, and remove ball observation noise, dropout, bias, "
+            "rotation, and scale DR. Actuator, PD, and racket-mount DR remain unchanged."
+        ),
+    )
+    p.add_argument(
+        "--disable-ball-physics-dr",
+        action="store_true",
+        help=(
+            "Evaluation-only ablation: nominalize ball reset, ball dynamics, and "
+            "racket-ball contact while preserving the checkpoint's ball observation DR."
+        ),
+    )
+    p.add_argument(
+        "--disable-ball-observation-dr",
+        action="store_true",
+        help=(
+            "Evaluation-only ablation: remove ball observation noise/dropout/frame DR "
+            "while preserving ball reset, dynamics, and contact DR."
+        ),
+    )
+    p.add_argument(
+        "--disable-ball-observation-position-dr",
+        action="store_true",
+        help=(
+            "Evaluation-only ablation: remove ball position noise and position-frame "
+            "bias while preserving velocity noise and physical/contact DR."
+        ),
+    )
+    p.add_argument(
+        "--disable-ball-observation-velocity-dr",
+        action="store_true",
+        help=(
+            "Evaluation-only ablation: remove ball velocity noise and velocity-frame "
+            "bias while preserving position noise and physical/contact DR."
+        ),
+    )
     p.add_argument("--render", action="store_true", help="Render env 0 with MuJoCo viewer.")
     p.add_argument("--realtime", action="store_true", help="Sleep according to env.dt while rendering.")
     p.add_argument("--slowmo", type=float, default=1.0)
@@ -291,6 +516,47 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--action-trace-csv", type=Path, default=None, help="Save per-control-step policy action and joint trace CSV.")
     p.add_argument("--action-plot-out", type=Path, default=None, help="Save a PNG plot of policy action and joint trajectories.")
     p.add_argument("--obs-trace-csv", type=Path, default=None, help="Save the exact per-control-step policy observation CSV.")
+    p.add_argument(
+        "--freeze-ball-at-reset",
+        action="store_true",
+        help=(
+            "Diagnostic ablation: keep the true MuJoCo ball and the valid policy "
+            "ball observation fixed at the episode reset position with zero velocity."
+        ),
+    )
+    p.add_argument(
+        "--ball-replay-csv",
+        type=Path,
+        default=None,
+        help=(
+            "Diagnostic input replay: inject observed_ball_{x,y,z} and "
+            "observed_vel_{x,y,z} from active policy rows of a real "
+            "policy_trace.csv into both MuJoCo and the policy observation."
+        ),
+    )
+    p.add_argument(
+        "--ball-replay-obs-ablation",
+        choices=(
+            "none",
+            "zero_vx",
+            "zero_vy",
+            "zero_vxy",
+            "freeze_x",
+            "freeze_y",
+            "freeze_xy",
+            "center_rel_x",
+            "center_rel_y",
+            "center_rel_xy",
+            "vertical_xy",
+            "zero_phase",
+        ),
+        default="none",
+        help=(
+            "Actor-only causal ablation for --ball-replay-csv. The MuJoCo "
+            "ball continues to follow the exact real trajectory while only "
+            "the selected 67-D policy observation components are replaced."
+        ),
+    )
     return p.parse_args(argv)
 
 
@@ -302,6 +568,43 @@ def load_checkpoint(path: Path) -> dict:
     if "params" not in payload:
         raise SystemExit(f"Checkpoint does not contain policy params: {path}")
     return payload
+
+
+def load_real_ball_replay(path: Path) -> tuple[np.ndarray, np.ndarray]:
+    """Load active-policy ball position/velocity samples from a real trace."""
+    required = (
+        "observed_ball_x",
+        "observed_ball_y",
+        "observed_ball_z",
+        "observed_vel_x",
+        "observed_vel_y",
+        "observed_vel_z",
+    )
+    positions: list[list[float]] = []
+    velocities: list[list[float]] = []
+    with path.expanduser().open("r", newline="") as stream:
+        reader = csv.DictReader(stream)
+        missing = [name for name in required if name not in (reader.fieldnames or ())]
+        if missing:
+            raise SystemExit(f"Ball replay CSV missing columns: {missing}")
+        for row in reader:
+            policy_executed = str(row.get("policyExecuted", "true")).strip().lower()
+            if policy_executed not in {"1", "true", "yes"}:
+                continue
+            try:
+                position = [float(row[name]) for name in required[:3]]
+                velocity = [float(row[name]) for name in required[3:]]
+            except (TypeError, ValueError):
+                continue
+            if np.all(np.isfinite(position)) and np.all(np.isfinite(velocity)):
+                positions.append(position)
+                velocities.append(velocity)
+    if not positions:
+        raise SystemExit(f"Ball replay CSV has no finite active-policy rows: {path}")
+    return (
+        np.asarray(positions, dtype=np.float32),
+        np.asarray(velocities, dtype=np.float32),
+    )
 
 
 def save_episode_rows(path: Path, rows: list[dict[str, float]]) -> None:
@@ -324,6 +627,107 @@ def save_trace_rows(path: Path, rows: list[dict[str, float]]) -> None:
         writer.writerows(rows)
 
 
+def _midpoint(value_range: tuple[float, float]) -> float:
+    return 0.5 * (float(value_range[0]) + float(value_range[1]))
+
+
+def disable_ball_physics_dr(cfg: MjxJuggleConfig) -> MjxJuggleConfig:
+    """Nominalize ball reset/dynamics/contact while retaining sensor DR."""
+
+    target_x = _midpoint(cfg.episode_target_x_range_m)
+    target_y = _midpoint(cfg.episode_target_y_range_m)
+    anchor_z = _midpoint(cfg.episode_racket_anchor_z_range_m)
+    launch_gap = _midpoint(cfg.racket_launch_surface_gap_range_m)
+    falling_time = _midpoint(cfg.falling_reset_time_to_contact_range_s)
+    falling_apex = _midpoint(cfg.falling_reset_apex_height_range_m)
+    return replace(
+        cfg,
+        # Keep the checkpoint's reset mode, but collapse every ball/reset range
+        # to its nominal midpoint and remove all spawn/launch perturbations.
+        episode_target_x_range_m=(target_x, target_x),
+        episode_target_y_range_m=(target_y, target_y),
+        episode_racket_anchor_z_range_m=(anchor_z, anchor_z),
+        ball_spawn_xy_jitter=0.0,
+        ball_spawn_z_jitter=0.0,
+        ball_init_vxy_max=0.0,
+        ball_init_vz_jitter=0.0,
+        falling_reset_time_to_contact_range_s=(falling_time, falling_time),
+        falling_reset_apex_height_range_m=(falling_apex, falling_apex),
+        falling_reset_vxy_max=0.0,
+        falling_reset_contact_xy_jitter=0.0,
+        racket_launch_surface_gap_range_m=(launch_gap, launch_gap),
+        racket_launch_xy_jitter=0.0,
+        racket_launch_vxy_max=0.0,
+        racket_launch_vnormal_max=0.0,
+        # Nominal MuJoCo ball parameters/contact replace episode DR samples.
+        dr_randomize_ball=False,
+        dr_randomize_contact=False,
+    )
+
+
+def disable_ball_observation_dr(cfg: MjxJuggleConfig) -> MjxJuggleConfig:
+    """Make refreshed ball observations exact while retaining physical DR."""
+
+    return replace(
+        cfg,
+        # Preserve the checkpoint's sensor update rate/sample-and-hold timing,
+        # but make every refreshed six-dimensional ball state exact.
+        ball_obs_pos_noise_std=0.0,
+        ball_obs_vel_noise_std=0.0,
+        ball_obs_noise_warmup_ratio=0.0,
+        ball_obs_noise_ramp_ratio=0.0,
+        ball_obs_dropout_prob=0.0,
+        ball_obs_dropout_max_steps=1,
+        ball_obs_dropout_burst_prob=0.0,
+        ball_obs_dropout_burst_max_steps=1,
+        ball_obs_require_camera_visible=False,
+        ball_obs_camera_missing_prob=0.0,
+        ball_obs_reset_respects_camera_visibility=False,
+        ball_obs_require_view_bounds=False,
+        ball_obs_view_bounds_missing_prob=0.0,
+        ball_obs_missing_episode_coherent_prob=0.0,
+        ball_obs_require_view_z_high=False,
+        ball_obs_view_z_high_missing_range_m=(0.0, 0.0),
+        ball_obs_nominal_pos_bias_base=(0.0, 0.0, 0.0),
+        ball_obs_nominal_vel_bias_base=(0.0, 0.0, 0.0),
+        dr_randomize_ball_obs_frame=False,
+        dr_ball_obs_pos_bias_base_m=(0.0, 0.0, 0.0),
+        dr_ball_obs_rot_bias_deg=(0.0, 0.0, 0.0),
+        dr_ball_obs_vel_bias_base_m_s=(0.0, 0.0, 0.0),
+        dr_ball_obs_scale_range=(1.0, 1.0),
+    )
+
+
+def disable_ball_observation_position_dr(cfg: MjxJuggleConfig) -> MjxJuggleConfig:
+    """Remove only position-side ball observation uncertainty."""
+
+    return replace(
+        cfg,
+        ball_obs_pos_noise_std=0.0,
+        ball_obs_nominal_pos_bias_base=(0.0, 0.0, 0.0),
+        dr_ball_obs_pos_bias_base_m=(0.0, 0.0, 0.0),
+        dr_ball_obs_rot_bias_deg=(0.0, 0.0, 0.0),
+        dr_ball_obs_scale_range=(1.0, 1.0),
+    )
+
+
+def disable_ball_observation_velocity_dr(cfg: MjxJuggleConfig) -> MjxJuggleConfig:
+    """Remove only velocity-side ball observation uncertainty."""
+
+    return replace(
+        cfg,
+        ball_obs_vel_noise_std=0.0,
+        ball_obs_nominal_vel_bias_base=(0.0, 0.0, 0.0),
+        dr_ball_obs_vel_bias_base_m_s=(0.0, 0.0, 0.0),
+    )
+
+
+def disable_ball_state_dr(cfg: MjxJuggleConfig) -> MjxJuggleConfig:
+    """Nominalize the complete ball chain while retaining robot/actuator DR."""
+
+    return disable_ball_observation_dr(disable_ball_physics_dr(cfg))
+
+
 def env_config_from_checkpoint(payload: dict, args: argparse.Namespace) -> MjxJuggleConfig:
     cfg_payload = payload.get("env_cfg") or {}
     valid_fields = {f.name for f in fields(MjxJuggleConfig)}
@@ -331,6 +735,220 @@ def env_config_from_checkpoint(payload: dict, args: argparse.Namespace) -> MjxJu
     if "virtual_camera_pose_mode" not in cfg_payload:
         cfg_kwargs["virtual_camera_pose_mode"] = "body_mount"
     cfg = MjxJuggleConfig(**cfg_kwargs)
+    racket_launch_hold_time_s = getattr(args, "racket_launch_hold_time_s", None)
+    if racket_launch_hold_time_s is not None:
+        if float(racket_launch_hold_time_s) < 0.0:
+            raise ValueError("racket_launch_hold_time_s must be non-negative")
+        cfg = replace(
+            cfg,
+            racket_launch_hold_time_s=float(racket_launch_hold_time_s),
+            racket_launch_hold_time_range_s=None,
+        )
+    racket_launch_hold_time_range_s = getattr(
+        args, "racket_launch_hold_time_range_s", None
+    )
+    if racket_launch_hold_time_range_s is not None:
+        hold_range = tuple(float(value) for value in racket_launch_hold_time_range_s)
+        if min(hold_range) < 0.0:
+            raise ValueError("racket_launch_hold_time_range_s must be non-negative")
+        cfg = replace(cfg, racket_launch_hold_time_range_s=hold_range)
+    racket_launch_hold_mode = getattr(args, "racket_launch_hold_mode", None)
+    if racket_launch_hold_mode is not None:
+        cfg = replace(cfg, racket_launch_hold_mode=str(racket_launch_hold_mode))
+    racket_launch_pre_release_control_mode = getattr(
+        args, "racket_launch_pre_release_control_mode", None
+    )
+    if racket_launch_pre_release_control_mode is not None:
+        cfg = replace(
+            cfg,
+            racket_launch_pre_release_control_mode=str(
+                racket_launch_pre_release_control_mode
+            ),
+        )
+    scalar_overrides = {
+        "ball_obs_pos_noise_std": getattr(args, "ball_obs_pos_noise_std", None),
+        "ball_obs_vel_noise_std": getattr(args, "ball_obs_vel_noise_std", None),
+        "ball_obs_vel_xy_noise_std": getattr(
+            args, "ball_obs_vel_xy_noise_std", None
+        ),
+        "proprio_dq_obs_noise_std": getattr(
+            args, "proprio_dq_obs_noise_std", None
+        ),
+        "proprio_racket_vel_obs_noise_std": getattr(
+            args, "proprio_racket_vel_obs_noise_std", None
+        ),
+        "ball_obs_velocity_observer_tau_ms": getattr(
+            args, "ball_obs_velocity_observer_tau_ms", None
+        ),
+        "ball_obs_velocity_observer_max_innovation_m_s": getattr(
+            args, "ball_obs_velocity_observer_max_innovation_m_s", None
+        ),
+        "ball_obs_joint_observer_alpha": getattr(
+            args, "ball_obs_joint_observer_alpha", None
+        ),
+        "ball_obs_joint_observer_beta": getattr(
+            args, "ball_obs_joint_observer_beta", None
+        ),
+        "ball_obs_joint_observer_raw_velocity_gain": getattr(
+            args, "ball_obs_joint_observer_raw_velocity_gain", None
+        ),
+        "ball_obs_consistency_gate_threshold_m_s": getattr(
+            args, "ball_obs_consistency_gate_threshold_m_s", None
+        ),
+        "ball_obs_consistency_gate_correction_gain": getattr(
+            args, "ball_obs_consistency_gate_correction_gain", None
+        ),
+        "ball_obs_consistency_gate_max_correction_m_s": getattr(
+            args, "ball_obs_consistency_gate_max_correction_m_s", None
+        ),
+        "ball_obs_consistency_gate_contact_guard_s": getattr(
+            args, "ball_obs_consistency_gate_contact_guard_s", None
+        ),
+        "ball_obs_prospective_prediction_margin_m": getattr(
+            args, "ball_obs_prospective_prediction_margin_m", None
+        ),
+        "ball_obs_prospective_velocity_disagreement_m_s": getattr(
+            args, "ball_obs_prospective_velocity_disagreement_m_s", None
+        ),
+        "ball_obs_prospective_candidate_gain": getattr(
+            args, "ball_obs_prospective_candidate_gain", None
+        ),
+        "ball_obs_prospective_max_correction_m_s": getattr(
+            args, "ball_obs_prospective_max_correction_m_s", None
+        ),
+        "ball_obs_prospective_max_sample_gap_s": getattr(
+            args, "ball_obs_prospective_max_sample_gap_s", None
+        ),
+        "ball_obs_prospective_contact_guard_s": getattr(
+            args, "ball_obs_prospective_contact_guard_s", None
+        ),
+    }
+    for field_name, value in scalar_overrides.items():
+        if value is None:
+            continue
+        if float(value) < 0.0:
+            raise ValueError(f"{field_name} must be non-negative")
+        cfg = replace(cfg, **{field_name: float(value)})
+    proprio_obs_noise_rho = getattr(args, "proprio_obs_noise_rho", None)
+    if proprio_obs_noise_rho is not None:
+        value = float(proprio_obs_noise_rho)
+        if not 0.0 <= value < 1.0:
+            raise ValueError("proprio_obs_noise_rho must be in [0, 1)")
+        cfg = replace(cfg, proprio_obs_noise_rho=value)
+    observer_mode = getattr(args, "ball_obs_velocity_observer_mode", None)
+    if observer_mode is not None:
+        cfg = replace(cfg, ball_obs_velocity_observer_mode=str(observer_mode))
+    normalized_observer_mode = str(cfg.ball_obs_velocity_observer_mode).strip().lower()
+    if (
+        normalized_observer_mode == "ema_xy"
+        and float(cfg.ball_obs_velocity_observer_tau_ms) <= 0.0
+    ):
+        raise ValueError("ema_xy requires a positive observer tau")
+    if (
+        normalized_observer_mode == "innovation_clip_xy"
+        and float(cfg.ball_obs_velocity_observer_max_innovation_m_s) <= 0.0
+    ):
+        raise ValueError("innovation_clip_xy requires a positive innovation limit")
+    if normalized_observer_mode == "alpha_beta_xy":
+        for field_name in (
+            "ball_obs_joint_observer_alpha",
+            "ball_obs_joint_observer_beta",
+            "ball_obs_joint_observer_raw_velocity_gain",
+        ):
+            value = float(getattr(cfg, field_name))
+            if not 0.0 <= value <= 1.0:
+                raise ValueError(f"{field_name} must be in [0, 1]")
+    consistency_direction_cosine = getattr(
+        args, "ball_obs_consistency_gate_direction_cosine", None
+    )
+    if consistency_direction_cosine is not None:
+        value = float(consistency_direction_cosine)
+        if not -1.0 <= value <= 1.0:
+            raise ValueError(
+                "ball_obs_consistency_gate_direction_cosine must be in [-1, 1]"
+            )
+        cfg = replace(cfg, ball_obs_consistency_gate_direction_cosine=value)
+    consistency_min_samples = getattr(
+        args, "ball_obs_consistency_gate_min_samples", None
+    )
+    if consistency_min_samples is not None:
+        if int(consistency_min_samples) < 2:
+            raise ValueError("ball_obs_consistency_gate_min_samples must be >= 2")
+        cfg = replace(
+            cfg,
+            ball_obs_consistency_gate_min_samples=int(consistency_min_samples),
+        )
+    if normalized_observer_mode == "confidence_gate_xy":
+        if float(cfg.ball_obs_velocity_observer_max_innovation_m_s) <= 0.0:
+            raise ValueError(
+                "confidence_gate_xy requires a positive checkpoint innovation limit"
+            )
+        if not 0.0 < float(cfg.ball_obs_consistency_gate_correction_gain) <= 1.0:
+            raise ValueError(
+                "ball_obs_consistency_gate_correction_gain must be in (0, 1]"
+            )
+    prospective_window_samples = getattr(
+        args, "ball_obs_prospective_window_samples", None
+    )
+    if prospective_window_samples is not None:
+        if int(prospective_window_samples) not in {4, 5, 6}:
+            raise ValueError(
+                "ball_obs_prospective_window_samples must be 4, 5, or 6"
+            )
+        cfg = replace(
+            cfg,
+            ball_obs_prospective_window_samples=int(prospective_window_samples),
+        )
+    if normalized_observer_mode == "prospective_signal_xy":
+        if float(cfg.ball_obs_velocity_observer_max_innovation_m_s) <= 0.0:
+            raise ValueError(
+                "prospective_signal_xy requires a positive checkpoint innovation limit"
+            )
+        if int(cfg.ball_obs_prospective_window_samples) not in {4, 5, 6}:
+            raise ValueError(
+                "ball_obs_prospective_window_samples must be 4, 5, or 6"
+            )
+        if not 0.0 < float(cfg.ball_obs_prospective_candidate_gain) <= 1.0:
+            raise ValueError(
+                "ball_obs_prospective_candidate_gain must be in (0, 1]"
+            )
+        for field_name in (
+            "ball_obs_prospective_velocity_disagreement_m_s",
+            "ball_obs_prospective_max_correction_m_s",
+            "ball_obs_prospective_max_sample_gap_s",
+        ):
+            if float(getattr(cfg, field_name)) <= 0.0:
+                raise ValueError(f"{field_name} must be positive")
+    range_overrides = {
+        "dr_actuator_cmd_tau_range": getattr(
+            args, "dr_actuator_cmd_tau_range", None
+        ),
+        "dr_actuator_cmd_gain_range": getattr(
+            args, "dr_actuator_cmd_gain_range", None
+        ),
+        "dr_second_order_frequency_scale_range": getattr(
+            args, "dr_second_order_frequency_scale_range", None
+        ),
+        "dr_second_order_damping_scale_range": getattr(
+            args, "dr_second_order_damping_scale_range", None
+        ),
+        "dr_ball_mass_range": getattr(args, "dr_ball_mass_range", None),
+        "dr_ball_solref_time_range": getattr(
+            args, "dr_ball_solref_time_range", None
+        ),
+        "dr_ball_solref_damping_range": getattr(
+            args, "dr_ball_solref_damping_range", None
+        ),
+    }
+    for field_name, value in range_overrides.items():
+        if value is None:
+            continue
+        low, high = (float(item) for item in value)
+        if low <= 0.0 or high < low:
+            raise ValueError(
+                f"{field_name} must satisfy 0 < LOW <= HIGH, got {(low, high)}"
+            )
+        cfg = replace(cfg, **{field_name: (low, high)})
     arm_post_compensation_limiter = getattr(
         args,
         "arm_post_compensation_limiter",
@@ -605,6 +1223,16 @@ def env_config_from_checkpoint(payload: dict, args: argparse.Namespace) -> MjxJu
             dr_ball_obs_vel_bias_base_m_s=(0.05, 0.05, 0.08),
             dr_ball_obs_scale_range=(0.97, 1.03),
         )
+    ball_obs_rate_hz = getattr(args, "ball_obs_rate_hz", None)
+    if ball_obs_rate_hz is not None:
+        ball_obs_rate_hz = float(ball_obs_rate_hz)
+        if not np.isfinite(ball_obs_rate_hz) or ball_obs_rate_hz <= 0.0:
+            raise ValueError("ball_obs_rate_hz must be positive and finite")
+        cfg = replace(
+            cfg,
+            ball_obs_rate_hz=ball_obs_rate_hz,
+            ball_obs_fractional_rate=True,
+        )
     if args.ball_obs_nominal_pos_bias_base is not None:
         cfg = replace(
             cfg,
@@ -615,6 +1243,16 @@ def env_config_from_checkpoint(payload: dict, args: argparse.Namespace) -> MjxJu
             cfg,
             ball_obs_nominal_vel_bias_base=tuple(float(v) for v in args.ball_obs_nominal_vel_bias_base),
         )
+    if getattr(args, "disable_ball_physics_dr", False):
+        cfg = disable_ball_physics_dr(cfg)
+    if getattr(args, "disable_ball_observation_dr", False):
+        cfg = disable_ball_observation_dr(cfg)
+    if getattr(args, "disable_ball_observation_position_dr", False):
+        cfg = disable_ball_observation_position_dr(cfg)
+    if getattr(args, "disable_ball_observation_velocity_dr", False):
+        cfg = disable_ball_observation_velocity_dr(cfg)
+    if getattr(args, "disable_ball_state_dr", False):
+        cfg = disable_ball_state_dr(cfg)
     return cfg
 
 
@@ -744,7 +1382,156 @@ def camera_trace_metrics(env: MjxJuggleEnv, env_state) -> dict[str, jax.Array]:
     }
 
 
-def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float, ignore_early_done: bool = False):
+def override_ball_state(
+    env: MjxJuggleEnv,
+    env_state,
+    ball_position: jax.Array,
+    ball_velocity: jax.Array,
+    *,
+    exact_observation_frame: bool = False,
+):
+    """Override physics and policy-facing ball state for diagnostic replays."""
+    ball_position = jnp.asarray(ball_position, dtype=jnp.float32)
+    ball_velocity = jnp.asarray(ball_velocity, dtype=jnp.float32)
+    data = env_state.data
+    if exact_observation_frame:
+        base_x = data.qpos[:, env.base_x_qadr]
+        base_y = data.qpos[:, env.base_y_qadr]
+        base_yaw = data.qpos[:, env.base_yaw_qadr]
+        base_vx = data.qvel[:, env.base_x_vadr]
+        base_vy = data.qvel[:, env.base_y_vadr]
+        base_yaw_rate = data.qvel[:, env.base_yaw_vadr]
+        c = jnp.cos(base_yaw)
+        s = jnp.sin(base_yaw)
+        rel_x = c * ball_position[:, 0] - s * ball_position[:, 1]
+        rel_y = s * ball_position[:, 0] + c * ball_position[:, 1]
+        vel_rel_x = c * ball_velocity[:, 0] - s * ball_velocity[:, 1]
+        vel_rel_y = s * ball_velocity[:, 0] + c * ball_velocity[:, 1]
+        ball_position = jnp.stack(
+            [base_x + rel_x, base_y + rel_y, ball_position[:, 2]],
+            axis=-1,
+        )
+        ball_velocity = jnp.stack(
+            [
+                base_vx + vel_rel_x - base_yaw_rate * rel_y,
+                base_vy + vel_rel_y + base_yaw_rate * rel_x,
+                ball_velocity[:, 2],
+            ],
+            axis=-1,
+        )
+    qpos = data.qpos.at[:, env.ball_qadr : env.ball_qadr + 3].set(
+        ball_position
+    )
+    qpos = qpos.at[:, env.ball_qadr + 3 : env.ball_qadr + 7].set(
+        jnp.broadcast_to(
+            jnp.asarray([1.0, 0.0, 0.0, 0.0], dtype=jnp.float32),
+            (env.n_envs, 4),
+        )
+    )
+    qvel = data.qvel.at[:, env.ball_vadr : env.ball_vadr + 3].set(ball_velocity)
+    qvel = qvel.at[:, env.ball_vadr + 3 : env.ball_vadr + 6].set(0.0)
+    qacc = data.qacc.at[:, env.ball_vadr : env.ball_vadr + 6].set(0.0)
+    data = data.replace(qpos=qpos, qvel=qvel, qacc=qacc)
+    data = env.batched_forward(env_state.model, data)
+    state_updates = dict(
+        data=data,
+        reset_ball_pos=ball_position,
+        reset_ball_vel=ball_velocity,
+        prev_ball_pos=ball_position,
+        cached_ball_obs_pos=ball_position,
+        cached_ball_obs_vel=ball_velocity,
+        ball_obs_valid_pos=ball_position,
+        ball_obs_valid_vel=ball_velocity,
+        ball_obs_age_seconds=jnp.zeros((env.n_envs,), dtype=jnp.float32),
+        ball_obs_missing_since_sample=jnp.zeros((env.n_envs,), dtype=bool),
+        ball_obs_dropout_remaining=jnp.zeros((env.n_envs,), dtype=jnp.int32),
+        last_ball_obs_step=env_state.step_count,
+    )
+    if exact_observation_frame:
+        state_updates.update(
+            ball_obs_pos_bias_base=jnp.zeros_like(env_state.ball_obs_pos_bias_base),
+            ball_obs_rot_bias_rpy=jnp.zeros_like(env_state.ball_obs_rot_bias_rpy),
+            ball_obs_vel_bias_base=jnp.zeros_like(env_state.ball_obs_vel_bias_base),
+            ball_obs_scale=jnp.ones_like(env_state.ball_obs_scale),
+        )
+    env_state = env_state._replace(**state_updates)
+    return env_state, env.observe(env_state)
+
+
+def ablate_ball_replay_observation(
+    obs: jax.Array,
+    mode: str,
+    reference_ball_xy_base: jax.Array,
+) -> jax.Array:
+    """Apply an actor-only counterfactual to a forced real-ball replay.
+
+    The base 50-D observation layout is fixed by ``MjxJuggleEnv._make_obs``:
+    ball position 20:23, ball velocity 23:26, racket position 26:29,
+    ball-minus-racket position 32:35, and ball age 49.  The deployed 67-D
+    contract appends phase features at 65:67.  Keeping MuJoCo and the replayed
+    ball untouched while changing only these actor inputs distinguishes an
+    observation-triggered chase from plant/contact dynamics.
+    """
+
+    mode = str(mode)
+    if mode == "none":
+        return obs
+    out = obs
+    if mode in {"zero_vx", "zero_vxy", "vertical_xy"}:
+        out = out.at[:, 23].set(0.0)
+    if mode in {"zero_vy", "zero_vxy", "vertical_xy"}:
+        out = out.at[:, 24].set(0.0)
+
+    freeze_x = mode in {"freeze_x", "freeze_xy", "vertical_xy"}
+    freeze_y = mode in {"freeze_y", "freeze_xy", "vertical_xy"}
+    center_x = mode in {"center_rel_x", "center_rel_xy"}
+    center_y = mode in {"center_rel_y", "center_rel_xy"}
+    if freeze_x:
+        ball_x = reference_ball_xy_base[:, 0]
+        out = out.at[:, 20].set(ball_x)
+        out = out.at[:, 32].set(ball_x - out[:, 26])
+    if freeze_y:
+        ball_y = reference_ball_xy_base[:, 1]
+        out = out.at[:, 21].set(ball_y)
+        out = out.at[:, 33].set(ball_y - out[:, 27])
+    if center_x:
+        out = out.at[:, 20].set(out[:, 26])
+        out = out.at[:, 32].set(0.0)
+    if center_y:
+        out = out.at[:, 21].set(out[:, 27])
+        out = out.at[:, 33].set(0.0)
+    if mode == "zero_phase":
+        if out.shape[1] < 67:
+            raise ValueError("zero_phase requires the deployed 67-D observation")
+        out = out.at[:, 65:67].set(0.0)
+    return out
+
+
+def freeze_ball_state(
+    env: MjxJuggleEnv,
+    env_state,
+    fixed_ball_position: jax.Array,
+):
+    """Clamp ball state at reset position with a valid zero-velocity observation."""
+    return override_ball_state(
+        env,
+        env_state,
+        fixed_ball_position,
+        jnp.zeros_like(fixed_ball_position),
+    )
+
+
+def make_eval_step(
+    env: MjxJuggleEnv,
+    deterministic: bool,
+    action_gain: float,
+    ignore_early_done: bool = False,
+    fixed_ball_position: jax.Array | None = None,
+    ball_replay_positions: jax.Array | None = None,
+    ball_replay_velocities: jax.Array | None = None,
+    ball_replay_obs_ablation: str = "none",
+    reference_ball_xy_base: jax.Array | None = None,
+):
     base_joint_names = ("base_x", "base_y", "base_z", "base_roll", "base_pitch", "base_yaw")
     base_joint_ids = [
         mj.mj_name2id(env.mj_model, mj.mjtObj.mjOBJ_JOINT, name)
@@ -771,6 +1558,30 @@ def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float, i
 
         prev_arm_qvel = env_state.data.qvel[:, env.arm_vadr]
         next_env_state, next_obs, reward, done, metrics = env.step(env_state, action)
+        if fixed_ball_position is not None:
+            next_env_state, next_obs = freeze_ball_state(
+                env,
+                next_env_state,
+                fixed_ball_position,
+            )
+        elif ball_replay_positions is not None:
+            replay_index = jnp.clip(
+                next_env_state.step_count,
+                0,
+                ball_replay_positions.shape[0] - 1,
+            )
+            next_env_state, next_obs = override_ball_state(
+                env,
+                next_env_state,
+                ball_replay_positions[replay_index],
+                ball_replay_velocities[replay_index],
+                exact_observation_frame=True,
+            )
+            next_obs = ablate_ball_replay_observation(
+                next_obs,
+                ball_replay_obs_ablation,
+                reference_ball_xy_base,
+            )
         if bool(ignore_early_done):
             done = metrics["truncated"].astype(bool)
         completed_return = running_return + reward
@@ -806,6 +1617,30 @@ def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float, i
         reset_keys = jax.random.split(reset_key, env.n_envs)
         camera_metrics = camera_trace_metrics(env, next_env_state)
         next_env_state, next_obs = env.reset_done(next_env_state, next_obs, done, reset_keys)
+        if fixed_ball_position is not None:
+            next_env_state, next_obs = freeze_ball_state(
+                env,
+                next_env_state,
+                fixed_ball_position,
+            )
+        elif ball_replay_positions is not None:
+            replay_index = jnp.clip(
+                next_env_state.step_count,
+                0,
+                ball_replay_positions.shape[0] - 1,
+            )
+            next_env_state, next_obs = override_ball_state(
+                env,
+                next_env_state,
+                ball_replay_positions[replay_index],
+                ball_replay_velocities[replay_index],
+                exact_observation_frame=True,
+            )
+            next_obs = ablate_ball_replay_observation(
+                next_obs,
+                ball_replay_obs_ablation,
+                reference_ball_xy_base,
+            )
         next_running_return = jnp.where(done, 0.0, completed_return)
         next_running_length = jnp.where(done, 0, completed_length)
 
@@ -863,19 +1698,33 @@ def make_eval_step(env: MjxJuggleEnv, deterministic: bool, action_gain: float, i
                 or key.startswith("raw_action_clip_")
                 or key.startswith("ball_obs_")
                 or key.startswith("hit_camera_")
+                or key.startswith("hit_cycle_")
+                or key.startswith("hit_racket_vxy_")
+                or key.startswith("racket_cycle_")
                 or key.startswith("racket_angular_velocity_")
                 or key == "racket_tilt_angular_speed_rad_s"
                 or key == "racket_spin_angular_speed_rad_s"
                 or key
                 in {
+                    "physical_contact_edge",
+                    "launch_clearance_crossing",
+                    "low_survival_launch",
+                    "subfloor_launch",
+                    "confirmed_hit",
+                    "failed_hit",
+                    "ignored_fast_hit",
                     "hit_event_count",
                     "hit_vxy_sum",
+                    "hit_vxy_sq_sum",
                     "hit_contact_center_dist_sum",
                     "hit_racket_up_cos_sum",
                     "hit_apex_rel_height_sum",
                     "hit_apex_view_x_sum",
                     "hit_apex_view_y_sum",
                     "hit_next_contact_anchor_err_sum",
+                    "hit_posterior_contact_event",
+                    "hit_posterior_contact_anchor_err_sum",
+                    "hit_contact_anchor_contraction_sum",
                 }
                 or key.startswith("reset_")
                 or key.startswith("dr_")
@@ -958,6 +1807,9 @@ def add_terminal_step_metrics(
             or key.startswith("reset_")
             or key.startswith("dr_")
             or key.startswith("hit_camera_")
+            or key.startswith("hit_cycle_")
+            or key.startswith("hit_racket_vxy_")
+            or key.startswith("racket_cycle_")
             or key
             in {
                 "action_scale_mult",
@@ -1071,6 +1923,15 @@ def trace_row_from_host(
         "action_norm": float(host["action_norm"][env_i]),
     }
     add_camera_columns(row, host, env_i)
+    # Keep task-space motion in the compact action trace as well.  This makes
+    # paired real-ball replays directly usable for circle/path diagnostics
+    # without requiring a second, much wider observation trace.
+    obs = np.asarray(host["obs"][env_i], dtype=np.float32).reshape(-1)
+    for axis_i, axis in enumerate(("x", "y", "z")):
+        row[f"obs_ball_pos_base_m/{axis}"] = float(obs[20 + axis_i])
+        row[f"obs_ball_vel_base_m_s/{axis}"] = float(obs[23 + axis_i])
+        row[f"obs_racket_pos_base_m/{axis}"] = float(obs[26 + axis_i])
+        row[f"obs_racket_vel_base_m_s/{axis}"] = float(obs[29 + axis_i])
     vector_keys = [
         "policy_mean",
         "raw_action",
@@ -1428,8 +2289,68 @@ def plot_trace_rows(path: Path, rows: list[dict[str, float]]) -> None:
     plt.close(fig)
 
 
+def gpu_temperature_stop_reason(limit_c: float) -> str | None:
+    if limit_c <= 0.0:
+        return None
+    try:
+        process = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=index,temperature.gpu",
+                "--format=csv,noheader,nounits",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=3.0,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return None
+    if process.returncode != 0:
+        return None
+    for line in process.stdout.splitlines():
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) < 2:
+            continue
+        try:
+            gpu_index = int(parts[0])
+            temperature_c = float(parts[1])
+        except ValueError:
+            continue
+        if temperature_c >= limit_c:
+            return (
+                f"GPU {gpu_index} temperature {temperature_c:.0f}C reached "
+                f"--gpu-max-temp-c={limit_c:.0f}C"
+            )
+    return None
+
+
 def main() -> None:
     args = parse_args()
+    if args.one_episode_per_env and args.episodes != args.n_envs:
+        raise SystemExit(
+            "--one-episode-per-env requires --episodes equal to --n-envs so every "
+            "reset sample is represented exactly once"
+        )
+    if args.freeze_ball_at_reset and args.ball_replay_csv is not None:
+        raise SystemExit("Use only one of --freeze-ball-at-reset and --ball-replay-csv")
+    if args.ball_replay_obs_ablation != "none" and args.ball_replay_csv is None:
+        raise SystemExit("--ball-replay-obs-ablation requires --ball-replay-csv")
+    replay_positions_np = None
+    replay_velocities_np = None
+    if args.ball_replay_csv is not None:
+        if args.n_envs != 1:
+            raise SystemExit("--ball-replay-csv currently requires --n-envs 1")
+        replay_positions_np, replay_velocities_np = load_real_ball_replay(
+            args.ball_replay_csv
+        )
+        if args.max_env_steps <= 0:
+            args.max_env_steps = int(replay_positions_np.shape[0])
+        elif args.max_env_steps > replay_positions_np.shape[0]:
+            raise SystemExit(
+                f"--max-env-steps={args.max_env_steps} exceeds replay length "
+                f"{replay_positions_np.shape[0]}"
+            )
     payload = load_checkpoint(args.checkpoint)
     env_payload = (
         load_checkpoint(args.env_checkpoint)
@@ -1492,18 +2413,113 @@ def main() -> None:
         f"view_missing_prob={cfg.ball_obs_view_bounds_missing_prob}, "
         f"episode_coherent_prob={cfg.ball_obs_missing_episode_coherent_prob}, "
         f"frame_pivot_mode={cfg.ball_obs_frame_pivot_mode}, "
+        f"velocity_observer={cfg.ball_obs_velocity_observer_mode}, "
+        f"observer_tau_ms={cfg.ball_obs_velocity_observer_tau_ms}, "
+        f"observer_max_innovation={cfg.ball_obs_velocity_observer_max_innovation_m_s}, "
+        f"joint_observer=({cfg.ball_obs_joint_observer_alpha}, "
+        f"{cfg.ball_obs_joint_observer_beta}, "
+        f"{cfg.ball_obs_joint_observer_raw_velocity_gain}), "
+        f"consistency_gate=({cfg.ball_obs_consistency_gate_threshold_m_s}, "
+        f"{cfg.ball_obs_consistency_gate_direction_cosine}, "
+        f"{cfg.ball_obs_consistency_gate_min_samples}, "
+        f"{cfg.ball_obs_consistency_gate_correction_gain}, "
+        f"{cfg.ball_obs_consistency_gate_max_correction_m_s}, "
+        f"{cfg.ball_obs_consistency_gate_contact_guard_s}), "
+        f"prospective_signal=({cfg.ball_obs_prospective_window_samples}, "
+        f"{cfg.ball_obs_prospective_prediction_margin_m}, "
+        f"{cfg.ball_obs_prospective_velocity_disagreement_m_s}, "
+        f"{cfg.ball_obs_prospective_candidate_gain}, "
+        f"{cfg.ball_obs_prospective_max_correction_m_s}, "
+        f"{cfg.ball_obs_prospective_max_sample_gap_s}, "
+        f"{cfg.ball_obs_prospective_contact_guard_s}), "
         f"obs_latency_steps={cfg.dr_obs_latency_steps_range}, action_latency_steps={cfg.dr_action_latency_steps_range}, "
         f"actuator_cmd_filter={cfg.actuator_cmd_filter}, tau_range={cfg.dr_actuator_cmd_tau_range}, "
         f"gain_range={cfg.dr_actuator_cmd_gain_range}, pos_bias={cfg.ball_obs_nominal_pos_bias_base}"
     )
+    print(
+        "[validate_mjx] ball_physics_cfg: "
+        f"mass_range={cfg.dr_ball_mass_range}, "
+        f"solref_time_range={cfg.dr_ball_solref_time_range}, "
+        f"solref_damping_range={cfg.dr_ball_solref_damping_range}, "
+        f"ball_dr={cfg.dr_randomize_ball}, contact_dr={cfg.dr_randomize_contact}"
+    )
+    if args.disable_ball_state_dr:
+        print(
+            "[validate_mjx] ball_state_dr=OFF: "
+            f"reset_mode={cfg.ball_reset_mode}, "
+            f"target_x={cfg.episode_target_x_range_m}, "
+            f"target_y={cfg.episode_target_y_range_m}, "
+            f"launch_gap={cfg.racket_launch_surface_gap_range_m}, "
+            f"ball_dynamics_dr={cfg.dr_randomize_ball}, "
+            f"contact_dr={cfg.dr_randomize_contact}, "
+            f"obs_frame_dr={cfg.dr_randomize_ball_obs_frame}, "
+            f"obs_noise=({cfg.ball_obs_pos_noise_std}, {cfg.ball_obs_vel_noise_std}); "
+            f"preserved actuator_dr={cfg.dr_randomize_actuator}, "
+            f"pd_dr={cfg.dr_randomize_pd}, "
+            f"racket_mount_dr={cfg.dr_randomize_racket_mount}"
+        )
 
     rng = jax.random.PRNGKey(args.seed)
     rng, reset_key = jax.random.split(rng)
     reset_keys = jax.random.split(reset_key, args.n_envs)
     env_state, obs = jax.jit(env.reset)(reset_keys)
+    fixed_ball_position = None
+    ball_replay_positions = None
+    ball_replay_velocities = None
+    reference_ball_xy_base = None
+    if args.freeze_ball_at_reset:
+        fixed_ball_position = env_state.reset_ball_pos
+        env_state, obs = jax.jit(
+            lambda state: freeze_ball_state(env, state, fixed_ball_position)
+        )(env_state)
+        print(
+            "[validate_mjx] fixed-ball diagnostic: "
+            f"position={np.asarray(jax.device_get(fixed_ball_position))[0].round(6).tolist()}, "
+            "velocity=[0, 0, 0], valid observation held constant"
+        )
+    elif replay_positions_np is not None:
+        ball_replay_positions = jnp.asarray(replay_positions_np)
+        ball_replay_velocities = jnp.asarray(replay_velocities_np)
+        env_state, obs = jax.jit(
+            lambda state: override_ball_state(
+                env,
+                state,
+                ball_replay_positions[:1],
+                ball_replay_velocities[:1],
+                exact_observation_frame=True,
+            )
+        )(env_state)
+        reference_ball_xy_base = obs[:, 20:22]
+        obs = ablate_ball_replay_observation(
+            obs,
+            args.ball_replay_obs_ablation,
+            reference_ball_xy_base,
+        )
+        print(
+            "[validate_mjx] real-ball replay: "
+            f"csv={args.ball_replay_csv}, samples={replay_positions_np.shape[0]}, "
+            f"duration={(replay_positions_np.shape[0] - 1) * env.dt:.3f}s, "
+            f"initial_position={replay_positions_np[0].round(6).tolist()}, "
+            f"initial_velocity={replay_velocities_np[0].round(6).tolist()}"
+        )
+        if args.ball_replay_obs_ablation != "none":
+            print(
+                "[validate_mjx] actor-only replay observation ablation: "
+                f"mode={args.ball_replay_obs_ablation}; physical replay unchanged"
+            )
     running_return = jnp.zeros((args.n_envs,), dtype=jnp.float32)
     running_length = jnp.zeros((args.n_envs,), dtype=jnp.int32)
-    eval_step = make_eval_step(env, args.deterministic, args.action_gain, args.ignore_early_done)
+    eval_step = make_eval_step(
+        env,
+        args.deterministic,
+        args.action_gain,
+        args.ignore_early_done,
+        fixed_ball_position=fixed_ball_position,
+        ball_replay_positions=ball_replay_positions,
+        ball_replay_velocities=ball_replay_velocities,
+        ball_replay_obs_ablation=args.ball_replay_obs_ablation,
+        reference_ball_xy_base=reference_ball_xy_base,
+    )
 
     viewer_ctx = None
     viewer = None
@@ -1568,6 +2584,7 @@ def main() -> None:
     trace_rows: list[dict[str, float]] = []
     obs_trace_rows: list[dict[str, float]] = []
     env_episode_counts = np.zeros((args.n_envs,), dtype=np.int32)
+    first_episode_recorded = np.zeros((args.n_envs,), dtype=bool)
     episode_hit_camera_events = np.zeros((args.n_envs,), dtype=np.float64)
     episode_hit_camera_visible = np.zeros((args.n_envs,), dtype=np.float64)
     episode_hit_camera_in_margin = np.zeros((args.n_envs,), dtype=np.float64)
@@ -1575,17 +2592,43 @@ def main() -> None:
     episode_hit_camera_v_frac_sum = np.zeros((args.n_envs,), dtype=np.float64)
     episode_hit_metric_sources = (
         "hit_vxy_sum",
+        "hit_vxy_sq_sum",
+        "hit_racket_vxy_sum",
+        "hit_racket_vxy_sq_sum",
+        "hit_cycle_eligible",
+        "hit_cycle_racket_xy_path_excess_m",
+        "hit_cycle_racket_xy_area_m2",
+        "racket_cycle_motion_active",
+        "racket_cycle_vxy_m_s",
         "hit_contact_center_dist_sum",
         "hit_racket_up_cos_sum",
         "hit_apex_rel_height_sum",
         "hit_apex_view_x_sum",
         "hit_apex_view_y_sum",
         "hit_next_contact_anchor_err_sum",
+        "hit_posterior_contact_event",
+        "hit_posterior_contact_anchor_err_sum",
+        "hit_contact_anchor_contraction_sum",
     )
     episode_hit_metric_sums = {
         name: np.zeros((args.n_envs,), dtype=np.float64)
         for name in episode_hit_metric_sources
     }
+    episode_hit_metric_sums.update(
+        {
+            name: np.zeros((args.n_envs,), dtype=np.float64)
+            for name in (
+                "first_hit_event",
+                "first_hit_racket_vxy_sum",
+                "first_hit_racket_vxy_sq_sum",
+                "first_hit_ball_vxy_sum",
+                "recurrent_hit_event",
+                "recurrent_hit_racket_vxy_sum",
+                "recurrent_hit_racket_vxy_sq_sum",
+                "recurrent_hit_ball_vxy_sum",
+            )
+        }
+    )
     # Deployment diagnostic: measure the first successful lift separately from
     # the later steady-state juggling hits.  The predicted relative apex is the
     # same quantity used by the environment at the hit event; the observed apex
@@ -1604,6 +2647,13 @@ def main() -> None:
     # remain available under last/reward/*.
     episode_reward_sums: dict[str, np.ndarray] = {}
     episode_step_metric_sources = {
+        "physical_contact_edges": "physical_contact_edge",
+        "launch_clearance_crossings": "launch_clearance_crossing",
+        "low_survival_launches": "low_survival_launch",
+        "subfloor_launches": "subfloor_launch",
+        "confirmed_hit_events": "confirmed_hit",
+        "failed_hit_events": "failed_hit",
+        "ignored_fast_hit_events": "ignored_fast_hit",
         "camera_visible_steps": "camera_visible",
         "ball_view_in_bounds_steps": "ball_view_in_bounds",
         "ball_view_z_ideal_steps": "ball_view_z_ideal",
@@ -1619,6 +2669,102 @@ def main() -> None:
             "ball_obs_reacquired_after_missing"
         ),
         "ball_obs_reacquired_after_lost_events": "ball_obs_reacquired_after_lost",
+        "ball_obs_consistency_gate_active_steps": (
+            "ball_obs_consistency_gate_active"
+        ),
+        "ball_obs_consistency_correction_vxy_sum": (
+            "ball_obs_consistency_correction_vxy"
+        ),
+        "ball_obs_consistency_innovation_vxy_sum": (
+            "ball_obs_consistency_innovation_vxy"
+        ),
+        "ball_obs_consistency_contact_guard_steps": (
+            "ball_obs_consistency_contact_guard"
+        ),
+        "ball_obs_consistency_oracle_pre_error_vxy_sum": (
+            "ball_obs_consistency_oracle_pre_error_vxy"
+        ),
+        "ball_obs_consistency_oracle_post_error_vxy_sum": (
+            "ball_obs_consistency_oracle_post_error_vxy"
+        ),
+        "ball_obs_consistency_oracle_helped_events": (
+            "ball_obs_consistency_oracle_helped"
+        ),
+        "ball_obs_consistency_oracle_harmed_events": (
+            "ball_obs_consistency_oracle_harmed"
+        ),
+        "ball_obs_prospective_score_valid_events": (
+            "ball_obs_prospective_score_valid"
+        ),
+        "ball_obs_prospective_proposal_events": (
+            "ball_obs_prospective_proposal"
+        ),
+        "ball_obs_prospective_raw_prediction_error_m_sum": (
+            "ball_obs_prospective_raw_prediction_error_m"
+        ),
+        "ball_obs_prospective_model_prediction_error_m_sum": (
+            "ball_obs_prospective_model_prediction_error_m"
+        ),
+        "ball_obs_prospective_model_advantage_m_sum": (
+            "ball_obs_prospective_model_advantage_m"
+        ),
+        "ball_obs_prospective_correction_vxy_sum": (
+            "ball_obs_prospective_correction_vxy"
+        ),
+        "ball_obs_prospective_oracle_pre_error_vxy_sum": (
+            "ball_obs_prospective_oracle_pre_error_vxy"
+        ),
+        "ball_obs_prospective_oracle_candidate_error_vxy_sum": (
+            "ball_obs_prospective_oracle_candidate_error_vxy"
+        ),
+        "ball_obs_prospective_oracle_model_error_vxy_sum": (
+            "ball_obs_prospective_oracle_model_error_vxy"
+        ),
+        "ball_obs_prospective_oracle_helped_events": (
+            "ball_obs_prospective_oracle_helped"
+        ),
+        "ball_obs_prospective_oracle_harmed_events": (
+            "ball_obs_prospective_oracle_harmed"
+        ),
+        "ball_obs_prospective_oracle_direction_aligned_events": (
+            "ball_obs_prospective_oracle_direction_aligned"
+        ),
+        "ball_obs_prospective_oracle_wrong_direction_events": (
+            "ball_obs_prospective_oracle_wrong_direction"
+        ),
+        "ball_obs_prospective_oracle_aligned_but_harmed_events": (
+            "ball_obs_prospective_oracle_aligned_but_harmed"
+        ),
+        "ball_obs_prospective_oracle_model_helped_events": (
+            "ball_obs_prospective_oracle_model_helped"
+        ),
+        "ball_obs_prospective_oracle_model_harmed_events": (
+            "ball_obs_prospective_oracle_model_harmed"
+        ),
+        "ball_obs_prospective_oracle_pre_error_lt_correction_events": (
+            "ball_obs_prospective_oracle_pre_error_lt_correction"
+        ),
+        "ball_obs_prospective_oracle_pre_error_lt_half_correction_events": (
+            "ball_obs_prospective_oracle_pre_error_lt_half_correction"
+        ),
+        "ball_obs_prospective_proposal_before_first_hit_events": (
+            "ball_obs_prospective_proposal_before_first_hit"
+        ),
+        "ball_obs_prospective_proposal_posthit_060_120ms_events": (
+            "ball_obs_prospective_proposal_posthit_060_120ms"
+        ),
+        "ball_obs_prospective_proposal_posthit_120_250ms_events": (
+            "ball_obs_prospective_proposal_posthit_120_250ms"
+        ),
+        "ball_obs_prospective_proposal_posthit_after_250ms_events": (
+            "ball_obs_prospective_proposal_posthit_after_250ms"
+        ),
+        "ball_obs_prospective_proposal_ascending_events": (
+            "ball_obs_prospective_proposal_ascending"
+        ),
+        "ball_obs_prospective_proposal_descending_events": (
+            "ball_obs_prospective_proposal_descending"
+        ),
     }
     episode_step_sums = {
         name: np.zeros((args.n_envs,), dtype=np.float64)
@@ -1641,6 +2787,62 @@ def main() -> None:
                 running_length,
             )
             host = jax.device_get(metrics)
+            observation_host = np.asarray(jax.device_get(obs))
+            if not np.all(np.isfinite(observation_host)):
+                bad_count = int(np.size(observation_host) - np.isfinite(observation_host).sum())
+                raise FloatingPointError(
+                    f"non-finite actor observation at validation step {step_idx}: "
+                    f"{bad_count} values"
+                )
+            for critical_name in (
+                "reward/total",
+                "action_norm",
+                "ball_z",
+                "racket_z",
+                "hit_count",
+            ):
+                if critical_name not in host:
+                    continue
+                critical_value = np.asarray(host[critical_name])
+                if not np.all(np.isfinite(critical_value)):
+                    raise FloatingPointError(
+                        f"non-finite {critical_name} at validation step {step_idx}"
+                    )
+            if step_idx % max(1, int(args.gpu_check_every_steps)) == 0:
+                temperature_reason = gpu_temperature_stop_reason(
+                    float(args.gpu_max_temp_c)
+                )
+                if temperature_reason is not None:
+                    raise SystemExit(
+                        f"[validate_mjx] thermal safety stop: {temperature_reason}"
+                    )
+            hit_count = np.asarray(host["hit_count"], dtype=np.float64)
+            new_hit = np.asarray(host["new_hit"], dtype=np.float64) > 0.5
+            first_hit = new_hit & (hit_count >= 0.5) & (hit_count < 1.5)
+            recurrent_hit = new_hit & (hit_count >= 1.5)
+            hit_racket_vxy_step = np.asarray(
+                host.get("hit_racket_vxy_sum", 0.0), dtype=np.float64
+            )
+            hit_racket_vxy_sq_step = np.asarray(
+                host.get("hit_racket_vxy_sq_sum", 0.0), dtype=np.float64
+            )
+            hit_ball_vxy_step = np.asarray(
+                host.get("hit_vxy_sum", 0.0), dtype=np.float64
+            )
+            for prefix, phase_mask in (
+                ("first_hit", first_hit),
+                ("recurrent_hit", recurrent_hit),
+            ):
+                episode_hit_metric_sums[f"{prefix}_event"] += phase_mask
+                episode_hit_metric_sums[f"{prefix}_racket_vxy_sum"] += np.where(
+                    phase_mask, hit_racket_vxy_step, 0.0
+                )
+                episode_hit_metric_sums[f"{prefix}_racket_vxy_sq_sum"] += np.where(
+                    phase_mask, hit_racket_vxy_sq_step, 0.0
+                )
+                episode_hit_metric_sums[f"{prefix}_ball_vxy_sum"] += np.where(
+                    phase_mask, hit_ball_vxy_step, 0.0
+                )
             episode_hit_camera_events += np.asarray(host.get("hit_camera_event", 0.0), dtype=np.float64)
             episode_hit_camera_visible += np.asarray(host.get("hit_camera_visible_event", 0.0), dtype=np.float64)
             episode_hit_camera_in_margin += np.asarray(host.get("hit_camera_in_margin_event", 0.0), dtype=np.float64)
@@ -1656,10 +2858,7 @@ def main() -> None:
                 host,
                 prefix="reward/",
             )
-            hit_count = np.asarray(host["hit_count"], dtype=np.float64)
-            new_hit = np.asarray(host["new_hit"], dtype=np.float64) > 0.5
             ball_z = np.asarray(host["ball_z"], dtype=np.float64)
-            first_hit = new_hit & (hit_count >= 0.5) & (hit_count < 1.5)
             episode_first_hit_predicted_apex_rel[first_hit] = np.asarray(
                 host.get("hit_apex_rel_height_sum", np.nan), dtype=np.float64
             )[first_hit]
@@ -1710,6 +2909,9 @@ def main() -> None:
                     )
 
             for env_i in np.flatnonzero(done):
+                if args.one_episode_per_env and first_episode_recorded[env_i]:
+                    continue
+                first_episode_recorded[env_i] = True
                 env_episode_counts[env_i] += 1
                 row = {
                     "episode": len(episode_rows) + 1,
@@ -1781,6 +2983,68 @@ def main() -> None:
                     if hit_camera_events > 0.0
                     else float("nan")
                 )
+                row["rms_hit_vxy"] = (
+                    np.sqrt(row["hit_vxy_sq_sum"] / hit_camera_events)
+                    if hit_camera_events > 0.0
+                    else float("nan")
+                )
+                row["mean_hit_racket_vxy"] = (
+                    row["hit_racket_vxy_sum"] / hit_camera_events
+                    if hit_camera_events > 0.0
+                    else float("nan")
+                )
+                row["rms_hit_racket_vxy"] = (
+                    np.sqrt(row["hit_racket_vxy_sq_sum"] / hit_camera_events)
+                    if hit_camera_events > 0.0
+                    else float("nan")
+                )
+                posterior_events = float(row["hit_posterior_contact_event"])
+                row["mean_hit_posterior_contact_anchor_err"] = (
+                    row["hit_posterior_contact_anchor_err_sum"]
+                    / posterior_events
+                    if posterior_events > 0.0
+                    else float("nan")
+                )
+                row["mean_hit_contact_anchor_contraction"] = (
+                    row["hit_contact_anchor_contraction_sum"]
+                    / posterior_events
+                    if posterior_events > 0.0
+                    else float("nan")
+                )
+                for prefix in ("first_hit", "recurrent_hit"):
+                    event_count = float(row[f"{prefix}_event"])
+                    row[f"mean_{prefix}_racket_vxy"] = (
+                        row[f"{prefix}_racket_vxy_sum"] / event_count
+                        if event_count > 0.0
+                        else float("nan")
+                    )
+                    row[f"rms_{prefix}_racket_vxy"] = (
+                        np.sqrt(row[f"{prefix}_racket_vxy_sq_sum"] / event_count)
+                        if event_count > 0.0
+                        else float("nan")
+                    )
+                    row[f"mean_{prefix}_ball_vxy"] = (
+                        row[f"{prefix}_ball_vxy_sum"] / event_count
+                        if event_count > 0.0
+                        else float("nan")
+                    )
+                cycle_events = float(row["hit_cycle_eligible"])
+                row["mean_hit_cycle_racket_xy_path_excess_m"] = (
+                    row["hit_cycle_racket_xy_path_excess_m"] / cycle_events
+                    if cycle_events > 0.0
+                    else float("nan")
+                )
+                row["mean_hit_cycle_racket_xy_area_m2"] = (
+                    row["hit_cycle_racket_xy_area_m2"] / cycle_events
+                    if cycle_events > 0.0
+                    else float("nan")
+                )
+                cycle_motion_steps = float(row["racket_cycle_motion_active"])
+                row["mean_racket_cycle_vxy"] = (
+                    row["racket_cycle_vxy_m_s"] / cycle_motion_steps
+                    if cycle_motion_steps > 0.0
+                    else float("nan")
+                )
                 hit_event_count = max(
                     1.0,
                     float(row.get("hits", hit_camera_events)),
@@ -1799,6 +3063,16 @@ def main() -> None:
                     row[mean_name] = row[sum_name] / hit_event_count
                 for accumulator_name, values in episode_step_sums.items():
                     row[accumulator_name] = float(values[env_i])
+                row["quality_hits"] = float(row["hits"])
+                row["effective_hits"] = (
+                    float(row["hits"])
+                    + float(row.get("low_survival_launches", 0.0))
+                )
+                row["quality_fraction_of_effective_hits"] = (
+                    row["quality_hits"] / row["effective_hits"]
+                    if row["effective_hits"] > 0.0
+                    else float("nan")
+                )
                 episode_length = max(1.0, float(row["length"]))
                 refresh_count = row["ball_obs_refresh_count"]
                 row["camera_visible_rate"] = (

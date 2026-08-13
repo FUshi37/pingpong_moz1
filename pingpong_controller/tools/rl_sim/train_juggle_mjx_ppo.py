@@ -196,6 +196,7 @@ def diagonal_gaussian_kl(
 def effective_log_std(
     log_std: jax.Array,
     min_log_std: float | None,
+    max_log_std: float | None = None,
 ) -> jax.Array:
     """Return the exploration scale used by rollout and PPO likelihoods.
 
@@ -204,21 +205,31 @@ def effective_log_std(
     likelihood evaluation keeps the PPO old/new distributions consistent.
     """
 
-    if min_log_std is None:
-        return log_std
-    return jnp.maximum(log_std, jnp.asarray(min_log_std, dtype=log_std.dtype))
+    result = log_std
+    if min_log_std is not None:
+        result = jnp.maximum(
+            result, jnp.asarray(min_log_std, dtype=log_std.dtype)
+        )
+    if max_log_std is not None:
+        result = jnp.minimum(
+            result, jnp.asarray(max_log_std, dtype=log_std.dtype)
+        )
+    return result
 
 
 def project_policy_log_std(
     params,
     min_log_std: float | None,
+    max_log_std: float | None = None,
 ):
-    """Project the stored policy scale so checkpoints cannot remain below the floor."""
+    """Project the stored policy scale to the configured exploration interval."""
 
-    if min_log_std is None:
+    if min_log_std is None and max_log_std is None:
         return params
     projected = dict(params)
-    projected["log_std"] = effective_log_std(params["log_std"], min_log_std)
+    projected["log_std"] = effective_log_std(
+        params["log_std"], min_log_std, max_log_std
+    )
     return projected
 
 
@@ -275,10 +286,23 @@ def ppo_loss(
     teacher_distill_coef: float = 0.0,
     teacher_distill_action_clip: float = 1.0,
     min_log_std: float | None = None,
+    max_log_std: float | None = None,
+    counterfactual_replay_obs: jax.Array | None = None,
+    counterfactual_replay_actions: jax.Array | None = None,
+    counterfactual_supervision_coef: float = 0.0,
+    counterfactual_focus_tail_rows: int = 0,
+    counterfactual_focus_prob: float = 0.0,
+    counterfactual_vxy_weight_mode: str = "high_vxy",
+    noise_invariance_clean_obs: jax.Array | None = None,
+    noise_invariance_noisy_obs: jax.Array | None = None,
+    noise_invariance_coef: float = 0.0,
+    action_feedback_sensitivity_coef: float = 0.0,
+    action_feedback_perturb_scale: float = 0.0,
+    action_feedback_obs_starts: tuple[int, ...] = (),
 ) -> tuple[jax.Array, dict[str, jax.Array]]:
     mean, _, residual_correction = policy_components(params, batch.obs)
     value = value_fn(params, batch.critic_obs)
-    log_std = effective_log_std(params["log_std"], min_log_std)
+    log_std = effective_log_std(params["log_std"], min_log_std, max_log_std)
     logp = normal_logprob(batch.action, mean, log_std)
     ratio = jnp.exp(logp - batch.old_logp)
     pg1 = ratio * batch.advantages
@@ -298,6 +322,99 @@ def ppo_loss(
     teacher_distill_mse = jnp.asarray(0.0, dtype=mean.dtype)
     teacher_distill_regularization = jnp.asarray(0.0, dtype=mean.dtype)
     teacher_target_clip_fraction = jnp.asarray(0.0, dtype=mean.dtype)
+    counterfactual_supervision_mse = jnp.asarray(0.0, dtype=mean.dtype)
+    counterfactual_supervision_regularization = jnp.asarray(0.0, dtype=mean.dtype)
+    noise_invariance_mse = jnp.asarray(0.0, dtype=mean.dtype)
+    noise_invariance_regularization = jnp.asarray(0.0, dtype=mean.dtype)
+    action_feedback_sensitivity_mse = jnp.asarray(0.0, dtype=mean.dtype)
+    action_feedback_sensitivity_regularization = jnp.asarray(
+        0.0, dtype=mean.dtype
+    )
+    if (
+        counterfactual_replay_obs is not None
+        and counterfactual_replay_actions is not None
+        and float(counterfactual_supervision_coef) > 0.0
+    ):
+        counterfactual_mean = policy_mean(params, counterfactual_replay_obs)
+        counterfactual_targets = jax.lax.stop_gradient(
+            jnp.clip(counterfactual_replay_actions, -1.0, 1.0)
+        )
+        per_sample_sq = jnp.sum(
+            jnp.square(counterfactual_mean - counterfactual_targets),
+            axis=-1,
+        )
+        if counterfactual_replay_obs.shape[-1] >= 25:
+            ball_vxy = jnp.linalg.norm(
+                counterfactual_replay_obs[..., 23:25],
+                axis=-1,
+            )
+            if counterfactual_vxy_weight_mode == "low_vxy":
+                sample_weight = 1.0 + jnp.clip((0.10 - ball_vxy) / 0.10, 0.0, 2.0)
+            else:
+                sample_weight = 1.0 + jnp.clip(ball_vxy / 0.06, 0.0, 3.0)
+            counterfactual_supervision_mse = jnp.mean(sample_weight * per_sample_sq)
+        else:
+            counterfactual_supervision_mse = jnp.mean(per_sample_sq)
+        counterfactual_supervision_regularization = (
+            float(counterfactual_supervision_coef) * counterfactual_supervision_mse
+        )
+    if (
+        noise_invariance_clean_obs is not None
+        and noise_invariance_noisy_obs is not None
+        and float(noise_invariance_coef) > 0.0
+    ):
+        # The clean member is a moving stop-gradient target.  PPO and the
+        # counterfactual labels retain the useful physical response; this term
+        # only suppresses the local action change caused by the measured
+        # AR(1)/post-hit lateral-velocity disturbance of the same state.
+        clean_mean = jax.lax.stop_gradient(
+            policy_mean(params, noise_invariance_clean_obs)
+        )
+        noisy_mean = policy_mean(params, noise_invariance_noisy_obs)
+        noise_invariance_mse = jnp.mean(
+            jnp.sum(jnp.square(noisy_mean - clean_mean), axis=-1)
+        )
+        noise_invariance_regularization = (
+            float(noise_invariance_coef) * noise_invariance_mse
+        )
+    if (
+        float(action_feedback_sensitivity_coef) > 0.0
+        and float(action_feedback_perturb_scale) > 0.0
+        and action_feedback_obs_starts
+    ):
+        # Preserve the actual rollout/deployment observation exactly.  The
+        # paired branches add a small coherent per-joint offset to every copy
+        # of previous-action/action-history in the temporal observation.  A
+        # moving stop-gradient target suppresses only the local actor
+        # sensitivity to that audited feedback channel; it does not imitate a
+        # teacher, recorded action, or altered observation distribution.
+        rows = jnp.arange(batch.obs.shape[0], dtype=jnp.int32)[:, None]
+        joints = jnp.arange(7, dtype=jnp.int32)[None, :]
+        signs = jnp.where(
+            jnp.bitwise_and(jnp.right_shift(rows, joints), 1) == 0,
+            -1.0,
+            1.0,
+        ).astype(batch.obs.dtype)
+        perturb = float(action_feedback_perturb_scale) * signs
+        plus_obs = batch.obs
+        minus_obs = batch.obs
+        for start in action_feedback_obs_starts:
+            plus_obs = plus_obs.at[:, int(start) : int(start) + 7].add(perturb)
+            minus_obs = minus_obs.at[:, int(start) : int(start) + 7].add(-perturb)
+        clean_mean = jax.lax.stop_gradient(mean)
+        plus_mean = policy_mean(params, plus_obs)
+        minus_mean = policy_mean(params, minus_obs)
+        action_feedback_sensitivity_mse = 0.5 * jnp.mean(
+            jnp.sum(
+                jnp.square(plus_mean - clean_mean)
+                + jnp.square(minus_mean - clean_mean),
+                axis=-1,
+            )
+        )
+        action_feedback_sensitivity_regularization = (
+            float(action_feedback_sensitivity_coef)
+            * action_feedback_sensitivity_mse
+        )
     if (
         teacher_params is not None
         and teacher_distill_obs is not None
@@ -323,7 +440,13 @@ def ppo_loss(
         float(actor_anchor_kl_coef) > 0.0
         or float(actor_anchor_replay_kl_coef) > 0.0
     ):
-        reference_log_std = jax.lax.stop_gradient(reference_params["log_std"])
+        # Compare the two distributions under the same exploration bounds used
+        # by rollout/PPO.  Without this, a configured log-std bound creates a
+        # large non-zero "anchor" KL even when params and reference_params are
+        # exactly identical.
+        reference_log_std = jax.lax.stop_gradient(
+            effective_log_std(reference_params["log_std"], min_log_std, max_log_std)
+        )
         reference_var = jnp.exp(2.0 * reference_log_std)
         current_var = jnp.exp(2.0 * log_std)
 
@@ -367,6 +490,9 @@ def ppo_loss(
         + actor_anchor_regularization
         + residual_regularization
         + teacher_distill_regularization
+        + counterfactual_supervision_regularization
+        + noise_invariance_regularization
+        + action_feedback_sensitivity_regularization
     )
     approx_kl = jnp.mean(batch.old_logp - logp)
     clip_frac = jnp.mean((jnp.abs(ratio - 1.0) > float(clip_range)).astype(jnp.float32))
@@ -387,6 +513,12 @@ def ppo_loss(
         "teacher_distill_mse": teacher_distill_mse,
         "teacher_distill_regularization": teacher_distill_regularization,
         "teacher_target_clip_fraction": teacher_target_clip_fraction,
+        "counterfactual_supervision_mse": counterfactual_supervision_mse,
+        "counterfactual_supervision_regularization": counterfactual_supervision_regularization,
+        "noise_invariance_mse": noise_invariance_mse,
+        "noise_invariance_regularization": noise_invariance_regularization,
+        "action_feedback_sensitivity_mse": action_feedback_sensitivity_mse,
+        "action_feedback_sensitivity_regularization": action_feedback_sensitivity_regularization,
     }
     return loss, aux
 
@@ -538,11 +670,30 @@ def make_train_fns(
     teacher_distill_action_clip: float = 1.0,
     time_limit_bootstrap: bool = True,
     min_log_std: float | None = None,
+    max_log_std: float | None = None,
     target_kl: float | None = None,
     failure_focus_hit_threshold: int = 0,
     failure_focus_weight: float = 1.0,
     failure_focus_tail_steps: int = 0,
+    counterfactual_replay_obs: jax.Array | None = None,
+    counterfactual_replay_actions: jax.Array | None = None,
+    counterfactual_supervision_coef: float = 0.0,
+    counterfactual_focus_tail_rows: int = 0,
+    counterfactual_focus_prob: float = 0.0,
+    counterfactual_vxy_weight_mode: str = "high_vxy",
+    noise_invariance_clean_obs: jax.Array | None = None,
+    noise_invariance_noisy_obs: jax.Array | None = None,
+    noise_invariance_coef: float = 0.0,
+    action_feedback_sensitivity_coef: float = 0.0,
+    action_feedback_perturb_scale: float = 0.0,
+    action_feedback_obs_starts: tuple[int, ...] = (),
 ):
+    if (
+        min_log_std is not None
+        and max_log_std is not None
+        and float(min_log_std) > float(max_log_std)
+    ):
+        raise ValueError("min_log_std must be <= max_log_std")
     if (
         float(actor_anchor_kl_coef) > 0.0
         or float(actor_anchor_replay_kl_coef) > 0.0
@@ -557,6 +708,48 @@ def make_train_fns(
             raise ValueError(
                 "teacher_distill_coef > 0 requires teacher replay observations"
             )
+    if float(counterfactual_supervision_coef) > 0.0:
+        if counterfactual_replay_obs is None or counterfactual_replay_actions is None:
+            raise ValueError(
+                "counterfactual_supervision_coef > 0 requires replay observations and actions"
+            )
+        if counterfactual_replay_obs.shape[0] != counterfactual_replay_actions.shape[0]:
+            raise ValueError("counterfactual replay observations/actions must have equal rows")
+        if not 0 <= int(counterfactual_focus_tail_rows) < counterfactual_replay_obs.shape[0]:
+            raise ValueError("counterfactual_focus_tail_rows must be in [0, replay_rows)")
+        if not 0.0 <= float(counterfactual_focus_prob) <= 1.0:
+            raise ValueError("counterfactual_focus_prob must be in [0, 1]")
+        if float(counterfactual_focus_prob) > 0.0 and int(counterfactual_focus_tail_rows) == 0:
+            raise ValueError("counterfactual_focus_prob > 0 requires focus tail rows")
+    if float(noise_invariance_coef) > 0.0:
+        if noise_invariance_clean_obs is None or noise_invariance_noisy_obs is None:
+            raise ValueError(
+                "noise_invariance_coef > 0 requires clean and noisy replay observations"
+            )
+        if noise_invariance_clean_obs.shape != noise_invariance_noisy_obs.shape:
+            raise ValueError("noise invariance clean/noisy observations must have equal shape")
+        if noise_invariance_clean_obs.shape[0] <= 0:
+            raise ValueError("noise invariance replay cannot be empty")
+    if float(action_feedback_sensitivity_coef) < 0.0:
+        raise ValueError("action_feedback_sensitivity_coef must be >= 0")
+    if float(action_feedback_perturb_scale) < 0.0:
+        raise ValueError("action_feedback_perturb_scale must be >= 0")
+    if float(action_feedback_sensitivity_coef) > 0.0:
+        if float(action_feedback_perturb_scale) <= 0.0:
+            raise ValueError(
+                "action feedback sensitivity requires a positive perturb scale"
+            )
+        if not action_feedback_obs_starts:
+            raise ValueError(
+                "action feedback sensitivity requires observation slice starts"
+            )
+        if any(
+            int(start) < 0 or int(start) + 7 > int(env.obs_dim)
+            for start in action_feedback_obs_starts
+        ):
+            raise ValueError(
+                "action feedback sensitivity observation slice is outside obs_dim"
+            )
     batch_size = env.n_envs * int(n_steps)
     num_minibatches = max(1, batch_size // int(minibatch_size))
     used_batch_size = num_minibatches * int(minibatch_size)
@@ -566,7 +759,9 @@ def make_train_fns(
             env_state, obs, critic_obs, rng, running_return, running_length = carry
             rng, action_key, reset_key = jax.random.split(rng, 3)
             mean, value = policy_value(params, obs, critic_obs)
-            log_std = effective_log_std(params["log_std"], min_log_std)
+            log_std = effective_log_std(
+                params["log_std"], min_log_std, max_log_std
+            )
             raw_action = mean + jnp.exp(log_std) * jax.random.normal(action_key, mean.shape)
             env_action = jnp.clip(raw_action, -1.0, 1.0)
             logp = normal_logprob(raw_action, mean, log_std)
@@ -676,6 +871,30 @@ def make_train_fns(
                     idx, teacher_distill_replay_obs.shape[0]
                 )
                 mini_teacher_obs = teacher_distill_replay_obs[teacher_replay_idx]
+            mini_counterfactual_obs = None
+            mini_counterfactual_actions = None
+            if counterfactual_replay_obs is not None:
+                replay_rows = counterfactual_replay_obs.shape[0]
+                focus_rows = int(counterfactual_focus_tail_rows)
+                focus_count = int(round(int(minibatch_size) * float(counterfactual_focus_prob)))
+                if focus_rows > 0 and focus_count > 0:
+                    nonfocus_rows = replay_rows - focus_rows
+                    sample_rank = jnp.arange(idx.shape[0])
+                    nonfocus_idx = jnp.mod(idx, nonfocus_rows)
+                    focus_idx = nonfocus_rows + jnp.mod(idx, focus_rows)
+                    counterfactual_idx = jnp.where(
+                        sample_rank < focus_count, focus_idx, nonfocus_idx
+                    )
+                else:
+                    counterfactual_idx = jnp.mod(idx, replay_rows)
+                mini_counterfactual_obs = counterfactual_replay_obs[counterfactual_idx]
+                mini_counterfactual_actions = counterfactual_replay_actions[counterfactual_idx]
+            mini_noise_invariance_clean_obs = None
+            mini_noise_invariance_noisy_obs = None
+            if noise_invariance_clean_obs is not None:
+                noise_pair_idx = jnp.mod(idx, noise_invariance_clean_obs.shape[0])
+                mini_noise_invariance_clean_obs = noise_invariance_clean_obs[noise_pair_idx]
+                mini_noise_invariance_noisy_obs = noise_invariance_noisy_obs[noise_pair_idx]
             (loss, aux), grads = jax.value_and_grad(ppo_loss, has_aux=True)(
                 state.params,
                 mini,
@@ -692,6 +911,19 @@ def make_train_fns(
                 teacher_distill_coef,
                 teacher_distill_action_clip,
                 min_log_std,
+                max_log_std,
+                mini_counterfactual_obs,
+                mini_counterfactual_actions,
+                counterfactual_supervision_coef,
+                counterfactual_focus_tail_rows,
+                counterfactual_focus_prob,
+                counterfactual_vxy_weight_mode,
+                mini_noise_invariance_clean_obs,
+                mini_noise_invariance_noisy_obs,
+                noise_invariance_coef,
+                action_feedback_sensitivity_coef,
+                action_feedback_perturb_scale,
+                action_feedback_obs_starts,
             )
             params, opt, grad_norm = adam_step(
                 state.params,
@@ -700,20 +932,22 @@ def make_train_fns(
                 learning_rate,
                 max_grad_norm,
             )
-            params = project_policy_log_std(params, min_log_std)
+            params = project_policy_log_std(params, min_log_std, max_log_std)
             aux = dict(aux)
             aux["grad_norm"] = grad_norm
             aux["loss"] = loss
             return TrainState(params=params, opt=opt), aux
 
         old_log_std = effective_log_std(
-            behavior_train_state.params["log_std"], min_log_std
+            behavior_train_state.params["log_std"], min_log_std, max_log_std
         )
 
         def candidate_exact_kl(candidate_params, mini: PpoBatch) -> jax.Array:
             old_mean = policy_mean(behavior_train_state.params, mini.obs)
             new_mean = policy_mean(candidate_params, mini.obs)
-            new_log_std = effective_log_std(candidate_params["log_std"], min_log_std)
+            new_log_std = effective_log_std(
+                candidate_params["log_std"], min_log_std, max_log_std
+            )
             return diagonal_gaussian_kl(
                 old_mean, old_log_std, new_mean, new_log_std
             )
@@ -757,7 +991,7 @@ def make_train_fns(
                             full_candidate_state.params,
                         )
                         scaled_params = project_policy_log_std(
-                            scaled_params, min_log_std
+                            scaled_params, min_log_std, max_log_std
                         )
                         scaled_state = TrainState(
                             params=scaled_params,
@@ -864,7 +1098,9 @@ def make_train_fns(
         # state transactionally so no over-budget update can reach a
         # checkpoint or the next rollout.
         final_mean = policy_mean(train_state.params, batch.obs)
-        final_log_std = effective_log_std(train_state.params["log_std"], min_log_std)
+        final_log_std = effective_log_std(
+            train_state.params["log_std"], min_log_std, max_log_std
+        )
         final_logp = normal_logprob(batch.action, final_mean, final_log_std)
         final_ratio = jnp.exp(final_logp - batch.old_logp)
         final_approx_kl = jnp.mean(batch.old_logp - final_logp)
@@ -1040,6 +1276,15 @@ def parse_args() -> argparse.Namespace:
             "deviation. Prevents exploration collapse during long training stages."
         ),
     )
+    p.add_argument(
+        "--max-log-std",
+        type=float,
+        default=None,
+        help=(
+            "Optional upper bound for Gaussian policy log standard deviation. "
+            "Useful for low-noise policy polishing after task acquisition."
+        ),
+    )
     p.add_argument("--vf-coef", type=float, default=0.5)
     p.add_argument("--max-grad-norm", type=float, default=0.5)
     p.add_argument("--hidden-dim", type=int, default=256)
@@ -1153,6 +1398,7 @@ def main() -> None:
         ent_coef=args.ent_coef,
         max_grad_norm=args.max_grad_norm,
         min_log_std=args.min_log_std,
+        max_log_std=args.max_log_std,
         target_kl=args.target_kl,
         time_limit_bootstrap=args.time_limit_bootstrap,
     )
