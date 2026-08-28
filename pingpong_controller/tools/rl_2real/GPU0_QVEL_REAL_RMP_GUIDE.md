@@ -287,13 +287,112 @@ planner 或 post-RMP hold。也禁止把 simulator `command_q` 当作 actor 输�
 相机分布、新球 outcome 和正式 RMP/PD pointwise coverage 仍未完成；频繁 safety
 limiter 干预是契约失败，不是正常部署现象。
 
-## 10. 本次 GPU0 提交范围
+## 10. 仿真训练与验证 companion 代码
+
+模型、部署 adapter 和部署合约已经由 `GPU0-QVEL/REAL-RMP` 模型提交
+`bd75709` 发布。本节对应独立的仿真 companion 提交：实物端可用它核对训练时
+的 actor 输入、策略积分、RMP surrogate、物理参数、DR 和验证环境，但不能把全部
+仿真执行栈原样串到机器人已有 RMP 之前。
+
+### 10.1 精确训练入口与调用链
+
+V85 的唯一正式入口是：
 
 ```text
-pingpong_controller/outputs/rl_sim/measured_qvel_rmp_vertical_v85_gpu0_seed20261004_20260828_stage23_failure_time_survival_online1/mjx_curriculum_best.pkl
-pingpong_controller/tools/rl_2real/gpu0_qvel_real_rmp_reference.py
-pingpong_controller/tools/rl_2real/GPU0_QVEL_REAL_RMP_GUIDE.md
+run_gpu0_measured_qvel_rmp_vertical_v85_cgroup_resume_v83_stage23_update100.sh
+  -> run_gpu0_measured_qvel_rmp_vertical_v85_resume_v83_stage23_update100.sh
+  -> run_gpu0_measured_qvel_rmp_vertical_v37_resume_v36.sh
+  -> run_with_host_memory_guard.sh
+  -> train_juggle_mjx_curriculum.py
+```
+
+入口固定 `goal_d455_measured_qvel_rmp_vertical_v85`、GPU0、57-D actor、368-D
+critic、1024 environments、128 rollout steps、minibatch 16384、2 epochs、
+LR `5e-5`、clip `0.10`、target KL `0.004`，并从 V83 Stage-23 update 100 的
+指定 SHA checkpoint 恢复。不要从脚本名猜测配置；最终等效参数以已发布 V85
+checkpoint 的 `env_config`、本说明和 profile builder 三者一致为准。
+
+V85 是 continuation-only。启动器还要求本机 V83 源 checkpoint、RMP DataTracer
+回放报告和 bounded-`q_ref` screen JSON；这些实验输入及中间 checkpoint 不属于
+GitHub companion 提交。因此该提交足以审计已发布模型并指导实物实现，但不承诺
+仅靠 GitHub 文件逐 update 重放 V83 到 V85 的优化历史。
+
+### 10.2 仿真源码职责
+
+| 文件 | 实物端参考内容 |
+| --- | --- |
+| `mjx_juggle_env.py` | 57-D observation、90 Hz fractional refresh、bounded-`q_ref`、reward、RMP/PD plant 与 DR |
+| `recovered_rmp_jax.py` | 训练本地 recovered-RMP surrogate；只用于仿真对齐，不部署到实物策略进程 |
+| `delay_control.py` | 共享延迟/hold 控制原语 |
+| `rmp_training_evidence.py` | 启动前 RMP 回放与 DR 证据的 fail-closed 校验 |
+| `train_juggle_mjx_ppo.py` | actor/critic、PPO、GAE、checkpoint payload 和策略前向 |
+| `train_juggle_mjx_curriculum.py` | V85 完整课程、Stage 23/24 reward 以及 resume payload 校验 |
+| `validate_juggle_mjx_ppo.py` | 从 checkpoint 恢复环境并进行 MJX 回放验证 |
+| `screen_juggle_mjx_checkpoints.py` | 同环境条件下批量筛选同 shape checkpoint |
+| `screen_bounded_qref_horizons.py` | 逐关节 bounded-`q_ref` horizon 的仿真筛选 |
+| `diagnose_measured_qvel_rmp_path.py` | measured-QVEL/RMP 权限路径和首拍 credit 诊断 |
+| `run_with_host_memory_guard.sh` | 训练进程主机内存安全停止，不属于策略推理 |
+
+基础 `moz1_pd.xml`、`camera_calibration.py`、`mjx_smoke.py`、
+`rl_juggle_env_random.py` 和 `sim2real_bridger.py` 已在仓库历史中存在且本次没有
+修改；它们仍是运行上述代码的依赖，不需要为这次 companion 重复制造文件变更。
+
+共享 trainer 同时保留历史 profile、后续 V86 和相邻 GPU1 实验，这是保持旧
+checkpoint 可加载所必需的兼容结构。部署 V85 时必须显式选择 V85 profile 并通过
+已发布 adapter 的 checkpoint validator，不能把文件中编号最大或默认 profile 当成
+本模型配置。本次只提交 V85 的 launcher，不提交 V86 launcher、GPU1 launcher 或
+其他实验脚本。
+
+### 10.3 实物端哪些内容照搬、哪些不能照搬
+
+应逐项等效实现：57-D actor 顺序、float32/SI 单位、200 Hz actor、90 Hz held ball
+state、represented-state age、persistent bounded-`q_ref` 状态与 reset、关节限位和
+输出到机器人现有 RMP 的位置目标边界。
+
+只用于训练、不得进入实物 actor path：368-D critic、reward/gate、DR 随机采样、
+recovered RMP 的 1 kHz 子步、XML PD、RMP output delay、仿真 contact/ball dynamics、
+PPO/GAE、W&B 和训练内存保护。真实机器人正常运行时也不要主动注入 observation
+noise、frame bias、target-publication hold 或漏帧；这些是训练鲁棒性分布，不是部署
+前处理。
+
+## 11. 两次提交的边界
+
+已完成的模型提交 `bd75709` 包含：
+
+```text
+.../mjx_curriculum_best.pkl
+tools/rl_2real/gpu0_qvel_real_rmp_reference.py
+tools/rl_2real/GPU0_QVEL_REAL_RMP_GUIDE.md
 test/test_gpu0_qvel_real_rmp_reference.py
 ```
 
-不提交同目录的 `last`、archive、optimizer history CSV、W&B、视频或其他训练输出。
+新的仿真 companion 只增加本节列出的训练/验证源码、V85 启动链、课程注册说明和
+本说明文档的更新。不重复提交模型，不提交 `last`、archive、源恢复 checkpoint、
+progress CSV、RMP evidence 输出、W&B、视频、分析报告、`__pycache__`、V86/GPU1
+launcher 或无关测试。
+
+## 12. 仿真 companion 提交指令
+
+工作区包含大量并行实验，禁止使用 `git add .`。在仓库根目录执行：
+
+```bash
+git add -- \
+  TRAINING_CURRICULA.md \
+  pingpong_controller/tools/rl_2real/GPU0_QVEL_REAL_RMP_GUIDE.md \
+  pingpong_controller/tools/rl_sim/delay_control.py \
+  pingpong_controller/tools/rl_sim/mjx_juggle_env.py \
+  pingpong_controller/tools/rl_sim/recovered_rmp_jax.py \
+  pingpong_controller/tools/rl_sim/rmp_training_evidence.py \
+  pingpong_controller/tools/rl_sim/train_juggle_mjx_ppo.py \
+  pingpong_controller/tools/rl_sim/train_juggle_mjx_curriculum.py \
+  pingpong_controller/tools/rl_sim/validate_juggle_mjx_ppo.py \
+  pingpong_controller/tools/rl_sim/screen_juggle_mjx_checkpoints.py \
+  pingpong_controller/tools/rl_sim/screen_bounded_qref_horizons.py \
+  pingpong_controller/tools/rl_sim/diagnose_measured_qvel_rmp_path.py \
+  pingpong_controller/tools/rl_sim/run_with_host_memory_guard.sh \
+  pingpong_controller/tools/rl_sim/run_gpu0_measured_qvel_rmp_vertical_v37_resume_v36.sh \
+  pingpong_controller/tools/rl_sim/run_gpu0_measured_qvel_rmp_vertical_v85_resume_v83_stage23_update100.sh \
+  pingpong_controller/tools/rl_sim/run_gpu0_measured_qvel_rmp_vertical_v85_cgroup_resume_v83_stage23_update100.sh
+
+git commit -m "sim: add GPU0 QVEL V85 recovered-RMP training stack"
+```

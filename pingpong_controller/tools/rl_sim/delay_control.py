@@ -116,6 +116,100 @@ def smooth_action(
     return a_final.astype(np.float32), scale
 
 
+def integrate_action_command(
+    action: np.ndarray,
+    current_qvel: np.ndarray,
+    *,
+    dt: float,
+    mode: str,
+    velocity_limit_rad_s: np.ndarray,
+    acceleration_limit_rad_s2: np.ndarray,
+    action_velocity_scale: float = 1.0,
+    action_acc_scale: float = 1.0,
+    action_scale_mult: float = 1.0,
+    apply_limits: bool = True,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Map a normalized policy action to deployable ``qdd`` and ``qvel``.
+
+    ``acceleration`` preserves the historical MJX double-integrator contract.
+    ``velocity`` treats the actor output as a joint-velocity target, then uses
+    the same physical acceleration and velocity envelopes as the MJX
+    environment. Keeping this operation in a shared NumPy helper prevents a
+    qvel checkpoint from being accidentally deployed through the legacy
+    acceleration path.
+    """
+    action_arr = np.asarray(action, dtype=np.float32)
+    qvel = np.asarray(current_qvel, dtype=np.float32)
+    velocity_limit = np.asarray(velocity_limit_rad_s, dtype=np.float32)
+    acceleration_limit = np.asarray(
+        acceleration_limit_rad_s2, dtype=np.float32
+    )
+    if not (
+        action_arr.shape
+        == qvel.shape
+        == velocity_limit.shape
+        == acceleration_limit.shape
+    ):
+        raise ValueError(
+            "action, current_qvel, and joint limits must have the same shape"
+        )
+    if not all(
+        np.all(np.isfinite(value))
+        for value in (action_arr, qvel, velocity_limit, acceleration_limit)
+    ):
+        raise ValueError("action-command inputs must be finite")
+    if np.any(velocity_limit <= 0.0) or np.any(acceleration_limit <= 0.0):
+        raise ValueError("velocity and acceleration limits must be positive")
+
+    dt_safe = float(dt)
+    if not np.isfinite(dt_safe) or dt_safe <= 0.0:
+        raise ValueError("dt must be finite and positive")
+    mode_norm = str(mode).strip().lower().replace("-", "_")
+    if mode_norm not in {"acceleration", "velocity"}:
+        raise ValueError(
+            "action command mode must be 'acceleration' or 'velocity', "
+            f"got {mode!r}"
+        )
+    velocity_scale = float(action_velocity_scale)
+    acceleration_scale = float(action_acc_scale)
+    domain_scale = float(action_scale_mult)
+    if not np.isfinite(velocity_scale) or velocity_scale <= 0.0:
+        raise ValueError("action_velocity_scale must be finite and positive")
+    if not np.isfinite(acceleration_scale) or acceleration_scale < 0.0:
+        raise ValueError("action_acc_scale must be finite and non-negative")
+    if not np.isfinite(domain_scale) or domain_scale <= 0.0:
+        raise ValueError("action_scale_mult must be finite and positive")
+
+    if mode_norm == "velocity":
+        desired_qvel = (
+            action_arr
+            * velocity_limit
+            * np.float32(velocity_scale)
+            * np.float32(domain_scale)
+        )
+        if apply_limits:
+            desired_qvel = np.clip(
+                desired_qvel, -velocity_limit, velocity_limit
+            )
+        desired_qdd = (desired_qvel - qvel) / np.float32(dt_safe)
+    else:
+        desired_qdd = (
+            action_arr
+            * acceleration_limit
+            * np.float32(acceleration_scale)
+            * np.float32(domain_scale)
+        )
+
+    if apply_limits:
+        desired_qdd = np.clip(
+            desired_qdd, -acceleration_limit, acceleration_limit
+        )
+    next_qvel = qvel + desired_qdd * np.float32(dt_safe)
+    if apply_limits:
+        next_qvel = np.clip(next_qvel, -velocity_limit, velocity_limit)
+    return desired_qdd.astype(np.float32), next_qvel.astype(np.float32)
+
+
 def lead_compensate_q_ref(
     q_cmd: np.ndarray,
     qdot_cmd: np.ndarray,

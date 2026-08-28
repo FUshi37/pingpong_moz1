@@ -18,7 +18,13 @@ mkdir -p "$(dirname "$LOG_FILE")"
 # growth budget is not equally safe (or equally permissive) across launches.
 # MemAvailable stays the real OOM guard; the swap budget only limits thrashing.
 MIN_AVAILABLE_KB=${GUARD_MIN_AVAILABLE_KB:-$((4 * 1024 * 1024))}
-MAX_SWAP_GROWTH_KB=${GUARD_MAX_SWAP_GROWTH_KB:-$((2 * 1024 * 1024))}
+# A 1024-env MJX trainer uses roughly 9--10 GiB RSS on this 32 GiB host.  With
+# both GPU trainers alive, Linux legitimately swaps 2--3 GiB of cold pages
+# while still reporting 7--8 GiB MemAvailable.  The former 2 GiB growth budget
+# therefore stopped healthy jobs (including the 2026-08-16 GPU0 run at
+# available=7.9 GiB) rather than identifying an OOM trajectory.  Keep swap as
+# an early-warning signal, but allow the measured dual-trainer working set.
+MAX_SWAP_GROWTH_KB=${GUARD_MAX_SWAP_GROWTH_KB:-$((4 * 1024 * 1024))}
 CRITICAL_AVAILABLE_KB=${GUARD_CRITICAL_AVAILABLE_KB:-$((2 * 1024 * 1024))}
 LOW_MEMORY_GRACE_CHECKS=${GUARD_LOW_MEMORY_GRACE_CHECKS:-3}
 SWAP_RESERVE_KB=${GUARD_SWAP_RESERVE_KB:-$((128 * 1024))}
@@ -26,7 +32,7 @@ SWAP_RESERVE_KB=${GUARD_SWAP_RESERVE_KB:-$((128 * 1024))}
 # recovered.  Do not interrupt a healthy trainer solely because that stale
 # swap count crossed its launch-relative budget; treat it as pressure only
 # when available RAM is also below this early-warning line.
-SWAP_PRESSURE_AVAILABLE_KB=${GUARD_SWAP_PRESSURE_AVAILABLE_KB:-$((8 * 1024 * 1024))}
+SWAP_PRESSURE_AVAILABLE_KB=${GUARD_SWAP_PRESSURE_AVAILABLE_KB:-$((6 * 1024 * 1024))}
 if (( LOW_MEMORY_GRACE_CHECKS < 1 )); then
   echo "GUARD_LOW_MEMORY_GRACE_CHECKS must be >= 1" >&2
   exit 2
@@ -43,7 +49,7 @@ fi
 # Do not attribute swap that was already occupied before this launcher started
 # to the new trainer.  A desktop/session restart can legitimately retain more
 # than the old absolute 4 GiB threshold and used to stop a healthy run before
-# JAX completed its first update.  Keep a strict 2 GiB growth budget for this
+# JAX completed its first update.  Keep a bounded growth budget for this
 # process, while retaining the independent available-memory emergency limit.
 SWAP_TOTAL_KB=$(awk '/^SwapTotal:/ {print $2}' /proc/meminfo)
 SWAP_FREE_KB=$(awk '/^SwapFree:/ {print $2}' /proc/meminfo)
@@ -78,12 +84,17 @@ while kill -0 "$TRAIN_PID" 2>/dev/null; do
     LOW_MEMORY_CHECKS=0
   fi
 
-  if (( STOP_REQUESTED == 0 )) && {
-    (( MEM_AVAILABLE_KB < CRITICAL_AVAILABLE_KB )) ||
-    (( LOW_MEMORY_CHECKS >= LOW_MEMORY_GRACE_CHECKS )) ||
-    (( SWAP_USED_KB > SWAP_STOP_KB && MEM_AVAILABLE_KB < SWAP_PRESSURE_AVAILABLE_KB ));
-  }; then
-    echo "[host_memory_guard] safe stop: available=${MEM_AVAILABLE_KB}KiB swap_used=${SWAP_USED_KB}KiB" | tee -a "$LOG_FILE"
+  STOP_CAUSE=""
+  if (( MEM_AVAILABLE_KB < CRITICAL_AVAILABLE_KB )); then
+    STOP_CAUSE="critical_available"
+  elif (( LOW_MEMORY_CHECKS >= LOW_MEMORY_GRACE_CHECKS )); then
+    STOP_CAUSE="sustained_low_available"
+  elif (( SWAP_USED_KB > SWAP_STOP_KB && MEM_AVAILABLE_KB < SWAP_PRESSURE_AVAILABLE_KB )); then
+    STOP_CAUSE="swap_growth_under_pressure"
+  fi
+
+  if (( STOP_REQUESTED == 0 )) && [[ -n "$STOP_CAUSE" ]]; then
+    echo "[host_memory_guard] safe stop: cause=${STOP_CAUSE} available=${MEM_AVAILABLE_KB}KiB swap_used=${SWAP_USED_KB}KiB" | tee -a "$LOG_FILE"
     kill -INT "$TRAIN_PID" 2>/dev/null || true
     STOP_REQUESTED=1
     STOP_REQUEST_TIME=$SECONDS

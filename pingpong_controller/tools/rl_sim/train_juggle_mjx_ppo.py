@@ -22,6 +22,31 @@ from mjx_juggle_env import MjxJuggleConfig, MjxJuggleEnv
 
 LOG_2PI = float(np.log(2.0 * np.pi))
 PPO_KL_BACKTRACK_SCALES = (1.0, 0.5, 0.25, 0.125, 0.0625, 0.03125)
+PPO_ABSOLUTE_KL_BACKTRACK_SCALES = (
+    1.0,
+    0.5,
+    0.25,
+    0.125,
+    0.0625,
+    0.03125,
+    0.015625,
+    0.0078125,
+    0.00390625,
+    0.001953125,
+    0.0009765625,
+)
+
+# CMDP costs deliberately describe episode outcomes rather than additional
+# reward terms.  Keeping stable channel identities makes their value heads,
+# dual variables, checkpoints, and logs auditable across continuation runs.
+CMDP_COST_NAMES = (
+    "failure",
+    "shortfall",
+    "ball_too_low",
+    "ball_too_high",
+    "racket_too_low",
+    "racket_too_high",
+)
 
 
 class OptimState(NamedTuple):
@@ -70,6 +95,69 @@ class PpoBatch(NamedTuple):
     advantages: jax.Array
     returns: jax.Array
     old_values: jax.Array
+
+
+class CmdpBatch(NamedTuple):
+    cost_returns: jax.Array
+
+
+def backtrack_params_to_kl_limit(
+    previous_params,
+    candidate_params,
+    kl_fn,
+    max_kl: float,
+    scales: tuple[float, ...] = PPO_ABSOLUTE_KL_BACKTRACK_SCALES,
+):
+    """Select the largest interpolated parameter step inside an absolute KL.
+
+    The old replay guard discarded a complete PPO update whenever the final
+    candidate crossed the source-policy KL boundary.  Once an actor reached
+    that boundary, even a mildly useful update was therefore rejected in its
+    entirety.  Backtracking preserves the same hard absolute limit while
+    accepting the largest safe fraction of the already-computed update.
+
+    ``kl_fn`` is intentionally supplied by the caller so this helper can be
+    used for frozen replay-state KLs without coupling it to a policy layout.
+    The returned ``found`` flag concerns a *positive* step; the unchanged
+    previous parameters remain the fallback when no outward fraction is safe.
+    """
+
+    scale_values = jnp.asarray(scales, dtype=jnp.float32)
+
+    def try_scale(carry, step_scale):
+        selected_params, selected_kl, selected_scale, found = carry
+        scaled_params = jax.tree_util.tree_map(
+            lambda previous, candidate: previous
+            + step_scale * (candidate - previous),
+            previous_params,
+            candidate_params,
+        )
+        scaled_kl = kl_fn(scaled_params)
+        choose = (~found) & (scaled_kl <= float(max_kl))
+        selected_params = jax.tree_util.tree_map(
+            lambda selected, candidate: jnp.where(choose, candidate, selected),
+            selected_params,
+            scaled_params,
+        )
+        selected_kl = jnp.where(choose, scaled_kl, selected_kl)
+        selected_scale = jnp.where(choose, step_scale, selected_scale)
+        return (
+            selected_params,
+            selected_kl,
+            selected_scale,
+            found | choose,
+        ), scaled_kl
+
+    initial = (
+        previous_params,
+        kl_fn(previous_params),
+        jnp.asarray(0.0, dtype=jnp.float32),
+        jnp.asarray(False),
+    )
+    (selected_params, selected_kl, selected_scale, found), trial_kls = (
+        jax.lax.scan(try_scale, initial, scale_values)
+    )
+    return selected_params, selected_kl, selected_scale, found, trial_kls
 
 
 def init_layer(key: jax.Array, in_dim: int, out_dim: int, scale: float = np.sqrt(2.0)) -> dict[str, jax.Array]:
@@ -150,6 +238,75 @@ def policy_mean(params: dict[str, object], obs: jax.Array) -> jax.Array:
 
 def value_fn(params: dict[str, object], critic_obs: jax.Array) -> jax.Array:
     return apply_mlp(params["v"], critic_obs).squeeze(-1)
+
+
+def cmdp_cost_value_fn(
+    params: dict[str, object], critic_obs: jax.Array
+) -> jax.Array:
+    """Predict the undiscounted episodic costs used by constrained PPO."""
+
+    return apply_mlp(params["cmdp_cost_v"], critic_obs)
+
+
+def initialize_cmdp_train_state(
+    train_state: TrainState,
+    key: jax.Array,
+    *,
+    critic_obs_dim: int,
+    hidden_dim: int,
+    initial_duals: tuple[float, ...],
+) -> TrainState:
+    """Append zero-output cost critics while preserving legacy PPO state.
+
+    V29 owns a useful actor, reward critic, and nonzero Adam moments.  A CMDP
+    continuation must not reset those leaves merely because the source did
+    not contain cost heads.  New cost-head moments start at zero while the
+    optimizer step counter and every existing moment remain exact.
+    """
+
+    if len(initial_duals) != len(CMDP_COST_NAMES):
+        raise ValueError(
+            "CMDP initial dual count must match the registered cost channels"
+        )
+    if "cmdp_cost_v" in train_state.params or "cmdp_dual" in train_state.params:
+        if "cmdp_cost_v" not in train_state.params or "cmdp_dual" not in train_state.params:
+            raise ValueError("checkpoint contains an incomplete CMDP parameter set")
+        output_dim = int(train_state.params["cmdp_cost_v"]["out"]["b"].shape[0])
+        dual_dim = int(jnp.asarray(train_state.params["cmdp_dual"]).shape[0])
+        if output_dim != len(CMDP_COST_NAMES) or dual_dim != len(CMDP_COST_NAMES):
+            raise ValueError("checkpoint CMDP channel count is incompatible")
+        return train_state
+
+    cost_value = init_mlp(
+        key,
+        int(critic_obs_dim),
+        int(hidden_dim),
+        len(CMDP_COST_NAMES),
+        1.0,
+    )
+    # An arbitrary initial risk baseline would contaminate the first actor
+    # update.  Hidden features may learn immediately, but V_c(s)=0 exactly at
+    # migration and the output layer is fitted only from observed outcomes.
+    cost_out = dict(cost_value["out"])
+    cost_out["w"] = jnp.zeros_like(cost_out["w"])
+    cost_out["b"] = jnp.zeros_like(cost_out["b"])
+    cost_value = dict(cost_value)
+    cost_value["out"] = cost_out
+
+    params = dict(train_state.params)
+    params["cmdp_cost_v"] = cost_value
+    params["cmdp_dual"] = jnp.asarray(initial_duals, dtype=jnp.float32)
+
+    zero_cost_value = jax.tree_util.tree_map(jnp.zeros_like, cost_value)
+    zero_dual = jnp.zeros((len(CMDP_COST_NAMES),), dtype=jnp.float32)
+    opt_m = dict(train_state.opt.m)
+    opt_v = dict(train_state.opt.v)
+    opt_m["cmdp_cost_v"] = zero_cost_value
+    opt_v["cmdp_cost_v"] = zero_cost_value
+    opt_m["cmdp_dual"] = zero_dual
+    opt_v["cmdp_dual"] = zero_dual
+    opt = OptimState(m=opt_m, v=opt_v, t=train_state.opt.t)
+    return TrainState(params=params, opt=opt)
 
 
 def policy_value(
@@ -299,6 +456,8 @@ def ppo_loss(
     action_feedback_sensitivity_coef: float = 0.0,
     action_feedback_perturb_scale: float = 0.0,
     action_feedback_obs_starts: tuple[int, ...] = (),
+    cmdp_batch: CmdpBatch | None = None,
+    cmdp_cost_vf_coef: float = 0.0,
 ) -> tuple[jax.Array, dict[str, jax.Array]]:
     mean, _, residual_correction = policy_components(params, batch.obs)
     value = value_fn(params, batch.critic_obs)
@@ -309,6 +468,12 @@ def ppo_loss(
     pg2 = jnp.clip(ratio, 1.0 - float(clip_range), 1.0 + float(clip_range)) * batch.advantages
     policy_loss = -jnp.mean(jnp.minimum(pg1, pg2))
     value_loss = 0.5 * jnp.mean((batch.returns - value) ** 2)
+    cmdp_cost_value_loss = jnp.asarray(0.0, dtype=value.dtype)
+    if cmdp_batch is not None:
+        cost_value = cmdp_cost_value_fn(params, batch.critic_obs)
+        cmdp_cost_value_loss = 0.5 * jnp.mean(
+            jnp.square(cmdp_batch.cost_returns - cost_value)
+        )
     entropy = normal_entropy(log_std)
     actor_anchor_kl = jnp.asarray(0.0, dtype=mean.dtype)
     actor_anchor_current_kl = jnp.asarray(0.0, dtype=mean.dtype)
@@ -486,6 +651,7 @@ def ppo_loss(
     loss = (
         policy_loss
         + float(vf_coef) * value_loss
+        + float(cmdp_cost_vf_coef) * cmdp_cost_value_loss
         - float(ent_coef) * entropy
         + actor_anchor_regularization
         + residual_regularization
@@ -500,6 +666,7 @@ def ppo_loss(
         "loss": loss,
         "policy_loss": policy_loss,
         "value_loss": value_loss,
+        "cmdp/cost_value_loss": cmdp_cost_value_loss,
         "entropy": entropy,
         "approx_kl": approx_kl,
         "clip_frac": clip_frac,
@@ -580,6 +747,50 @@ def compute_gae(
     return advantages, returns
 
 
+def cmdp_transition_costs(
+    transitions: Transition,
+    *,
+    max_episode_steps: int,
+) -> jax.Array:
+    """Build terminal CMDP costs with shape ``[time, env, channel]``.
+
+    ``failure`` constrains the probability of any true task termination.
+    ``shortfall`` constrains expected episode length exactly because its
+    undiscounted episodic sum is ``(H - T) / H`` on a failure and zero on a
+    full time-limit completion.  Four direction-specific channels prevent an
+    optimizer from satisfying the aggregate bound by exchanging high-ball
+    failures for low-ball or racket-height failures.
+    """
+
+    if int(max_episode_steps) <= 0:
+        raise ValueError("max_episode_steps must be positive")
+    terminated = transitions.terminated.astype(jnp.float32)
+    remaining = jnp.clip(
+        (float(max_episode_steps) - transitions.episode_length.astype(jnp.float32))
+        / float(max_episode_steps),
+        0.0,
+        1.0,
+    )
+
+    def terminal_reason(name: str) -> jax.Array:
+        key = f"done/{name}"
+        if key not in transitions.metrics:
+            raise ValueError(f"CMDP termination metric is missing: {key}")
+        return terminated * transitions.metrics[key].astype(jnp.float32)
+
+    return jnp.stack(
+        (
+            terminated,
+            terminated * remaining,
+            terminal_reason("ball_too_low"),
+            terminal_reason("ball_too_high"),
+            terminal_reason("racket_too_low"),
+            terminal_reason("racket_too_high"),
+        ),
+        axis=-1,
+    )
+
+
 def flatten_time_env(x: jax.Array) -> jax.Array:
     return x.reshape((x.shape[0] * x.shape[1],) + x.shape[2:])
 
@@ -647,6 +858,212 @@ def completed_failure_focus_mask(
     )
 
 
+def completed_success_focus_mask(
+    dones: jax.Array,
+    truncated: jax.Array,
+    hit_counts: jax.Array,
+    *,
+    hit_threshold: int,
+    tail_steps: int = 0,
+) -> jax.Array:
+    """Select transitions preceding a completed full-horizon success.
+
+    A time-limit truncation is the juggling task's full-horizon success rather
+    than a failure.  As with :func:`completed_failure_focus_mask`, the outcome
+    is propagated only within the current rollout and cannot leak across a
+    different episode boundary or into an unfinished suffix.
+    """
+
+    def propagate_outcome(carry, xs):
+        final_hits, final_truncated, steps_to_end, final_valid = carry
+        done_t, truncated_t, hits_t = xs
+        steps_to_end = jnp.where(final_valid, steps_to_end + 1, steps_to_end)
+        final_hits = jnp.where(done_t, hits_t, final_hits)
+        final_truncated = jnp.where(done_t, truncated_t, final_truncated)
+        steps_to_end = jnp.where(done_t, 0, steps_to_end)
+        final_valid = jnp.where(done_t, True, final_valid)
+        return (
+            final_hits,
+            final_truncated,
+            steps_to_end,
+            final_valid,
+        ), (
+            final_hits,
+            final_truncated,
+            steps_to_end,
+            final_valid,
+        )
+
+    init = (
+        jnp.zeros_like(hit_counts[-1]),
+        jnp.zeros_like(truncated[-1], dtype=bool),
+        jnp.zeros_like(hit_counts[-1], dtype=jnp.int32),
+        jnp.zeros_like(dones[-1], dtype=bool),
+    )
+    _, (episode_hits, episode_truncated, steps_to_end, episode_valid) = jax.lax.scan(
+        propagate_outcome,
+        init,
+        (dones, truncated, hit_counts),
+        reverse=True,
+    )
+    in_tail = (int(tail_steps) <= 0) | (steps_to_end < int(tail_steps))
+    return (
+        episode_valid
+        & episode_truncated
+        & (episode_hits >= int(hit_threshold))
+        & in_tail
+    )
+
+
+def apply_outcome_balanced_advantage_focus(
+    advantages: jax.Array,
+    failure_focus: jax.Array,
+    success_focus: jax.Array,
+    *,
+    failure_mass: float = 0.0,
+    success_mass: float = 0.0,
+) -> tuple[jax.Array, dict[str, jax.Array]]:
+    """Give rare completed outcomes a population-independent actor share.
+
+    Ordinary sample multipliers make an outcome group's influence vanish as
+    its rollout fraction becomes small.  Here each configured ``mass`` adds
+    that much *batch-average* actor weight to the corresponding completed
+    outcome group, independent of whether the group occupies 0.5% or 5% of
+    the rollout.  Only negative advantages from true failures and positive
+    advantages from time-limit successes are eligible.  The final RMS
+    normalization preserves the PPO optimizer's established overall scale.
+    """
+
+    if float(failure_mass) < 0.0 or float(success_mass) < 0.0:
+        raise ValueError("outcome focus masses must be >= 0")
+    focused_failure = failure_focus & (advantages < 0.0)
+    focused_success = success_focus & (advantages > 0.0)
+    failure_fraction = jnp.mean(focused_failure.astype(jnp.float32))
+    success_fraction = jnp.mean(focused_success.astype(jnp.float32))
+    failure_applied = jnp.where(
+        failure_fraction > 0.0,
+        jnp.asarray(float(failure_mass), dtype=advantages.dtype),
+        jnp.asarray(0.0, dtype=advantages.dtype),
+    )
+    success_applied = jnp.where(
+        success_fraction > 0.0,
+        jnp.asarray(float(success_mass), dtype=advantages.dtype),
+        jnp.asarray(0.0, dtype=advantages.dtype),
+    )
+    sample_weight = jnp.ones_like(advantages)
+    sample_weight = sample_weight + jnp.where(
+        focused_failure,
+        failure_applied / jnp.maximum(failure_fraction, 1.0e-8),
+        0.0,
+    )
+    sample_weight = sample_weight + jnp.where(
+        focused_success,
+        success_applied / jnp.maximum(success_fraction, 1.0e-8),
+        0.0,
+    )
+    focused_advantages = advantages * sample_weight
+    focused_advantages = focused_advantages / jnp.sqrt(
+        jnp.mean(focused_advantages * focused_advantages) + 1.0e-8
+    )
+    return focused_advantages, {
+        "failure_focus_fraction": failure_fraction,
+        "success_focus_fraction": success_fraction,
+        "failure_focus_balanced_mass_applied": failure_applied,
+        "success_focus_balanced_mass_applied": success_applied,
+        "outcome_focus_sample_weight_mean": jnp.mean(sample_weight),
+    }
+
+
+def hard_lane_focus_mask(
+    metrics: dict[str, jax.Array],
+    conditions: tuple[tuple[str, str, float], ...],
+    *,
+    min_conditions: int,
+) -> tuple[jax.Array, jax.Array]:
+    """Identify rollout samples lying in multiple preregistered hard tails.
+
+    Each condition is ``(metric_name, direction, threshold)`` where direction
+    is ``"high"`` or ``"low"``.  Requiring more than one independently drawn
+    tail avoids turning a single noisy attribution into a privileged training
+    label.  The environment and actor observations remain unchanged; these
+    metrics are used only to allocate actor-gradient mass.
+    """
+
+    if not conditions:
+        raise ValueError("hard-lane focus requires at least one condition")
+    if int(min_conditions) <= 0 or int(min_conditions) > len(conditions):
+        raise ValueError("hard-lane min_conditions must be in [1, condition count]")
+    reference = metrics[conditions[0][0]]
+    condition_count = jnp.zeros_like(reference, dtype=jnp.int32)
+    for metric_name, direction, threshold in conditions:
+        if metric_name not in metrics:
+            raise ValueError(f"hard-lane focus metric is missing: {metric_name}")
+        if direction == "high":
+            active = metrics[metric_name] >= float(threshold)
+        elif direction == "low":
+            active = metrics[metric_name] <= float(threshold)
+        else:
+            raise ValueError(
+                f"hard-lane focus direction must be high/low, got {direction!r}"
+            )
+        condition_count = condition_count + active.astype(jnp.int32)
+    return condition_count >= int(min_conditions), condition_count
+
+
+def mix_hard_episode_reset_keys(
+    random_reset_keys: jax.Array,
+    *,
+    selector_key: jax.Array,
+    hard_reset_keys: jax.Array | None,
+    episode_mass: float,
+    eligible: jax.Array | None = None,
+) -> jax.Array:
+    """Replace eligible episode resets from a fixed-probability key mixture.
+
+    The pool stores complete JAX reset keys, so replaying one recreates the
+    associated reset and episode-constant DR tuple without changing any DR
+    interval. Selection is made only among lanes that actually reset, so
+    episode length cannot change the per-reset mixture probability. A zero
+    mass is an exact legacy no-op.
+    """
+
+    if not 0.0 <= float(episode_mass) <= 1.0:
+        raise ValueError("episode_mass must be in [0, 1]")
+    if float(episode_mass) == 0.0:
+        return random_reset_keys
+    if hard_reset_keys is None:
+        raise ValueError("positive episode_mass requires hard_reset_keys")
+    hard_reset_keys = jnp.asarray(hard_reset_keys, dtype=jnp.uint32)
+    if hard_reset_keys.ndim != 2 or hard_reset_keys.shape[1] != 2:
+        raise ValueError("hard_reset_keys must have shape [pool, 2]")
+    if hard_reset_keys.shape[0] <= 0:
+        raise ValueError("hard_reset_keys cannot be empty")
+
+    lane_count = int(random_reset_keys.shape[0])
+    if eligible is None:
+        eligible = jnp.ones((lane_count,), dtype=bool)
+    else:
+        eligible = jnp.asarray(eligible, dtype=bool)
+    if eligible.shape != (lane_count,):
+        raise ValueError("eligible must have shape [n_envs]")
+
+    selection_key, pool_key = jax.random.split(selector_key)
+    selected = eligible & jax.random.bernoulli(
+        selection_key,
+        p=float(episode_mass),
+        shape=(lane_count,),
+    )
+
+    pool_indices = jax.random.randint(
+        pool_key,
+        (lane_count,),
+        minval=0,
+        maxval=hard_reset_keys.shape[0],
+    )
+    replay_keys = hard_reset_keys[pool_indices]
+    return jnp.where(selected[:, None], replay_keys, random_reset_keys)
+
+
 def make_train_fns(
     env: MjxJuggleEnv,
     n_steps: int,
@@ -663,6 +1080,7 @@ def make_train_fns(
     actor_anchor_kl_coef: float = 0.0,
     actor_anchor_replay_obs: jax.Array | None = None,
     actor_anchor_replay_kl_coef: float = 0.0,
+    actor_anchor_replay_max_kl: float = 0.0,
     residual_l2_coef: float = 0.0,
     teacher_params=None,
     teacher_distill_replay_obs: jax.Array | None = None,
@@ -675,6 +1093,14 @@ def make_train_fns(
     failure_focus_hit_threshold: int = 0,
     failure_focus_weight: float = 1.0,
     failure_focus_tail_steps: int = 0,
+    failure_focus_balanced_mass: float = 0.0,
+    success_focus_hit_threshold: int = 0,
+    success_focus_weight: float = 1.0,
+    success_focus_tail_steps: int = 0,
+    success_focus_balanced_mass: float = 0.0,
+    hard_lane_focus_conditions: tuple[tuple[str, str, float], ...] = (),
+    hard_lane_focus_min_conditions: int = 1,
+    hard_lane_focus_weight: float = 1.0,
     counterfactual_replay_obs: jax.Array | None = None,
     counterfactual_replay_actions: jax.Array | None = None,
     counterfactual_supervision_coef: float = 0.0,
@@ -687,6 +1113,14 @@ def make_train_fns(
     action_feedback_sensitivity_coef: float = 0.0,
     action_feedback_perturb_scale: float = 0.0,
     action_feedback_obs_starts: tuple[int, ...] = (),
+    cmdp_enabled: bool = False,
+    cmdp_cost_limits: tuple[float, ...] = (),
+    cmdp_cost_gae_lambda: float = 0.99,
+    cmdp_cost_vf_coef: float = 0.5,
+    cmdp_dual_learning_rate: float = 0.1,
+    cmdp_dual_max: float = 2.0,
+    hard_reset_keys: jax.Array | None = None,
+    hard_reset_episode_mass: float = 0.0,
 ):
     if (
         min_log_std is not None
@@ -694,6 +1128,38 @@ def make_train_fns(
         and float(min_log_std) > float(max_log_std)
     ):
         raise ValueError("min_log_std must be <= max_log_std")
+    if int(failure_focus_hit_threshold) < 0 or int(failure_focus_tail_steps) < 0:
+        raise ValueError("failure focus thresholds/tail must be >= 0")
+    if float(failure_focus_weight) < 1.0:
+        raise ValueError("failure_focus_weight must be >= 1")
+    if not 0.0 <= float(failure_focus_balanced_mass) <= 1.0:
+        raise ValueError("failure_focus_balanced_mass must be in [0, 1]")
+    if int(success_focus_hit_threshold) < 0 or int(success_focus_tail_steps) < 0:
+        raise ValueError("success focus thresholds/tail must be >= 0")
+    if float(success_focus_weight) < 1.0:
+        raise ValueError("success_focus_weight must be >= 1")
+    if not 0.0 <= float(success_focus_balanced_mass) <= 1.0:
+        raise ValueError("success_focus_balanced_mass must be in [0, 1]")
+    if float(hard_lane_focus_weight) < 1.0:
+        raise ValueError("hard_lane_focus_weight must be >= 1")
+    if hard_lane_focus_conditions and (
+        int(hard_lane_focus_min_conditions) <= 0
+        or int(hard_lane_focus_min_conditions) > len(hard_lane_focus_conditions)
+    ):
+        raise ValueError(
+            "hard_lane_focus_min_conditions must be in [1, condition count]"
+        )
+    if float(hard_lane_focus_weight) > 1.0 and not hard_lane_focus_conditions:
+        raise ValueError(
+            "hard_lane_focus_weight > 1 requires hard-lane conditions"
+        )
+    for metric_name, direction, _threshold in hard_lane_focus_conditions:
+        if not metric_name:
+            raise ValueError("hard-lane focus metric name cannot be empty")
+        if direction not in {"high", "low"}:
+            raise ValueError(
+                f"hard-lane focus direction must be high/low, got {direction!r}"
+            )
     if (
         float(actor_anchor_kl_coef) > 0.0
         or float(actor_anchor_replay_kl_coef) > 0.0
@@ -701,6 +1167,13 @@ def make_train_fns(
         raise ValueError("actor anchor KL requires reference_params")
     if float(actor_anchor_replay_kl_coef) > 0.0 and actor_anchor_replay_obs is None:
         raise ValueError("actor_anchor_replay_kl_coef > 0 requires replay observations")
+    if float(actor_anchor_replay_max_kl) < 0.0:
+        raise ValueError("actor_anchor_replay_max_kl must be >= 0")
+    if float(actor_anchor_replay_max_kl) > 0.0:
+        if reference_params is None:
+            raise ValueError("actor anchor replay KL guard requires reference_params")
+        if actor_anchor_replay_obs is None:
+            raise ValueError("actor anchor replay KL guard requires replay observations")
     if float(teacher_distill_coef) > 0.0:
         if teacher_params is None:
             raise ValueError("teacher_distill_coef > 0 requires teacher_params")
@@ -750,6 +1223,32 @@ def make_train_fns(
             raise ValueError(
                 "action feedback sensitivity observation slice is outside obs_dim"
             )
+    if bool(cmdp_enabled):
+        if len(cmdp_cost_limits) != len(CMDP_COST_NAMES):
+            raise ValueError(
+                "CMDP cost limits must match the registered cost channels"
+            )
+        if not 0.0 <= float(cmdp_cost_gae_lambda) <= 1.0:
+            raise ValueError("cmdp_cost_gae_lambda must be in [0, 1]")
+        if float(cmdp_cost_vf_coef) <= 0.0:
+            raise ValueError("cmdp_cost_vf_coef must be positive")
+        if float(cmdp_dual_learning_rate) <= 0.0:
+            raise ValueError("cmdp_dual_learning_rate must be positive")
+        if float(cmdp_dual_max) <= 0.0:
+            raise ValueError("cmdp_dual_max must be positive")
+        if any(float(limit) < 0.0 for limit in cmdp_cost_limits):
+            raise ValueError("CMDP cost limits must be nonnegative")
+    if not 0.0 <= float(hard_reset_episode_mass) <= 1.0:
+        raise ValueError("hard_reset_episode_mass must be in [0, 1]")
+    if float(hard_reset_episode_mass) > 0.0:
+        if hard_reset_keys is None:
+            raise ValueError(
+                "hard_reset_episode_mass > 0 requires hard_reset_keys"
+            )
+        if hard_reset_keys.ndim != 2 or hard_reset_keys.shape[1] != 2:
+            raise ValueError("hard_reset_keys must have shape [pool, 2]")
+        if hard_reset_keys.shape[0] <= 0:
+            raise ValueError("hard_reset_keys cannot be empty")
     batch_size = env.n_envs * int(n_steps)
     num_minibatches = max(1, batch_size // int(minibatch_size))
     used_batch_size = num_minibatches * int(minibatch_size)
@@ -776,6 +1275,13 @@ def make_train_fns(
             completed_return = running_return + reward
             completed_length = running_length + 1
             reset_keys = jax.random.split(reset_key, env.n_envs)
+            reset_keys = mix_hard_episode_reset_keys(
+                reset_keys,
+                selector_key=reset_key,
+                hard_reset_keys=hard_reset_keys,
+                episode_mass=hard_reset_episode_mass,
+                eligible=done,
+            )
             next_env_state, next_obs = env.reset_done(next_env_state, next_obs, done, reset_keys)
             next_critic_obs = env.get_critic_obs(next_env_state, next_obs)
             next_running_return = jnp.where(done, 0.0, completed_return)
@@ -823,8 +1329,87 @@ def make_train_fns(
             time_limit_bootstrap=time_limit_bootstrap,
         )
         advantages = (advantages - jnp.mean(advantages)) / (jnp.std(advantages) + 1e-8)
+        cmdp_cost_returns = None
+        cmdp_cost_old_values = None
+        cmdp_observed_costs = jnp.zeros(
+            (len(CMDP_COST_NAMES),), dtype=jnp.float32
+        )
+        cmdp_dual_before = jnp.zeros(
+            (len(CMDP_COST_NAMES),), dtype=jnp.float32
+        )
+        cmdp_completed_count = jnp.asarray(0.0, dtype=jnp.float32)
+        if bool(cmdp_enabled):
+            cost_values = cmdp_cost_value_fn(
+                train_state.params, transitions.critic_obs
+            )
+            last_cost_value = cmdp_cost_value_fn(
+                train_state.params, runner.critic_obs
+            )
+            costs = cmdp_transition_costs(
+                transitions,
+                max_episode_steps=int(env.max_steps),
+            )
+            channel_advantages = []
+            channel_returns = []
+            for channel_index in range(len(CMDP_COST_NAMES)):
+                cost_advantage, cost_return = compute_gae(
+                    costs[..., channel_index],
+                    transitions.done,
+                    cost_values[..., channel_index],
+                    last_cost_value[..., channel_index],
+                    1.0,
+                    float(cmdp_cost_gae_lambda),
+                )
+                channel_advantages.append(cost_advantage)
+                channel_returns.append(cost_return)
+            cost_advantages = jnp.stack(channel_advantages, axis=-1)
+            cmdp_cost_returns = jnp.stack(channel_returns, axis=-1)
+            cmdp_cost_old_values = cost_values
+            cost_advantages = (
+                cost_advantages
+                - jnp.mean(cost_advantages, axis=(0, 1), keepdims=True)
+            ) / (
+                jnp.std(cost_advantages, axis=(0, 1), keepdims=True) + 1.0e-8
+            )
+            cmdp_dual_before = jax.lax.stop_gradient(
+                jnp.asarray(train_state.params["cmdp_dual"])
+            )
+            advantages = advantages - jnp.sum(
+                cmdp_dual_before[None, None, :] * cost_advantages,
+                axis=-1,
+            )
+            advantages = (
+                advantages - jnp.mean(advantages)
+            ) / (jnp.std(advantages) + 1.0e-8)
+            cmdp_completed_count = jnp.sum(
+                transitions.done.astype(jnp.float32)
+            )
+            cmdp_observed_costs = jnp.where(
+                cmdp_completed_count > 0.0,
+                jnp.sum(costs, axis=(0, 1))
+                / jnp.maximum(cmdp_completed_count, 1.0),
+                jnp.asarray(cmdp_cost_limits, dtype=jnp.float32),
+            )
         failure_focus_fraction = jnp.asarray(0.0, dtype=jnp.float32)
-        if int(failure_focus_hit_threshold) > 0 and float(failure_focus_weight) > 1.0:
+        success_focus_fraction = jnp.asarray(0.0, dtype=jnp.float32)
+        failure_focus_balanced_mass_applied = jnp.asarray(0.0, dtype=jnp.float32)
+        success_focus_balanced_mass_applied = jnp.asarray(0.0, dtype=jnp.float32)
+        outcome_focus_sample_weight_mean = jnp.asarray(1.0, dtype=jnp.float32)
+        hard_lane_focus_fraction = jnp.asarray(0.0, dtype=jnp.float32)
+        hard_lane_focus_mean_condition_count = jnp.asarray(
+            0.0, dtype=jnp.float32
+        )
+        hard_lane_focus_advantage_abs_fraction = jnp.asarray(
+            0.0, dtype=jnp.float32
+        )
+        advantage_weight = jnp.ones_like(advantages)
+        focus_enabled = False
+        failure_focus = jnp.zeros_like(transitions.done, dtype=bool)
+        success_focus = jnp.zeros_like(transitions.done, dtype=bool)
+        if int(failure_focus_hit_threshold) > 0 and (
+            float(failure_focus_weight) > 1.0
+            or float(failure_focus_balanced_mass) > 0.0
+        ):
             failure_focus = completed_failure_focus_mask(
                 transitions.done,
                 transitions.terminated,
@@ -837,14 +1422,93 @@ def make_train_fns(
             # would reinforce the locally good first contacts even though the
             # same trajectory still terminates before the third hit.
             focused_negative = failure_focus & (advantages < 0.0)
-            advantage_weight = jnp.where(
-                focused_negative,
-                float(failure_focus_weight),
-                1.0,
-            )
-            advantages = advantages * advantage_weight
-            advantages = advantages / jnp.sqrt(jnp.mean(advantages * advantages) + 1e-8)
+            if float(failure_focus_weight) > 1.0:
+                advantage_weight = jnp.where(
+                    focused_negative,
+                    advantage_weight * float(failure_focus_weight),
+                    advantage_weight,
+                )
             failure_focus_fraction = jnp.mean(focused_negative.astype(jnp.float32))
+            focus_enabled = True
+        if int(success_focus_hit_threshold) > 0 and (
+            float(success_focus_weight) > 1.0
+            or float(success_focus_balanced_mass) > 0.0
+        ):
+            success_focus = completed_success_focus_mask(
+                transitions.done,
+                transitions.truncated,
+                transitions.hit_count,
+                hit_threshold=success_focus_hit_threshold,
+                tail_steps=success_focus_tail_steps,
+            )
+            # Reinforce only actions the critic already regards as better than
+            # baseline.  Negative advantages in a successful episode still
+            # carry their ordinary corrective signal.
+            focused_positive = success_focus & (advantages > 0.0)
+            if float(success_focus_weight) > 1.0:
+                advantage_weight = jnp.where(
+                    focused_positive,
+                    advantage_weight * float(success_focus_weight),
+                    advantage_weight,
+                )
+            success_focus_fraction = jnp.mean(focused_positive.astype(jnp.float32))
+            focus_enabled = True
+        if hard_lane_focus_conditions and float(hard_lane_focus_weight) > 1.0:
+            hard_lane_focus, hard_lane_condition_count = hard_lane_focus_mask(
+                transitions.metrics,
+                hard_lane_focus_conditions,
+                min_conditions=hard_lane_focus_min_conditions,
+            )
+            hard_lane_focus_fraction = jnp.mean(
+                hard_lane_focus.astype(jnp.float32)
+            )
+            hard_lane_focus_mean_condition_count = jnp.mean(
+                hard_lane_condition_count.astype(jnp.float32)
+            )
+            abs_advantage = jnp.abs(advantages)
+            hard_lane_focus_advantage_abs_fraction = jnp.sum(
+                abs_advantage * hard_lane_focus.astype(abs_advantage.dtype)
+            ) / jnp.maximum(jnp.sum(abs_advantage), 1.0e-8)
+            advantage_weight = jnp.where(
+                hard_lane_focus,
+                advantage_weight * float(hard_lane_focus_weight),
+                advantage_weight,
+            )
+            focus_enabled = True
+        if focus_enabled:
+            advantages = advantages * advantage_weight
+            if (
+                float(failure_focus_balanced_mass) > 0.0
+                or float(success_focus_balanced_mass) > 0.0
+            ):
+                advantages, balanced_focus_metrics = (
+                    apply_outcome_balanced_advantage_focus(
+                        advantages,
+                        failure_focus,
+                        success_focus,
+                        failure_mass=failure_focus_balanced_mass,
+                        success_mass=success_focus_balanced_mass,
+                    )
+                )
+                failure_focus_fraction = balanced_focus_metrics[
+                    "failure_focus_fraction"
+                ]
+                success_focus_fraction = balanced_focus_metrics[
+                    "success_focus_fraction"
+                ]
+                failure_focus_balanced_mass_applied = balanced_focus_metrics[
+                    "failure_focus_balanced_mass_applied"
+                ]
+                success_focus_balanced_mass_applied = balanced_focus_metrics[
+                    "success_focus_balanced_mass_applied"
+                ]
+                outcome_focus_sample_weight_mean = balanced_focus_metrics[
+                    "outcome_focus_sample_weight_mean"
+                ]
+            else:
+                advantages = advantages / jnp.sqrt(
+                    jnp.mean(advantages * advantages) + 1e-8
+                )
 
         batch = PpoBatch(
             obs=flatten_time_env(transitions.obs),
@@ -855,12 +1519,22 @@ def make_train_fns(
             returns=flatten_time_env(returns),
             old_values=flatten_time_env(transitions.value),
         )
+        cmdp_batch = (
+            CmdpBatch(cost_returns=flatten_time_env(cmdp_cost_returns))
+            if cmdp_cost_returns is not None
+            else None
+        )
 
         def take_minibatch(b: PpoBatch, idx: jax.Array) -> PpoBatch:
             return jax.tree_util.tree_map(lambda x: x[idx], b)
 
         def update_minibatch(state: TrainState, idx: jax.Array):
             mini = take_minibatch(batch, idx)
+            mini_cmdp = (
+                CmdpBatch(cost_returns=cmdp_batch.cost_returns[idx])
+                if cmdp_batch is not None
+                else None
+            )
             mini_anchor_obs = None
             if actor_anchor_replay_obs is not None:
                 replay_idx = jnp.mod(idx, actor_anchor_replay_obs.shape[0])
@@ -924,6 +1598,8 @@ def make_train_fns(
                 action_feedback_sensitivity_coef,
                 action_feedback_perturb_scale,
                 action_feedback_obs_starts,
+                mini_cmdp,
+                cmdp_cost_vf_coef,
             )
             params, opt, grad_norm = adam_step(
                 state.params,
@@ -1097,22 +1773,109 @@ def make_train_fns(
         # the rollout-wide displacement, roll back both parameters and Adam
         # state transactionally so no over-budget update can reach a
         # checkpoint or the next rollout.
-        final_mean = policy_mean(train_state.params, batch.obs)
-        final_log_std = effective_log_std(
+        candidate_final_mean = policy_mean(train_state.params, batch.obs)
+        candidate_final_log_std = effective_log_std(
             train_state.params["log_std"], min_log_std, max_log_std
         )
-        final_logp = normal_logprob(batch.action, final_mean, final_log_std)
-        final_ratio = jnp.exp(final_logp - batch.old_logp)
-        final_approx_kl = jnp.mean(batch.old_logp - final_logp)
-        final_exact_kl = diagonal_gaussian_kl(
+        candidate_final_logp = normal_logprob(
+            batch.action, candidate_final_mean, candidate_final_log_std
+        )
+        candidate_final_approx_kl = jnp.mean(
+            batch.old_logp - candidate_final_logp
+        )
+        candidate_final_exact_kl = diagonal_gaussian_kl(
             policy_mean(behavior_train_state.params, batch.obs),
             old_log_std,
-            final_mean,
-            final_log_std,
+            candidate_final_mean,
+            candidate_final_log_std,
         )
-        rollback_update = jnp.asarray(False)
+        target_kl_rollback = jnp.asarray(False)
         if target_kl is not None and float(target_kl) > 0.0:
-            rollback_update = final_exact_kl > float(target_kl)
+            target_kl_rollback = candidate_final_exact_kl > float(target_kl)
+
+        # A small trust-region budget per PPO update does not bound the
+        # cumulative displacement over an uncapped continuation.  Audit the
+        # candidate actor on the frozen source-state replay set.  If the full
+        # update crosses the absolute boundary, interpolate the parameter
+        # displacement and retain the largest safe fraction instead of
+        # discarding all minibatches.  This preserves the same hard source
+        # behavior bound without deadlocking adaptation at its edge.
+        actor_anchor_replay_candidate_kl = jnp.asarray(0.0, dtype=jnp.float32)
+        actor_anchor_replay_post_kl = jnp.asarray(0.0, dtype=jnp.float32)
+        actor_anchor_replay_guard_triggered = jnp.asarray(False)
+        actor_anchor_replay_projection_triggered = jnp.asarray(False)
+        actor_anchor_replay_projection_scale = jnp.asarray(
+            1.0, dtype=jnp.float32
+        )
+        actor_anchor_replay_no_safe_step = jnp.asarray(False)
+        if float(actor_anchor_replay_max_kl) > 0.0:
+            reference_replay_mean = jax.lax.stop_gradient(
+                policy_mean(reference_params, actor_anchor_replay_obs)
+            )
+            reference_replay_log_std = jax.lax.stop_gradient(
+                effective_log_std(
+                    reference_params["log_std"], min_log_std, max_log_std
+                )
+            )
+
+            def replay_kl(params):
+                return diagonal_gaussian_kl(
+                    reference_replay_mean,
+                    reference_replay_log_std,
+                    policy_mean(params, actor_anchor_replay_obs),
+                    effective_log_std(
+                        params["log_std"], min_log_std, max_log_std
+                    ),
+                )
+
+            actor_anchor_replay_candidate_kl = replay_kl(train_state.params)
+            actor_anchor_replay_guard_triggered = (
+                actor_anchor_replay_candidate_kl
+                > float(actor_anchor_replay_max_kl)
+            )
+            (
+                projected_params,
+                projected_replay_kl,
+                projected_scale,
+                found_safe_step,
+                _replay_trial_kls,
+            ) = backtrack_params_to_kl_limit(
+                behavior_train_state.params,
+                train_state.params,
+                replay_kl,
+                float(actor_anchor_replay_max_kl),
+            )
+            actor_anchor_replay_projection_triggered = (
+                actor_anchor_replay_guard_triggered & found_safe_step
+            )
+            actor_anchor_replay_no_safe_step = (
+                actor_anchor_replay_guard_triggered & (~found_safe_step)
+            )
+            actor_anchor_replay_projection_scale = jnp.where(
+                actor_anchor_replay_guard_triggered,
+                projected_scale,
+                jnp.asarray(1.0, dtype=jnp.float32),
+            )
+            selected_params = jax.tree_util.tree_map(
+                lambda candidate, projected: jnp.where(
+                    actor_anchor_replay_guard_triggered,
+                    projected,
+                    candidate,
+                ),
+                train_state.params,
+                projected_params,
+            )
+            train_state = TrainState(params=selected_params, opt=train_state.opt)
+            actor_anchor_replay_post_kl = jnp.where(
+                actor_anchor_replay_guard_triggered,
+                projected_replay_kl,
+                actor_anchor_replay_candidate_kl,
+            )
+
+        rollback_update = target_kl_rollback | actor_anchor_replay_no_safe_step
+        if (target_kl is not None and float(target_kl) > 0.0) or (
+            float(actor_anchor_replay_max_kl) > 0.0
+        ):
             train_state = jax.tree_util.tree_map(
                 lambda candidate, previous: jnp.where(
                     rollback_update, previous, candidate
@@ -1120,12 +1883,68 @@ def make_train_fns(
                 train_state,
                 behavior_train_state,
             )
-        effective_approx_kl = jnp.where(rollback_update, 0.0, final_approx_kl)
-        effective_exact_kl = jnp.where(rollback_update, 0.0, final_exact_kl)
+
+        cmdp_dual_after = cmdp_dual_before
+        if bool(cmdp_enabled):
+            cmdp_dual_after = jnp.clip(
+                cmdp_dual_before
+                + float(cmdp_dual_learning_rate)
+                * (
+                    cmdp_observed_costs
+                    - jnp.asarray(cmdp_cost_limits, dtype=jnp.float32)
+                ),
+                0.0,
+                float(cmdp_dual_max),
+            )
+            updated_params = dict(train_state.params)
+            updated_params["cmdp_dual"] = cmdp_dual_after
+            train_state = TrainState(params=updated_params, opt=train_state.opt)
+
+        accepted_final_mean = policy_mean(train_state.params, batch.obs)
+        accepted_final_log_std = effective_log_std(
+            train_state.params["log_std"], min_log_std, max_log_std
+        )
+        accepted_final_logp = normal_logprob(
+            batch.action, accepted_final_mean, accepted_final_log_std
+        )
+        accepted_final_ratio = jnp.exp(accepted_final_logp - batch.old_logp)
+        effective_approx_kl = jnp.where(
+            rollback_update,
+            0.0,
+            jnp.mean(batch.old_logp - accepted_final_logp),
+        )
+        effective_exact_kl = jnp.where(
+            rollback_update,
+            0.0,
+            diagonal_gaussian_kl(
+                policy_mean(behavior_train_state.params, batch.obs),
+                old_log_std,
+                accepted_final_mean,
+                accepted_final_log_std,
+            ),
+        )
+        if float(actor_anchor_replay_max_kl) > 0.0:
+            actor_anchor_replay_post_kl = replay_kl(train_state.params)
         aux_mean["approx_kl"] = effective_approx_kl
         aux_mean["ppo_exact_kl"] = effective_exact_kl
-        aux_mean["ppo_pre_rollback_exact_kl"] = final_exact_kl
+        aux_mean["ppo_pre_rollback_exact_kl"] = candidate_final_exact_kl
         aux_mean["ppo_update_rolled_back"] = rollback_update.astype(jnp.float32)
+        aux_mean["actor_anchor_replay_candidate_kl"] = (
+            actor_anchor_replay_candidate_kl
+        )
+        aux_mean["actor_anchor_replay_post_kl"] = actor_anchor_replay_post_kl
+        aux_mean["actor_anchor_replay_guard_triggered"] = (
+            actor_anchor_replay_guard_triggered.astype(jnp.float32)
+        )
+        aux_mean["actor_anchor_replay_projection_triggered"] = (
+            actor_anchor_replay_projection_triggered.astype(jnp.float32)
+        )
+        aux_mean["actor_anchor_replay_projection_scale"] = (
+            actor_anchor_replay_projection_scale
+        )
+        aux_mean["actor_anchor_replay_no_safe_step"] = (
+            actor_anchor_replay_no_safe_step.astype(jnp.float32)
+        )
         aux_mean["ppo_minibatches_applied"] = jnp.where(
             rollback_update, 0.0, aux_mean["ppo_minibatches_applied"]
         )
@@ -1133,16 +1952,71 @@ def make_train_fns(
             rollback_update, 0.0, aux_mean["ppo_epochs_applied"]
         )
         aux_mean["ppo_safe_step_scale"] = jnp.where(
-            rollback_update, 0.0, aux_mean["ppo_safe_step_scale"]
+            rollback_update,
+            0.0,
+            aux_mean["ppo_safe_step_scale"]
+            * actor_anchor_replay_projection_scale,
         )
         aux_mean["ppo_candidate_exact_kl"] = jnp.where(
             rollback_update, 0.0, aux_mean["ppo_candidate_exact_kl"]
         )
-        aux_mean["clip_frac"] = jnp.where(rollback_update, 0.0, jnp.mean(
-            (jnp.abs(final_ratio - 1.0) > float(clip_range)).astype(jnp.float32)
-        ))
-        aux_mean["entropy"] = normal_entropy(final_log_std)
+        aux_mean["clip_frac"] = jnp.where(
+            rollback_update,
+            0.0,
+            jnp.mean(
+                (jnp.abs(accepted_final_ratio - 1.0) > float(clip_range)).astype(
+                    jnp.float32
+                )
+            ),
+        )
+        aux_mean["entropy"] = normal_entropy(accepted_final_log_std)
+        if bool(cmdp_enabled):
+            aux_mean["cmdp/completed_episodes"] = cmdp_completed_count
+            for channel_index, channel_name in enumerate(CMDP_COST_NAMES):
+                cost_returns_flat = flatten_time_env(cmdp_cost_returns)[
+                    :, channel_index
+                ]
+                cost_values_flat = flatten_time_env(cmdp_cost_old_values)[
+                    :, channel_index
+                ]
+                aux_mean[f"cmdp/observed_cost/{channel_name}"] = (
+                    cmdp_observed_costs[channel_index]
+                )
+                aux_mean[f"cmdp/cost_limit/{channel_name}"] = jnp.asarray(
+                    float(cmdp_cost_limits[channel_index]), dtype=jnp.float32
+                )
+                aux_mean[f"cmdp/dual_before/{channel_name}"] = (
+                    cmdp_dual_before[channel_index]
+                )
+                aux_mean[f"cmdp/dual/{channel_name}"] = cmdp_dual_after[
+                    channel_index
+                ]
+                aux_mean[f"cmdp/cost_explained_var/{channel_name}"] = (
+                    1.0
+                    - jnp.var(cost_returns_flat - cost_values_flat)
+                    / (jnp.var(cost_returns_flat) + 1.0e-8)
+                )
         aux_mean["failure_focus_fraction"] = failure_focus_fraction
+        aux_mean["success_focus_fraction"] = success_focus_fraction
+        aux_mean["failure_focus_balanced_mass_applied"] = (
+            failure_focus_balanced_mass_applied
+        )
+        aux_mean["success_focus_balanced_mass_applied"] = (
+            success_focus_balanced_mass_applied
+        )
+        aux_mean["outcome_focus_sample_weight_mean"] = (
+            outcome_focus_sample_weight_mean
+        )
+        aux_mean["hard_lane_focus_fraction"] = hard_lane_focus_fraction
+        aux_mean["hard_lane_focus_mean_condition_count"] = (
+            hard_lane_focus_mean_condition_count
+        )
+        aux_mean["hard_lane_focus_advantage_abs_fraction"] = (
+            hard_lane_focus_advantage_abs_fraction
+        )
+        aux_mean["hard_lane_focus_weight"] = jnp.asarray(
+            float(hard_lane_focus_weight), dtype=jnp.float32
+        )
         aux_mean["explained_var"] = 1.0 - jnp.var(flatten_time_env(returns) - batch.old_values) / (
             jnp.var(flatten_time_env(returns)) + 1e-8
         )

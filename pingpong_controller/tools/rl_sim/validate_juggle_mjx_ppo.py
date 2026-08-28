@@ -102,6 +102,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        "--episode-target-y-range-m",
+        type=float,
+        nargs=2,
+        default=None,
+        metavar=("LOW", "HIGH"),
+        help="Evaluation-only episode target-y range override.",
+    )
+    p.add_argument(
+        "--falling-reset-contact-local-y-offset-range-m",
+        type=float,
+        nargs=2,
+        default=None,
+        metavar=("LOW", "HIGH"),
+        help="Evaluation-only falling-contact local-y support override.",
+    )
+    p.add_argument(
+        "--falling-reset-time-to-contact-range-s",
+        type=float,
+        nargs=2,
+        default=None,
+        metavar=("LOW", "HIGH"),
+        help="Evaluation-only falling-contact time-to-contact range override.",
+    )
+    p.add_argument(
         "--ball-obs-rate-hz",
         type=float,
         default=None,
@@ -127,6 +151,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=float,
         default=None,
         help="Evaluation-only correlation coefficient for proprioceptive observation noise.",
+    )
+    p.add_argument(
+        "--policy-dq-adapter-mode",
+        choices=["off", "record45"],
+        default="off",
+        help=(
+            "Evaluation-only actor-input transform. 'record45' reproduces the "
+            "record_new4/5 dq-only gain/EMA/delay adapter while leaving the "
+            "simulated plant and racket-velocity observation unchanged."
+        ),
     )
     p.add_argument(
         "--ball-obs-velocity-observer-mode",
@@ -208,6 +242,38 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         nargs=2,
         default=None,
         metavar=("LOW", "HIGH"),
+    )
+    p.add_argument(
+        "--dr-second-order-gain-scale-range",
+        type=float,
+        nargs=2,
+        default=None,
+        metavar=("LOW", "HIGH"),
+    )
+    p.add_argument(
+        "--dr-second-order-delay-offset-steps-range",
+        type=int,
+        nargs=2,
+        default=None,
+        metavar=("LOW", "HIGH"),
+    )
+    p.add_argument(
+        "--dr-second-order-per-joint",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Evaluation-only override for independent per-joint second-order actuator DR.",
+    )
+    p.add_argument(
+        "--dr-second-order-common-residual-fraction",
+        type=float,
+        default=None,
+        help="Evaluation-only fraction of per-joint residual samples shared across joints.",
+    )
+    p.add_argument(
+        "--dr-second-order-delay-nominal-probability",
+        type=float,
+        default=None,
+        help="Evaluation-only point-mass probability at the nominal zero delay offset.",
     )
     p.add_argument(
         "--dr-ball-mass-range",
@@ -355,6 +421,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--no-save-csv", action="store_true")
     p.add_argument("--racket-z-hard-limit-down", type=float, default=None)
     p.add_argument("--racket-z-hard-limit-up", type=float, default=None)
+    p.add_argument(
+        "--hit-racket-up-cos-constraint-min",
+        type=float,
+        default=None,
+        help=(
+            "Evaluation-only override for the hard contact-flatness constraint. "
+            "Use 0 to disable this termination while preserving the rest of the checkpoint environment."
+        ),
+    )
     p.add_argument(
         "--virtual-camera-base-body-name",
         type=str,
@@ -516,6 +591,25 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--action-trace-csv", type=Path, default=None, help="Save per-control-step policy action and joint trace CSV.")
     p.add_argument("--action-plot-out", type=Path, default=None, help="Save a PNG plot of policy action and joint trajectories.")
     p.add_argument("--obs-trace-csv", type=Path, default=None, help="Save the exact per-control-step policy observation CSV.")
+    p.add_argument(
+        "--actor-obs-npy",
+        type=Path,
+        default=None,
+        help=(
+            "Save the exact batched actor inputs used before each policy step as a "
+            "float32 .npy array [samples, obs_dim]. This is intended for "
+            "--actor-anchor-replay-obs during conservative continuation training."
+        ),
+    )
+    p.add_argument(
+        "--actor-obs-max-samples",
+        type=int,
+        default=0,
+        help=(
+            "Deterministically subsample --actor-obs-npy to at most this many "
+            "rows after rollout (0 keeps every row)."
+        ),
+    )
     p.add_argument(
         "--freeze-ball-at-reset",
         action="store_true",
@@ -766,6 +860,9 @@ def env_config_from_checkpoint(payload: dict, args: argparse.Namespace) -> MjxJu
             ),
         )
     scalar_overrides = {
+        "hit_racket_up_cos_constraint_min": getattr(
+            args, "hit_racket_up_cos_constraint_min", None
+        ),
         "ball_obs_pos_noise_std": getattr(args, "ball_obs_pos_noise_std", None),
         "ball_obs_vel_noise_std": getattr(args, "ball_obs_vel_noise_std", None),
         "ball_obs_vel_xy_noise_std": getattr(
@@ -932,6 +1029,9 @@ def env_config_from_checkpoint(payload: dict, args: argparse.Namespace) -> MjxJu
         "dr_second_order_damping_scale_range": getattr(
             args, "dr_second_order_damping_scale_range", None
         ),
+        "dr_second_order_gain_scale_range": getattr(
+            args, "dr_second_order_gain_scale_range", None
+        ),
         "dr_ball_mass_range": getattr(args, "dr_ball_mass_range", None),
         "dr_ball_solref_time_range": getattr(
             args, "dr_ball_solref_time_range", None
@@ -949,6 +1049,80 @@ def env_config_from_checkpoint(payload: dict, args: argparse.Namespace) -> MjxJu
                 f"{field_name} must satisfy 0 < LOW <= HIGH, got {(low, high)}"
             )
         cfg = replace(cfg, **{field_name: (low, high)})
+    delay_offset_range = getattr(
+        args, "dr_second_order_delay_offset_steps_range", None
+    )
+    if delay_offset_range is not None:
+        low, high = (int(item) for item in delay_offset_range)
+        if high < low:
+            raise ValueError(
+                "dr_second_order_delay_offset_steps_range must satisfy "
+                f"LOW <= HIGH, got {(low, high)}"
+            )
+        cfg = replace(
+            cfg,
+            dr_second_order_delay_offset_steps_range=(low, high),
+        )
+    second_order_per_joint = getattr(args, "dr_second_order_per_joint", None)
+    if second_order_per_joint is not None:
+        cfg = replace(
+            cfg,
+            dr_second_order_per_joint=bool(second_order_per_joint),
+        )
+    common_residual_fraction = getattr(
+        args, "dr_second_order_common_residual_fraction", None
+    )
+    if common_residual_fraction is not None:
+        common_residual_fraction = float(common_residual_fraction)
+        if not 0.0 <= common_residual_fraction <= 1.0:
+            raise ValueError(
+                "dr_second_order_common_residual_fraction must be in [0, 1]"
+            )
+        cfg = replace(
+            cfg,
+            dr_second_order_common_residual_fraction=common_residual_fraction,
+        )
+    delay_nominal_probability = getattr(
+        args, "dr_second_order_delay_nominal_probability", None
+    )
+    if delay_nominal_probability is not None:
+        delay_nominal_probability = float(delay_nominal_probability)
+        if not 0.0 <= delay_nominal_probability <= 1.0:
+            raise ValueError(
+                "dr_second_order_delay_nominal_probability must be in [0, 1]"
+            )
+        cfg = replace(
+            cfg,
+            dr_second_order_delay_nominal_probability=delay_nominal_probability,
+        )
+    signed_range_overrides = {
+        "episode_target_y_range_m": getattr(
+            args, "episode_target_y_range_m", None
+        ),
+        "falling_reset_contact_local_y_offset_range_m": getattr(
+            args, "falling_reset_contact_local_y_offset_range_m", None
+        ),
+    }
+    for field_name, value in signed_range_overrides.items():
+        if value is None:
+            continue
+        low, high = (float(item) for item in value)
+        if high < low:
+            raise ValueError(
+                f"{field_name} must satisfy LOW <= HIGH, got {(low, high)}"
+            )
+        cfg = replace(cfg, **{field_name: (low, high)})
+    falling_time_range = getattr(
+        args, "falling_reset_time_to_contact_range_s", None
+    )
+    if falling_time_range is not None:
+        low, high = (float(item) for item in falling_time_range)
+        if low <= 0.0 or high < low:
+            raise ValueError(
+                "falling_reset_time_to_contact_range_s must satisfy "
+                f"0 < LOW <= HIGH, got {(low, high)}"
+            )
+        cfg = replace(cfg, falling_reset_time_to_contact_range_s=(low, high))
     arm_post_compensation_limiter = getattr(
         args,
         "arm_post_compensation_limiter",
@@ -1531,6 +1705,7 @@ def make_eval_step(
     ball_replay_velocities: jax.Array | None = None,
     ball_replay_obs_ablation: str = "none",
     reference_ball_xy_base: jax.Array | None = None,
+    policy_dq_adapter_mode: str = "off",
 ):
     base_joint_names = ("base_x", "base_y", "base_z", "base_roll", "base_pitch", "base_yaw")
     base_joint_ids = [
@@ -1546,9 +1721,55 @@ def make_eval_step(
         dtype=np.int32,
     )
 
-    def eval_step(params, env_state, obs, rng, running_return, running_length):
+    dq_adapter_enabled = str(policy_dq_adapter_mode) == "record45"
+    dq_adapter_gain = jnp.asarray(
+        [0.8229080313, 0.7241145962, 0.8223335217, 0.8333474552,
+         0.7505777228, 0.8204823652, 0.7738224499],
+        dtype=jnp.float32,
+    )
+    dq_adapter_alpha = jnp.asarray(
+        [0.22119921445846558, 1.0, 1.0, 0.39346933364868164,
+         1.0, 0.39346933364868164, 0.22119921445846558],
+        dtype=jnp.float32,
+    )
+    dq_adapter_delay_steps = jnp.asarray(
+        [0, 0, 3, 0, 2, 0, 0], dtype=jnp.int32
+    )
+
+    def eval_step(
+        params,
+        env_state,
+        obs,
+        rng,
+        running_return,
+        running_length,
+        dq_adapter_ema,
+        dq_adapter_history,
+    ):
         rng, action_key, reset_key = jax.random.split(rng, 3)
-        mean = policy_mean(params, obs)
+        actor_obs = obs
+        if dq_adapter_enabled:
+            raw_dq = obs[:, 7:14]
+            dq_adapter_ema = (
+                dq_adapter_alpha[None, :] * raw_dq
+                + (1.0 - dq_adapter_alpha[None, :]) * dq_adapter_ema
+            )
+            dq_adapter_history = jnp.concatenate(
+                [dq_adapter_history[:, 1:, :], dq_adapter_ema[:, None, :]],
+                axis=1,
+            )
+            history_index = (
+                dq_adapter_history.shape[1] - 1 - dq_adapter_delay_steps
+            )
+            delayed_dq = jnp.take_along_axis(
+                dq_adapter_history,
+                history_index[None, None, :],
+                axis=1,
+            )[:, 0, :]
+            actor_obs = obs.at[:, 7:14].set(
+                delayed_dq * dq_adapter_gain[None, :]
+            )
+        mean = policy_mean(params, actor_obs)
         if deterministic:
             raw_action = mean
         else:
@@ -1641,6 +1862,15 @@ def make_eval_step(
                 ball_replay_obs_ablation,
                 reference_ball_xy_base,
             )
+        if dq_adapter_enabled:
+            reset_dq = next_obs[:, 7:14]
+            dq_adapter_ema = jnp.where(done[:, None], reset_dq, dq_adapter_ema)
+            reset_history = jnp.broadcast_to(
+                reset_dq[:, None, :], dq_adapter_history.shape
+            )
+            dq_adapter_history = jnp.where(
+                done[:, None, None], reset_history, dq_adapter_history
+            )
         next_running_return = jnp.where(done, 0.0, completed_return)
         next_running_length = jnp.where(done, 0, completed_length)
 
@@ -1659,7 +1889,7 @@ def make_eval_step(
             "terminated": metrics["terminated"],
             "truncated": metrics["truncated"],
             "episode_step": metrics["episode_step"],
-            "obs": obs,
+            "obs": actor_obs,
             "policy_mean": mean,
             "raw_action": raw_action,
             "applied_action": action,
@@ -1700,6 +1930,9 @@ def make_eval_step(
                 or key.startswith("hit_camera_")
                 or key.startswith("hit_cycle_")
                 or key.startswith("hit_racket_vxy_")
+                or key.startswith("hit_racket_angular_")
+                or key.startswith("hit_racket_full_angular_")
+                or key.startswith("hit_racket_local_")
                 or key.startswith("racket_cycle_")
                 or key.startswith("racket_angular_velocity_")
                 or key == "racket_tilt_angular_speed_rad_s"
@@ -1716,15 +1949,20 @@ def make_eval_step(
                     "hit_event_count",
                     "hit_vxy_sum",
                     "hit_vxy_sq_sum",
+                    "hit_ball_z_sum",
+                    "hit_racket_z_sum",
                     "hit_contact_center_dist_sum",
                     "hit_racket_up_cos_sum",
                     "hit_apex_rel_height_sum",
+                    "hit_apex_lift_sum",
                     "hit_apex_view_x_sum",
                     "hit_apex_view_y_sum",
                     "hit_next_contact_anchor_err_sum",
                     "hit_posterior_contact_event",
                     "hit_posterior_contact_anchor_err_sum",
                     "hit_contact_anchor_contraction_sum",
+                    "counted_hit_interval_event",
+                    "counted_hit_interval_sum_s",
                 }
                 or key.startswith("reset_")
                 or key.startswith("dr_")
@@ -1740,7 +1978,16 @@ def make_eval_step(
                 or key in {"ball_view_z_high_exceeded", "ball_view_in_bounds", "ball_view_z_ideal"}
             ):
                 step_metrics[key] = value
-        return next_env_state, next_obs, rng, next_running_return, next_running_length, step_metrics
+        return (
+            next_env_state,
+            next_obs,
+            rng,
+            next_running_return,
+            next_running_length,
+            dq_adapter_ema,
+            dq_adapter_history,
+            step_metrics,
+        )
 
     return jax.jit(eval_step)
 
@@ -1771,6 +2018,22 @@ def aggregate_episode_metrics(
             "hit_camera_visible_events",
         ),
         "mean_hit_vxy": ratio("hit_vxy_sum", "hit_camera_events"),
+        "mean_hit_racket_vxy": ratio(
+            "hit_racket_vxy_sum",
+            "hit_camera_events",
+        ),
+        "mean_hit_apex_rel_height": ratio(
+            "hit_apex_rel_height_sum",
+            "hit_camera_events",
+        ),
+        "mean_hit_apex_lift": ratio(
+            "hit_apex_lift_sum",
+            "hit_camera_events",
+        ),
+        "mean_counted_hit_interval_s": ratio(
+            "counted_hit_interval_sum_s",
+            "counted_hit_interval_event",
+        ),
         "camera_visible_rate": ratio("camera_visible_steps", "length"),
         "ball_view_in_bounds_rate": ratio("ball_view_in_bounds_steps", "length"),
         "ball_view_z_ideal_rate": ratio("ball_view_z_ideal_steps", "length"),
@@ -1867,6 +2130,10 @@ def summarize(rows: list[dict[str, float]]) -> str:
         f"hit_cam={aggregate['hit_camera_visible_rate']:.3f} "
         f"hit_band={aggregate['hit_camera_lower_band_rate']:.3f} "
         f"hit_vxy={aggregate['mean_hit_vxy']:.3f} "
+        f"racket_vxy={aggregate['mean_hit_racket_vxy']:.3f} "
+        f"apex={aggregate['mean_hit_apex_rel_height']:.3f} "
+        f"lift={aggregate['mean_hit_apex_lift']:.3f} "
+        f"hit_dt_counted={aggregate['mean_counted_hit_interval_s']:.3f} "
         f"camera={aggregate['camera_visible_rate']:.3f} "
         f"zideal={aggregate['ball_view_z_ideal_rate']:.3f} "
         f"missing={aggregate['ball_obs_missing_refresh_rate']:.3f} "
@@ -2325,6 +2592,23 @@ def gpu_temperature_stop_reason(limit_c: float) -> str | None:
     return None
 
 
+def select_actor_observations_for_collection(
+    actor_obs: np.ndarray,
+    first_episode_recorded: np.ndarray,
+    one_episode_per_env: bool,
+) -> np.ndarray:
+    """Exclude reset episodes after an env's matched first episode ended."""
+
+    if actor_obs.ndim != 2:
+        raise ValueError("actor_obs must have shape [n_envs, obs_dim]")
+    recorded = np.asarray(first_episode_recorded, dtype=bool)
+    if recorded.shape != (actor_obs.shape[0],):
+        raise ValueError("first_episode_recorded must have shape [n_envs]")
+    if not one_episode_per_env:
+        return actor_obs
+    return actor_obs[~recorded]
+
+
 def main() -> None:
     args = parse_args()
     if args.one_episode_per_env and args.episodes != args.n_envs:
@@ -2509,6 +2793,11 @@ def main() -> None:
             )
     running_return = jnp.zeros((args.n_envs,), dtype=jnp.float32)
     running_length = jnp.zeros((args.n_envs,), dtype=jnp.int32)
+    policy_dq_adapter_ema = obs[:, 7:14]
+    policy_dq_adapter_history = jnp.broadcast_to(
+        policy_dq_adapter_ema[:, None, :],
+        (args.n_envs, 4, len(RIGHT_ARM_JOINTS)),
+    )
     eval_step = make_eval_step(
         env,
         args.deterministic,
@@ -2519,7 +2808,13 @@ def main() -> None:
         ball_replay_velocities=ball_replay_velocities,
         ball_replay_obs_ablation=args.ball_replay_obs_ablation,
         reference_ball_xy_base=reference_ball_xy_base,
+        policy_dq_adapter_mode=args.policy_dq_adapter_mode,
     )
+    if args.policy_dq_adapter_mode != "off":
+        print(
+            "[validate_mjx] evaluation-only policy dq adapter: "
+            f"mode={args.policy_dq_adapter_mode}; plant/racket velocity unchanged"
+        )
 
     viewer_ctx = None
     viewer = None
@@ -2583,6 +2878,7 @@ def main() -> None:
     episode_rows: list[dict[str, float]] = []
     trace_rows: list[dict[str, float]] = []
     obs_trace_rows: list[dict[str, float]] = []
+    actor_obs_batches: list[np.ndarray] = []
     env_episode_counts = np.zeros((args.n_envs,), dtype=np.int32)
     first_episode_recorded = np.zeros((args.n_envs,), dtype=bool)
     episode_hit_camera_events = np.zeros((args.n_envs,), dtype=np.float64)
@@ -2603,12 +2899,19 @@ def main() -> None:
         "hit_contact_center_dist_sum",
         "hit_racket_up_cos_sum",
         "hit_apex_rel_height_sum",
+        "hit_apex_lift_sum",
         "hit_apex_view_x_sum",
         "hit_apex_view_y_sum",
         "hit_next_contact_anchor_err_sum",
         "hit_posterior_contact_event",
         "hit_posterior_contact_anchor_err_sum",
         "hit_contact_anchor_contraction_sum",
+        "hit_racket_angular_speed_rad_s",
+        "hit_racket_full_angular_speed_rad_s",
+        "hit_racket_local_y_angular_speed_rad_s",
+        "hit_racket_local_xz_angular_speed_rad_s",
+        "counted_hit_interval_event",
+        "counted_hit_interval_sum_s",
     )
     episode_hit_metric_sums = {
         name: np.zeros((args.n_envs,), dtype=np.float64)
@@ -2778,15 +3081,39 @@ def main() -> None:
     try:
         t0 = time.perf_counter()
         for step_idx in range(1, max_steps + 1):
-            env_state, obs, rng, running_return, running_length, metrics = eval_step(
+            (
+                env_state,
+                obs,
+                rng,
+                running_return,
+                running_length,
+                policy_dq_adapter_ema,
+                policy_dq_adapter_history,
+                metrics,
+            ) = eval_step(
                 params,
                 env_state,
                 obs,
                 rng,
                 running_return,
                 running_length,
+                policy_dq_adapter_ema,
+                policy_dq_adapter_history,
             )
             host = jax.device_get(metrics)
+            if args.actor_obs_npy is not None:
+                actor_obs_host = np.asarray(host["obs"], dtype=np.float32)
+                if not np.all(np.isfinite(actor_obs_host)):
+                    raise FloatingPointError(
+                        f"non-finite actor input before validation step {step_idx}"
+                    )
+                selected_actor_obs = select_actor_observations_for_collection(
+                    actor_obs_host,
+                    first_episode_recorded,
+                    bool(args.one_episode_per_env),
+                )
+                if selected_actor_obs.size:
+                    actor_obs_batches.append(selected_actor_obs.copy())
             observation_host = np.asarray(jax.device_get(obs))
             if not np.all(np.isfinite(observation_host)):
                 bad_count = int(np.size(observation_host) - np.isfinite(observation_host).sum())
@@ -3045,6 +3372,15 @@ def main() -> None:
                     if cycle_motion_steps > 0.0
                     else float("nan")
                 )
+                counted_interval_events = float(
+                    row["counted_hit_interval_event"]
+                )
+                row["mean_counted_hit_interval_s"] = (
+                    row["counted_hit_interval_sum_s"]
+                    / counted_interval_events
+                    if counted_interval_events > 0.0
+                    else float("nan")
+                )
                 hit_event_count = max(
                     1.0,
                     float(row.get("hits", hit_camera_events)),
@@ -3053,6 +3389,7 @@ def main() -> None:
                     ("hit_contact_center_dist_sum", "mean_hit_contact_center_dist"),
                     ("hit_racket_up_cos_sum", "mean_hit_racket_up_cos"),
                     ("hit_apex_rel_height_sum", "mean_hit_apex_rel_height"),
+                    ("hit_apex_lift_sum", "mean_hit_apex_lift"),
                     ("hit_apex_view_x_sum", "mean_hit_apex_view_x"),
                     ("hit_apex_view_y_sum", "mean_hit_apex_view_y"),
                     (
@@ -3223,6 +3560,27 @@ def main() -> None:
     if args.obs_trace_csv is not None:
         save_trace_rows(args.obs_trace_csv, obs_trace_rows)
         print(f"[validate_mjx] wrote observation trace: {args.obs_trace_csv}")
+    if args.actor_obs_npy is not None:
+        if not actor_obs_batches:
+            raise SystemExit("--actor-obs-npy requested but no actor inputs were collected")
+        actor_obs = np.concatenate(actor_obs_batches, axis=0).astype(
+            np.float32, copy=False
+        )
+        max_samples = max(0, int(args.actor_obs_max_samples))
+        if max_samples > 0 and actor_obs.shape[0] > max_samples:
+            sample_indices = np.linspace(
+                0,
+                actor_obs.shape[0] - 1,
+                num=max_samples,
+                dtype=np.int64,
+            )
+            actor_obs = actor_obs[sample_indices]
+        args.actor_obs_npy.parent.mkdir(parents=True, exist_ok=True)
+        np.save(args.actor_obs_npy, actor_obs)
+        print(
+            f"[validate_mjx] wrote actor replay observations: {args.actor_obs_npy} "
+            f"shape={actor_obs.shape} dtype={actor_obs.dtype}"
+        )
     if args.action_plot_out is not None:
         try:
             plot_trace_rows(args.action_plot_out, trace_rows)
