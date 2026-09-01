@@ -1,0 +1,115 @@
+{
+  "schema": "gpu1_v153_b2_b3_frontier_acceptance_v1",
+  "created_at": "2026-09-01T12:00:00+08:00",
+  "decision": "pass_p001_entry_and_p0025_next_reject_old_p025_entry",
+  "physical_gpu": {
+    "cuda_visible_devices": "1",
+    "uuid": "GPU-e74458ec-002a-1bac-e0be-d0a5713b661e"
+  },
+  "source_checkpoint": {
+    "path": "pingpong_controller/outputs/rl_sim/record_new3_5_real_failure_rootcause_20260813/formal_gpu1_v152_recovery_replay_from_v146_u7345_nsteps128_online1_20260831/51_record_new3_sim2real_v152_b2_recovery_anchor_replay_60hz.pkl",
+    "sha256": "9150e94ad5b609cb45a230621989d40b1e2e2e959f86e5324ed96eb9633a3abf",
+    "true_step": 14698381312,
+    "actor_obs_dim": 67,
+    "critic_obs_dim": 279,
+    "action_dim": 7
+  },
+  "protocol": {
+    "seeds": [82731, 97731],
+    "episodes_per_seed_per_condition": 256,
+    "n_envs": 256,
+    "first_episode_per_env": true,
+    "paired_by_environment_index": true,
+    "bootstrap_draws": 50000,
+    "wandb_writes": false,
+    "changed_environment_fields": [
+      "falling_reset_time_to_contact_range_s",
+      "falling_reset_apex_height_range_m",
+      "falling_reset_vxy_max",
+      "falling_reset_contact_xy_jitter",
+      "falling_reset_contact_local_y_offset_range_m"
+    ]
+  },
+  "acceptance": {
+    "p001_first_stage": true,
+    "p0025_second_stage": true,
+    "p005_first_stage": false,
+    "old_p025_first_stage": false,
+    "reason": "p001 and p0025 have no detectable pooled regression in hits, length, full, view, racket_vxy or qacc; p001 is the smaller conservative entry. The old p025 entry has significantly negative hit, length, full and view intervals on the preregistered frontier seed."
+  },
+  "pooled_two_seed_means": {
+    "p000": {
+      "hits": 9.8046875,
+      "length_fraction": 0.73765788,
+      "full": 0.62695312,
+      "view": 0.79589426,
+      "racket_vxy": 0.23364124,
+      "qacc_exceed": 0.00874106
+    },
+    "p001": {
+      "hits": 9.95117188,
+      "length_fraction": 0.74627930,
+      "full": 0.64648438,
+      "view": 0.80265990,
+      "racket_vxy": 0.23396752,
+      "qacc_exceed": 0.00839542
+    },
+    "p0025": {
+      "hits": 9.97070312,
+      "length_fraction": 0.74391927,
+      "full": 0.62695312,
+      "view": 0.79302624,
+      "racket_vxy": 0.23614297,
+      "qacc_exceed": 0.00849611
+    },
+    "p005": {
+      "hits": 9.74414062,
+      "length_fraction": 0.73759766,
+      "full": 0.61914062,
+      "view": 0.79346660,
+      "racket_vxy": 0.24218215,
+      "qacc_exceed": 0.00876769
+    }
+  },
+  "pooled_paired_95ci": {
+    "p001_minus_p000": {
+      "hits": [-0.21484375, 0.50781250],
+      "length_fraction": [-0.01406417, 0.03131034],
+      "full": [-0.01562500, 0.05468750],
+      "view": [-0.00591392, 0.01963563],
+      "racket_vxy": [-0.01387420, 0.01083462],
+      "qacc_exceed": [-0.00100242, 0.00030823]
+    },
+    "p0025_minus_p000": {
+      "hits": [-0.20703125, 0.54296875],
+      "length_fraction": [-0.01730965, 0.02968429],
+      "full": [-0.03710938, 0.03710938],
+      "view": [-0.01697568, 0.01128301],
+      "racket_vxy": [-0.00973831, 0.01675847],
+      "qacc_exceed": [-0.00098495, 0.00048487]
+    }
+  },
+  "old_p025_seed82731_regression": {
+    "hits_delta_ci95": [-1.45703125, -0.30859375],
+    "length_fraction_delta_ci95": [-0.10191740, -0.02561198],
+    "full_delta_ci95": [-0.14062500, -0.03125000],
+    "view_delta_ci95": [-0.06179017, -0.01109511]
+  },
+  "evidence_sha256": {
+    "seed82731_p000": "8cca46617bee0a086eff87618b9f6c3a8a57a0b8ff4b30e2875a86bb3b6878dc",
+    "seed82731_p001": "373de8ef5abd6b2d7120d048f6d2f4b721cffe17b974228c8b69d43cae82cdc1",
+    "seed82731_p0025": "d7f3e15dde698d4d3b72eacf2ca9affa71e3ded85405e6fba8fc26b9289cc9ce",
+    "seed82731_p005": "f75fcbe9e947db5f47893a9b6c870615a7a66c6089cf8f79b56879c5052174ad",
+    "seed82731_p020": "6d8bc6075220f28ace475e9cfca0637c8cca490b822d0aa0246c176df3f61a5c",
+    "seed82731_p025": "faf536a8102f8055bb357825d84b4816e48d3570c5bed296d772d8d2a48b042b",
+    "seed97731_p000": "0e9cbaf79d8de86ae674d80f8f7f7021654bb7cf97f8cb2aa07f82c78557a457",
+    "seed97731_p001": "3c703eab6a23d049dea2f393f3cdfa19b744baf5191bd78c0ca2b1b1f106f994",
+    "seed97731_p0025": "b1de6f1951b63143f7f5d86c04b730fe2006e8520d15567a482919dada25a568",
+    "seed97731_p005": "6192818c108c3defd1c2f18534f02c22b9065805373e0f6c87137451acce4b66",
+    "config_p000": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+    "config_p001": "e352d5f9d71fd4f1605824ad58532b96b0749ae291e356015e87e214487c22b0",
+    "config_p0025": "b9063374187347987c2929eb1f6f3bca403bf25aa37ab829c1aa544c2c63da3e",
+    "config_p005": "54fe22d96e70dc444de64c9ca0979ea16f8a3869408230c1d989e1beaacfd86d"
+  },
+  "next_gate": "bounded offline V153 training must pass both next recovery advance_eval and unchanged-main retention_eval before formal W&B continuation"
+}

@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "created_at_local": "2026-09-01T12:08:00+08:00",
+  "decision": "pass_for_formal_v153_start_only",
+  "scope": "Bounded GPU1 evidence for the first two V153 homotopy stages. This is not evidence that the unfinished 5%-to-100% course or exact B3 already passes.",
+  "profile": "goal_d455_sport_taskspace_record_new3_sim2real_fixed_base_ball4g_dual_domain_homotopy_v153",
+  "gpu": {
+    "physical_index": 1,
+    "uuid": "GPU-e74458ec-002a-1bac-e0be-d0a5713b661e",
+    "jax_visible_device": "CudaDevice(id=0)",
+    "gpu0_used": false
+  },
+  "run": {
+    "directory": "pingpong_controller/outputs/rl_sim/gpu1_b2b3_rootcause_20260831/v153_dual_domain_stage52_53_probe3_from_v152_stage51_nsteps128_offline1_20260901",
+    "seed": 82731,
+    "n_envs": 1024,
+    "n_steps": 128,
+    "advance_eval_n_envs": 256,
+    "advance_eval_steps": 1200,
+    "wandb_mode": "offline",
+    "wandb_run": "offline-run-20260901_113925-v2zgwf3b",
+    "source_true_step": 14698381312,
+    "source_checkpoint_sha256": "9150e94ad5b609cb45a230621989d40b1e2e2e959f86e5324ed96eb9633a3abf",
+    "trainer_sha256": "59ae723435c3992dea2df974e28c3e5092a03054a6d9448609e926dbcfb39a64",
+    "curriculum_progress_sha256": "a15ec72d92b22ff3894bb37b9460fa5e1576b498c62d26753f8df24ed13e2496",
+    "stdout_stderr_sha256": "9b8471d0e801ee29875b96a58f76ea613359ce2467035a15fa13b4530df177d0"
+  },
+  "acceptance_contract": {
+    "both_stages_converged_with_48_update_window_and_16_update_hold": true,
+    "next_recovery_domain_frozen_validation_required": true,
+    "unchanged_main_task_frozen_validation_required": true,
+    "either_validation_failure_blocks_graduation": true,
+    "actor_anchor_replay_kl_max": 0.025,
+    "reward_changed": false,
+    "observation_changed": false,
+    "control_or_physics_changed": false
+  },
+  "stages": [
+    {
+      "stage_index": 52,
+      "name": "record_new3_sim2real_v153_b2_b3_energy_p001_60hz",
+      "stage_update": 79,
+      "global_step": 14708736000,
+      "checkpoint_sha256": "ad0467cc0acfadc258ddf7d66f4c39ec495c65b2aa6c365efe8fb9ea846061df",
+      "rolling": {
+        "mean_hits": 9.625608185927073,
+        "mean_len_frac": 0.7281196269822288,
+        "full_episode_rate": 0.6083093935486699,
+        "ball_view_in_bounds": 0.8951449394226074
+      },
+      "optimizer_and_safety": {
+        "approx_kl": 0.00040640326915308833,
+        "explained_var": 0.961199939250946,
+        "actor_anchor_replay_kl": 0.013778503984212875,
+        "arm_qacc_limit_exceed_fraction": 0.004608154296875
+      },
+      "next_recovery_frozen_eval": {
+        "stage_index": 53,
+        "domain": "2.5% B2-to-B3 energy support",
+        "passed": true,
+        "mean_hits": 9.050847053527832,
+        "mean_len_frac": 0.6948248587570621,
+        "full_episode_rate": 0.576271186440678,
+        "ball_view_in_bounds": 0.897333984375,
+        "mean_hit_vxy_m_s": 0.18884162620141137,
+        "arm_qacc_limit_exceed_fraction": 0.004583798568006993
+      },
+      "main_task_frozen_eval": {
+        "stage_index": 65,
+        "passed": true,
+        "mean_hits": 12.200772285461426,
+        "mean_len_frac": 0.9311036036036037,
+        "full_episode_rate": 0.861003861003861,
+        "ball_view_in_bounds": 0.9379069010416666,
+        "mean_hit_vxy_m_s": 0.15395521404789397,
+        "arm_qacc_limit_exceed_fraction": 0.0023656065045603706
+      }
+    },
+    {
+      "stage_index": 53,
+      "name": "record_new3_sim2real_v153_b2_b3_energy_p0025_60hz",
+      "stage_update": 79,
+      "global_step": 14719090688,
+      "checkpoint_sha256": "86cababa7cf9c9cd415559e5a5c86045fb03e923879f338cc488fb6d666256c7",
+      "rolling": {
+        "mean_hits": 9.924976229667664,
+        "mean_len_frac": 0.740722742956879,
+        "full_episode_rate": 0.6263949527929739,
+        "ball_view_in_bounds": 0.895795981089274,
+        "mean_hit_vxy_m_s": 0.19241510543458448,
+        "rms_hit_vxy_m_s": 0.2739422672093298
+      },
+      "optimizer_and_safety": {
+        "approx_kl": 0.0006323445704765618,
+        "explained_var": 0.9541260004043579,
+        "actor_anchor_replay_kl": 0.01586911827325821,
+        "arm_qvel_limit_exceed_fraction": 0.00022561210789717734,
+        "arm_qacc_limit_exceed_fraction": 0.004403250757604837
+      },
+      "next_recovery_frozen_eval": {
+        "stage_index": 54,
+        "domain": "5% B2-to-B3 energy support",
+        "passed": true,
+        "mean_hits": 9.72569465637207,
+        "mean_len_frac": 0.7151649305555555,
+        "full_episode_rate": 0.59375,
+        "ball_view_in_bounds": 0.898037109375,
+        "mean_hit_vxy_m_s": 0.1974437063877917,
+        "arm_qacc_limit_exceed_fraction": 0.00457031270430889
+      },
+      "main_task_frozen_eval": {
+        "stage_index": 65,
+        "passed": true,
+        "mean_hits": 12.0546875,
+        "mean_len_frac": 0.9302669270833334,
+        "full_episode_rate": 0.84765625,
+        "ball_view_in_bounds": 0.9434505208333334,
+        "mean_hit_vxy_m_s": 0.15061373070266285,
+        "arm_qacc_limit_exceed_fraction": 0.002318638496508356
+      }
+    }
+  ],
+  "excluded_run": {
+    "directory": "pingpong_controller/outputs/rl_sim/gpu1_b2b3_rootcause_20260831/v153_dual_domain_stage52_53_probe2_from_v152_stage51_nsteps128_offline1_20260901",
+    "reason": "Host-memory guard sent SIGINT after update 24 because a concurrent full pytest run reduced available memory below the configured 5 GiB threshold. The trainer stopped safely; this incomplete run was not used for acceptance."
+  }
+}
