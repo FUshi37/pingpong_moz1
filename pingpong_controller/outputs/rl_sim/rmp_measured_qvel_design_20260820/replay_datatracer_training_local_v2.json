@@ -1,0 +1,104 @@
+{
+  "implementation": "training-local recovered_rmp_jax.py",
+  "reference": "Movax DataTracer axis_pos/axis_vel/axis_acc",
+  "inputs": {
+    "datatracer": "/home/yangzhe/Project/pingpong_controller/ReactiveMotionPlanner/rmp-recovery/recovered_rmp/calibration/datatracer_203806_right_arm.npz",
+    "datatracer_sha256": "3f8bc0813d0d1824be8cb72b30361b6d3bd7252e3a694e9829332e31e1e08cf5",
+    "recording": "/home/yangzhe/Project/pingpong_controller/pingpong_controller/outputs/rl_real/record_new4/probe_recording_20260811_203833/control_samples.jsonl",
+    "recording_sha256": "6cea39986d62270970d9f4094e050bebabbbb570c3858c61ada528aad6f6ba88",
+    "movax_config": "/home/yangzhe/Project/pingpong_controller/ReactiveMotionPlanner/rmp-recovery/movax/controller/configuration/model/user/spirit01_base_e_no_neck_hh.yaml",
+    "movax_config_sha256": "fb70de34ee931b0a7653fa80fe324d81b2fb20f6bfbae4189cb5084c64bd0d57",
+    "implementation": "/home/yangzhe/Project/pingpong_controller/pingpong_controller/tools/rl_sim/recovered_rmp_jax.py",
+    "implementation_sha256": "eefa002a3a30bb62e5a4965b19a9d728fd76596f9298e1e32cfecb4c7c8679b7"
+  },
+  "alignment": {
+    "recording_to_tracer_offset_s": -3.0209988619056563,
+    "command_delay_ms": 3.0,
+    "evaluation_start_s": 1.41,
+    "evaluation_end_s": 5.0
+  },
+  "samples": 3590,
+  "dt_s": 0.0010000000002037268,
+  "position_rms_rad": 0.0006698816837106484,
+  "position_rms_deg": 0.03838139324973766,
+  "velocity_rms_rad_s": 0.010817234538822537,
+  "acceleration_rms_rad_s2": 0.3034446309712195,
+  "rmp_md_thresholds": {
+    "position_rms_deg": 0.1,
+    "velocity_rms_rad_s": 0.05,
+    "acceleration_rms_rad_s2": 1.0
+  },
+  "passes_rmp_md_thresholds": true,
+  "position_rms_per_joint_rad": [
+    0.0003929905602567512,
+    0.0005642756718038292,
+    0.0005027925760195521,
+    0.000940271460891671,
+    0.0008455549507852533,
+    0.000589929226929213,
+    0.000684434960172278
+  ],
+  "velocity_rms_per_joint_rad_s": [
+    0.006102426344680203,
+    0.007111831432989811,
+    0.005250247259797494,
+    0.016494156834728175,
+    0.013484622913117719,
+    0.008385527561177967,
+    0.013397602557393654
+  ],
+  "acceleration_rms_per_joint_rad_s2": [
+    0.16270175201835166,
+    0.1767998792816703,
+    0.13271323581160738,
+    0.5325295825781446,
+    0.32011651062933544,
+    0.21929791969220963,
+    0.3674965765741095
+  ],
+  "feedback_reference_baseline": {
+    "definition": "recorded final RMP reference delayed per joint versus encoder feedback; actual qdd is the 1 kHz forward difference of actual qd",
+    "samples": 3590,
+    "feedback_delay_ms_per_joint": [
+      13.099999999999971,
+      13.099999999999971,
+      14.599999999999966,
+      13.34999999999997,
+      12.349999999999973,
+      12.299999999999974,
+      12.549999999999972
+    ],
+    "position_rms_rad": 0.002725479214757157,
+    "position_rms_deg": 0.15615845615621482,
+    "velocity_rms_rad_s": 0.07821726550055598,
+    "acceleration_rms_rad_s2": 10.200634373082913,
+    "position_rms_per_joint_rad": [
+      0.0010043514043909145,
+      0.000745854845927464,
+      0.006871825228377971,
+      0.0011292820679560946,
+      0.0009424280404129076,
+      0.0007250348675290961,
+      0.0007221712587392002
+    ],
+    "velocity_rms_per_joint_rad_s": [
+      0.01931666187826301,
+      0.0190518010522097,
+      0.2001725770693614,
+      0.025402116537708647,
+      0.02235756479517261,
+      0.019524549825234726,
+      0.022227976124828925
+    ],
+    "acceleration_rms_per_joint_rad_s2": [
+      7.014079564521638,
+      7.391574202808143,
+      8.799063986862187,
+      7.287431594430031,
+      11.520171384396733,
+      10.24015490956197,
+      16.01351311780443
+    ],
+    "sample_period_s": 0.0010000000002037268
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "schema_version": "gpu1_ball_mass_user_attestation_v1",
+  "ball_id": "user-confirmed-real-ball-4g-20260830",
+  "confirmation_source": "User confirmed in this Codex thread on 2026-08-30 that the real ball is 4.0 g, then revised the requested mass DR to +/-0.1 g while preserving all other existing ball parameters.",
+  "nominal_mass_kg": 0.004,
+  "dr_half_width_kg": 0.0001,
+  "preserve_legacy_ball_parameters": true
+}

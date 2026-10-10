@@ -15,6 +15,97 @@ import numpy as np
 
 PROFILE = "goal_d455_measured_qvel_rmp_vertical_v1"
 PROFILE_V2 = "goal_d455_measured_qvel_rmp_vertical_v2"
+PROFILE_FIXED_CONTACT_PLANE_V1 = (
+    "fixed_contact_plane_vision_robust_qvel_rmp_v1"
+)
+PROFILE_FIXED_CONTACT_PLANE_V2 = (
+    "fixed_contact_plane_vision_robust_qvel_rmp_v2"
+)
+PROFILE_FIXED_CONTACT_PLANE_V3 = (
+    "fixed_contact_plane_vision_robust_qvel_rmp_v3"
+)
+PROFILE_FIXED_CONTACT_PLANE_V4 = (
+    "fixed_contact_plane_vision_robust_qvel_rmp_v4"
+)
+PROFILE_FIXED_CONTACT_PLANE_V5 = (
+    "fixed_contact_plane_vision_robust_qvel_rmp_v5"
+)
+PROFILE_FIXED_CONTACT_PLANE_V6 = (
+    "fixed_contact_plane_vision_robust_qvel_rmp_v6"
+)
+PROFILE_FIXED_CONTACT_PLANE_V7 = (
+    "fixed_contact_plane_vision_robust_qvel_rmp_v7"
+)
+PROFILE_FIXED_CONTACT_PLANE_V8 = (
+    "fixed_contact_plane_vision_robust_qvel_rmp_v8"
+)
+PROFILE_FIXED_CONTACT_PLANE_V9 = (
+    "fixed_contact_plane_vision_robust_qvel_rmp_v9"
+)
+PROFILE_FIXED_CONTACT_PLANE_V10 = (
+    "fixed_contact_plane_vision_robust_qvel_rmp_v10"
+)
+PROFILE_FIXED_CONTACT_PLANE_V11 = (
+    "fixed_contact_plane_vision_robust_qvel_rmp_v11"
+)
+PROFILE_FIXED_CONTACT_PLANE_V12 = (
+    "fixed_contact_plane_vision_robust_qvel_rmp_v12"
+)
+PROFILE_FIXED_CONTACT_PLANE_V13 = (
+    "fixed_contact_plane_vision_robust_qvel_rmp_v13"
+)
+PROFILE_FIXED_CONTACT_PLANE_V14 = (
+    "fixed_contact_plane_vision_robust_qvel_rmp_v14"
+)
+PROFILE_FIXED_CONTACT_PLANE_V15 = (
+    "fixed_contact_plane_vision_robust_qvel_rmp_v15"
+)
+PROFILE_FIXED_CONTACT_PLANE_V16 = (
+    "fixed_contact_plane_vision_robust_qvel_rmp_v16"
+)
+PROFILE_FIXED_CONTACT_PLANE_V17 = (
+    "fixed_contact_plane_vision_robust_qvel_rmp_v17"
+)
+PROFILE_FIXED_CONTACT_PLANE_V18 = (
+    "fixed_contact_plane_vision_robust_qvel_rmp_v18"
+)
+PROFILE_FIXED_CONTACT_PLANE_V19 = (
+    "fixed_contact_plane_vision_robust_qvel_rmp_v19"
+)
+PROFILE_FIXED_CONTACT_PLANE_V20 = (
+    "fixed_contact_plane_vision_robust_qvel_rmp_v20"
+)
+PROFILE_FIXED_CONTACT_PLANE_V21 = (
+    "fixed_contact_plane_vision_robust_qvel_rmp_v21"
+)
+PROFILE_FIXED_CONTACT_PLANE_V22 = (
+    "fixed_contact_plane_vision_robust_qvel_rmp_v22"
+)
+FIXED_CONTACT_PLANE_PROFILES = {
+    PROFILE_FIXED_CONTACT_PLANE_V1,
+    PROFILE_FIXED_CONTACT_PLANE_V2,
+    PROFILE_FIXED_CONTACT_PLANE_V3,
+    PROFILE_FIXED_CONTACT_PLANE_V4,
+    PROFILE_FIXED_CONTACT_PLANE_V5,
+    PROFILE_FIXED_CONTACT_PLANE_V6,
+    PROFILE_FIXED_CONTACT_PLANE_V7,
+    PROFILE_FIXED_CONTACT_PLANE_V8,
+    PROFILE_FIXED_CONTACT_PLANE_V9,
+    PROFILE_FIXED_CONTACT_PLANE_V10,
+    PROFILE_FIXED_CONTACT_PLANE_V11,
+    PROFILE_FIXED_CONTACT_PLANE_V12,
+    PROFILE_FIXED_CONTACT_PLANE_V13,
+    PROFILE_FIXED_CONTACT_PLANE_V14,
+    PROFILE_FIXED_CONTACT_PLANE_V15,
+    PROFILE_FIXED_CONTACT_PLANE_V16,
+    PROFILE_FIXED_CONTACT_PLANE_V17,
+    PROFILE_FIXED_CONTACT_PLANE_V18,
+    PROFILE_FIXED_CONTACT_PLANE_V19,
+    PROFILE_FIXED_CONTACT_PLANE_V20,
+    PROFILE_FIXED_CONTACT_PLANE_V21,
+    PROFILE_FIXED_CONTACT_PLANE_V22,
+}
+V2_COVERAGE_PROFILES = {PROFILE_V2, *FIXED_CONTACT_PLANE_PROFILES}
 REQUIRED_RECORDING_GROUPS = {"record_new3", "record_new4", "record_new5"}
 REQUIRED_COMPONENTS = {
     "joint_position_rad",
@@ -62,6 +153,20 @@ EXPECTED_RMP_PD_DR_RANGES_V2 = {
     "dof_damping_mult": (0.40, 1.80),
     "dof_armature_mult": (0.40, 2.00),
 }
+EXPECTED_RMP_PD_DR_RANGES_FIXED_CONTACT_PLANE_V1 = {
+    "rmp_jnt_kp_mult": (0.85, 1.15),
+    "rmp_jnt_kd_mult": (0.85, 1.15),
+    "rmp_estimator_process_mult": (0.73125, 1.40625),
+    "rmp_estimator_measure_mult": (0.6575, 1.53875),
+    "rmp_velocity_feedforward": (0.41875, 0.58125),
+    "rmp_acceleration_weight_mult": (0.73125, 1.46875),
+    "rmp_target_filter_length": (8.0, 12.0),
+    "rmp_output_delay_offset_steps": (-2.0, 2.0),
+    "pd_kp_mult": (0.90, 1.10),
+    "pd_kv_mult": (0.90, 1.10),
+    "dof_damping_mult": (0.95, 1.05),
+    "dof_armature_mult": (0.95, 1.05),
+}
 EXPECTED_BALL_DR_RANGES = {
     "normalized_inertia": (0.40, 2.0 / 3.0),
     "spin_x_rad_s": (-55.0, 55.0),
@@ -71,6 +176,16 @@ EXPECTED_BALL_DR_RANGES = {
     "racket_friction": (0.22, 0.62),
     "solref_time_s": (0.002, 0.008),
     "solref_damping": (0.62, 1.02),
+}
+EXPECTED_BALL_DR_RANGES_FIXED_CONTACT_PLANE_V1 = {
+    "normalized_inertia": (0.40, 0.40),
+    "spin_x_rad_s": (0.0, 0.0),
+    "spin_y_rad_s": (0.0, 0.0),
+    "spin_z_rad_s": (0.0, 0.0),
+    "ball_friction": (0.11941364205853909, 0.14595000696043667),
+    "racket_friction": (0.11941364205853909, 0.14595000696043667),
+    "solref_time_s": (0.002019443076244047, 0.0022320160316381577),
+    "solref_damping": (0.9899690645144906, 1.0941763344633846),
 }
 
 
@@ -426,7 +541,7 @@ def validate_rmp_dr_coverage_manifest(
     if int(data.get("schema_version", 0)) != 1:
         raise ValueError("RMP DR coverage manifest schema_version must be 1")
     profile = data.get("profile")
-    supported_profiles = {PROFILE, PROFILE_V2}
+    supported_profiles = {PROFILE, *V2_COVERAGE_PROFILES}
     if profile not in supported_profiles:
         raise ValueError(
             "RMP DR coverage manifest profile must be one of "
@@ -460,11 +575,19 @@ def validate_rmp_dr_coverage_manifest(
         if re.fullmatch(r"[0-9a-f]{64}", str(data.get(field, ""))) is None:
             raise ValueError(f"{field} must be a lowercase SHA-256 digest")
 
-    expected_rmp_ranges = (
-        EXPECTED_RMP_PD_DR_RANGES_V2
-        if profile == PROFILE_V2
-        else EXPECTED_RMP_PD_DR_RANGES
-    )
+    if profile in FIXED_CONTACT_PLANE_PROFILES:
+        expected_rmp_ranges = (
+            EXPECTED_RMP_PD_DR_RANGES_FIXED_CONTACT_PLANE_V1
+        )
+        expected_ball_ranges = (
+            EXPECTED_BALL_DR_RANGES_FIXED_CONTACT_PLANE_V1
+        )
+    elif profile in V2_COVERAGE_PROFILES:
+        expected_rmp_ranges = EXPECTED_RMP_PD_DR_RANGES_V2
+        expected_ball_ranges = EXPECTED_BALL_DR_RANGES
+    else:
+        expected_rmp_ranges = EXPECTED_RMP_PD_DR_RANGES
+        expected_ball_ranges = EXPECTED_BALL_DR_RANGES
     _require_exact_ranges(
         data.get("rmp_pd_dr_ranges"),
         expected_rmp_ranges,
@@ -472,26 +595,30 @@ def validate_rmp_dr_coverage_manifest(
     )
     _require_exact_ranges(
         data.get("ball_dr_ranges"),
-        EXPECTED_BALL_DR_RANGES,
+        expected_ball_ranges,
         "ball_dr_ranges",
     )
     candidate_stability: dict[str, Any] | None = None
-    if profile == PROFILE_V2:
+    if profile in V2_COVERAGE_PROFILES:
         if data.get("right_arm_pd_profile") != "recovered_rmp_rmpmd_v2":
-            raise ValueError("v2 coverage must use recovered_rmp_rmpmd_v2 PD")
+            raise ValueError(
+                "v2-contract coverage must use recovered_rmp_rmpmd_v2 PD"
+            )
         if data.get("time_alignment") != "wall":
-            raise ValueError("v2 coverage must use wall-clock alignment")
+            raise ValueError("v2-contract coverage must use wall-clock alignment")
         if data.get("time_base_contract") != (
             "wallTimeS_uniform_target_zoh_header_timed_state"
         ):
-            raise ValueError("v2 coverage has the wrong wall-clock contract")
+            raise ValueError(
+                "v2-contract coverage has the wrong wall-clock contract"
+            )
         if not np.isclose(
             float(data.get("control_dt_s", np.nan)),
             0.005,
             rtol=0.0,
             atol=1.0e-12,
         ):
-            raise ValueError("v2 coverage must use a 5 ms control grid")
+            raise ValueError("v2-contract coverage must use a 5 ms control grid")
         candidate_stability = _validate_candidate_stability_artifact(
             manifest_path,
             data.get("candidate_stability_artifact"),
@@ -607,7 +734,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--expected-profile",
-        choices=(PROFILE, PROFILE_V2),
+        choices=(PROFILE, *sorted(V2_COVERAGE_PROFILES)),
         default=None,
     )
     args = parser.parse_args()

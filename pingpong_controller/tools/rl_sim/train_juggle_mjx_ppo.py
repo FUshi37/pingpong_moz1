@@ -15,6 +15,8 @@ from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
+
+from fixed_contact_plane_training import policy_action_reward_input
 import numpy as np
 
 from mjx_juggle_env import MjxJuggleConfig, MjxJuggleEnv
@@ -47,6 +49,54 @@ CMDP_COST_NAMES = (
     "racket_too_low",
     "racket_too_high",
 )
+
+# V176 uses the same six-head storage shape as the released terminal-outcome
+# CMDP, but the channel identities are deliberately different.  These costs
+# constrain measured plant output during the causal approach/contact window;
+# they are not reward aliases and cannot be exchanged against hit return.
+CONTACT_QUALITY_CMDP_COST_NAMES = (
+    "approach_vxy_excess",
+    "contact_q_z_shortfall",
+    "contact_q_pose_shortfall",
+    "contact_q_vxy_shortfall",
+    "contact_q_omega_shortfall",
+    "contact_q_offset_shortfall",
+)
+GATE_ALIGNED_CONTACT_QUALITY_CMDP_COST_NAMES = (
+    "approach_vxy_excess",
+    "confirmed_contact_q_z_gap",
+    "confirmed_contact_q_pose_gap",
+    "confirmed_contact_q_vxy_gap",
+    "confirmed_contact_q_omega_gap",
+    "confirmed_contact_q_offset_gap",
+)
+TARGET_ALIGNED_RECURRENT_CMDP_COST_NAMES = (
+    "approach_vxy_excess",
+    "outcome_not_all_ready",
+    "recurrent_outcome_not_all_ready",
+    "next_target_error_m",
+    "recurrent_next_target_error_m",
+)
+CMDP_COST_MODES = (
+    "legacy_terminal",
+    "fixed_contact_quality",
+    "fixed_contact_gate_aligned",
+    "fixed_contact_target_aligned_recurrent",
+)
+
+
+def cmdp_cost_names_for_mode(cost_mode: str) -> tuple[str, ...]:
+    """Return the immutable audited channel identities for a CMDP mode."""
+
+    if cost_mode == "legacy_terminal":
+        return CMDP_COST_NAMES
+    if cost_mode == "fixed_contact_quality":
+        return CONTACT_QUALITY_CMDP_COST_NAMES
+    if cost_mode == "fixed_contact_gate_aligned":
+        return GATE_ALIGNED_CONTACT_QUALITY_CMDP_COST_NAMES
+    if cost_mode == "fixed_contact_target_aligned_recurrent":
+        return TARGET_ALIGNED_RECURRENT_CMDP_COST_NAMES
+    raise ValueError(f"unsupported CMDP cost mode: {cost_mode!r}")
 
 
 class OptimState(NamedTuple):
@@ -85,6 +135,41 @@ class Transition(NamedTuple):
     new_hit: jax.Array
     hit_count: jax.Array
     metrics: dict[str, jax.Array]
+
+
+COMPACT_METRIC_MEAN_PREFIX = "__rollout_mean__/"
+
+
+def compact_step_metrics(
+    metrics: dict[str, jax.Array],
+    *,
+    enabled: bool,
+    full_metric_names: tuple[str, ...],
+) -> dict[str, jax.Array]:
+    """Keep scalar telemetry means and only selected per-lane arrays.
+
+    A scan otherwise materializes every environment metric as a
+    ``[time, env, ...]`` rollout tensor.  The fixed-contact environment now
+    exposes hundreds of diagnostic channels, although PPO and phase/event
+    summaries need per-lane correlation for only a small declared subset.
+    This opt-in representation preserves the exact overall mean of every
+    channel while preventing diagnostic telemetry from dominating device and
+    host memory at 1024 environments.
+    """
+
+    if not enabled:
+        return metrics
+    full = set(full_metric_names)
+    compact = {
+        name: value for name, value in metrics.items() if name in full
+    }
+    compact.update(
+        {
+            f"{COMPACT_METRIC_MEAN_PREFIX}{name}": jnp.mean(value)
+            for name, value in metrics.items()
+        }
+    )
+    return compact
 
 
 class PpoBatch(NamedTuple):
@@ -225,9 +310,16 @@ def policy_components(
     if "teacher_pi" not in params:
         zeros = jnp.zeros_like(residual_or_mean)
         return residual_or_mean, zeros, zeros
-    teacher_mean = jax.lax.stop_gradient(apply_mlp(params["teacher_pi"], obs))
+    teacher_obs = obs[:, :96] if "teacher_obs_prefix96_v1" in params else obs
+    teacher_mean = jax.lax.stop_gradient(
+        apply_mlp(params["teacher_pi"], teacher_obs)
+    )
     residual_scale = jax.lax.stop_gradient(jnp.asarray(params["residual_action_scale"]))
     correction = residual_scale * jnp.tanh(residual_or_mean)
+    if "residual_precontact_gate_v1" in params:
+        from fixed_plane_residual_gate_v1 import v53_residual_precontact_gate
+
+        correction = correction * v53_residual_precontact_gate(obs)
     return teacher_mean + correction, teacher_mean, correction
 
 
@@ -255,6 +347,7 @@ def initialize_cmdp_train_state(
     critic_obs_dim: int,
     hidden_dim: int,
     initial_duals: tuple[float, ...],
+    cost_names: tuple[str, ...] = CMDP_COST_NAMES,
 ) -> TrainState:
     """Append zero-output cost critics while preserving legacy PPO state.
 
@@ -264,7 +357,10 @@ def initialize_cmdp_train_state(
     optimizer step counter and every existing moment remain exact.
     """
 
-    if len(initial_duals) != len(CMDP_COST_NAMES):
+    channel_count = len(cost_names)
+    if channel_count <= 0:
+        raise ValueError("CMDP cost channel registry cannot be empty")
+    if len(initial_duals) != channel_count:
         raise ValueError(
             "CMDP initial dual count must match the registered cost channels"
         )
@@ -273,7 +369,7 @@ def initialize_cmdp_train_state(
             raise ValueError("checkpoint contains an incomplete CMDP parameter set")
         output_dim = int(train_state.params["cmdp_cost_v"]["out"]["b"].shape[0])
         dual_dim = int(jnp.asarray(train_state.params["cmdp_dual"]).shape[0])
-        if output_dim != len(CMDP_COST_NAMES) or dual_dim != len(CMDP_COST_NAMES):
+        if output_dim != channel_count or dual_dim != channel_count:
             raise ValueError("checkpoint CMDP channel count is incompatible")
         return train_state
 
@@ -281,7 +377,7 @@ def initialize_cmdp_train_state(
         key,
         int(critic_obs_dim),
         int(hidden_dim),
-        len(CMDP_COST_NAMES),
+        channel_count,
         1.0,
     )
     # An arbitrary initial risk baseline would contaminate the first actor
@@ -298,7 +394,59 @@ def initialize_cmdp_train_state(
     params["cmdp_dual"] = jnp.asarray(initial_duals, dtype=jnp.float32)
 
     zero_cost_value = jax.tree_util.tree_map(jnp.zeros_like, cost_value)
-    zero_dual = jnp.zeros((len(CMDP_COST_NAMES),), dtype=jnp.float32)
+    zero_dual = jnp.zeros((channel_count,), dtype=jnp.float32)
+    opt_m = dict(train_state.opt.m)
+    opt_v = dict(train_state.opt.v)
+    opt_m["cmdp_cost_v"] = zero_cost_value
+    opt_v["cmdp_cost_v"] = zero_cost_value
+    opt_m["cmdp_dual"] = zero_dual
+    opt_v["cmdp_dual"] = zero_dual
+    opt = OptimState(m=opt_m, v=opt_v, t=train_state.opt.t)
+    return TrainState(params=params, opt=opt)
+
+
+def reset_cmdp_cost_state(
+    train_state: TrainState,
+    key: jax.Array,
+    *,
+    critic_obs_dim: int,
+    hidden_dim: int,
+    initial_duals: tuple[float, ...],
+    cost_names: tuple[str, ...],
+) -> TrainState:
+    """Reset only CMDP state after an explicitly versioned cost-semantics change.
+
+    Actor, reward critic, log standard deviation, their Adam leaves, and the
+    Adam step remain bit-exact.  Reusing a cost critic across a changed event
+    population would silently reinterpret its targets, so only the cost head,
+    cost moments, and duals are rebuilt.
+    """
+
+    if "cmdp_cost_v" not in train_state.params or "cmdp_dual" not in train_state.params:
+        raise ValueError("CMDP cost reset requires a complete source CMDP state")
+    channel_count = len(cost_names)
+    if channel_count <= 0 or len(initial_duals) != channel_count:
+        raise ValueError("CMDP reset channel and initial-dual counts must match")
+
+    cost_value = init_mlp(
+        key,
+        int(critic_obs_dim),
+        int(hidden_dim),
+        channel_count,
+        1.0,
+    )
+    cost_out = dict(cost_value["out"])
+    cost_out["w"] = jnp.zeros_like(cost_out["w"])
+    cost_out["b"] = jnp.zeros_like(cost_out["b"])
+    cost_value = dict(cost_value)
+    cost_value["out"] = cost_out
+
+    params = dict(train_state.params)
+    params["cmdp_cost_v"] = cost_value
+    params["cmdp_dual"] = jnp.asarray(initial_duals, dtype=jnp.float32)
+
+    zero_cost_value = jax.tree_util.tree_map(jnp.zeros_like, cost_value)
+    zero_dual = jnp.zeros((channel_count,), dtype=jnp.float32)
     opt_m = dict(train_state.opt.m)
     opt_v = dict(train_state.opt.v)
     opt_m["cmdp_cost_v"] = zero_cost_value
@@ -427,6 +575,22 @@ def adam_step(
     return params, OptimState(m=m, v=v, t=t), grad_norm
 
 
+def counterfactual_vxy_sample_weights(
+    obs: jax.Array,
+    mode: str,
+) -> jax.Array:
+    """Weight only the reviewed optional lateral-speed supervision modes."""
+
+    if mode not in {"high_vxy", "low_vxy", "uniform"}:
+        raise ValueError(f"unknown counterfactual weighting mode: {mode}")
+    if mode == "uniform" or obs.shape[-1] < 25:
+        return jnp.ones(obs.shape[:-1], dtype=obs.dtype)
+    ball_vxy = jnp.linalg.norm(obs[..., 23:25], axis=-1)
+    if mode == "low_vxy":
+        return 1.0 + jnp.clip((0.10 - ball_vxy) / 0.10, 0.0, 2.0)
+    return 1.0 + jnp.clip(ball_vxy / 0.06, 0.0, 3.0)
+
+
 def ppo_loss(
     params,
     batch: PpoBatch,
@@ -508,18 +672,10 @@ def ppo_loss(
             jnp.square(counterfactual_mean - counterfactual_targets),
             axis=-1,
         )
-        if counterfactual_replay_obs.shape[-1] >= 25:
-            ball_vxy = jnp.linalg.norm(
-                counterfactual_replay_obs[..., 23:25],
-                axis=-1,
-            )
-            if counterfactual_vxy_weight_mode == "low_vxy":
-                sample_weight = 1.0 + jnp.clip((0.10 - ball_vxy) / 0.10, 0.0, 2.0)
-            else:
-                sample_weight = 1.0 + jnp.clip(ball_vxy / 0.06, 0.0, 3.0)
-            counterfactual_supervision_mse = jnp.mean(sample_weight * per_sample_sq)
-        else:
-            counterfactual_supervision_mse = jnp.mean(per_sample_sq)
+        sample_weight = counterfactual_vxy_sample_weights(
+            counterfactual_replay_obs, counterfactual_vxy_weight_mode
+        )
+        counterfactual_supervision_mse = jnp.mean(sample_weight * per_sample_sq)
         counterfactual_supervision_regularization = (
             float(counterfactual_supervision_coef) * counterfactual_supervision_mse
         )
@@ -747,23 +903,259 @@ def compute_gae(
     return advantages, returns
 
 
-def cmdp_transition_costs(
+def cmdp_transition_costs_and_active(
     transitions: Transition,
     *,
     max_episode_steps: int,
-) -> jax.Array:
-    """Build terminal CMDP costs with shape ``[time, env, channel]``.
+    cost_mode: str = "legacy_terminal",
+    contact_quality_floors: tuple[float, ...] = (
+        0.50,
+        0.35,
+        0.35,
+        0.35,
+        0.35,
+    ),
+    approach_vxy_terminal_limit_m_s: float = 0.05,
+    approach_vxy_brake_accel_m_s2: float = 1.0,
+    approach_vxy_delay_s: float = 0.025,
+    approach_vxy_window_s: float = 0.12,
+    approach_vxy_excess_scale_m_s: float = 0.05,
+) -> tuple[jax.Array, jax.Array]:
+    """Build CMDP costs and their observation masks.
 
-    ``failure`` constrains the probability of any true task termination.
-    ``shortfall`` constrains expected episode length exactly because its
-    undiscounted episodic sum is ``(H - T) / H`` on a failure and zero on a
-    full time-limit completion.  Four direction-specific channels prevent an
-    optimizer from satisfying the aggregate bound by exchanging high-ball
-    failures for low-ball or racket-height failures.
+    ``legacy_terminal`` retains the original episode-outcome semantics
+    exactly.  ``fixed_contact_quality`` observes the actual delayed racket
+    state on every physical edge.  ``fixed_contact_gate_aligned`` preserves
+    the same plant-aware approach envelope but evaluates contact quality on
+    the rewardable/count-gated hit population used by graduation.  Its costs
+    are ``1 - q`` so the configured limits ``1 - floor`` are mathematically
+    equivalent to the corresponding mean-quality gates.
+    ``fixed_contact_target_aligned_recurrent`` constrains the exact joint
+    seven-condition outcome event and the same bounded next-contact target as
+    reward/graduation, with separate recurrent masks so first-hit success
+    cannot conceal a failed second-impact controller.
+
+    The masks are used only to estimate the mean physical constraint
+    violation for dual ascent.  Cost GAE still receives the zero-masked dense
+    transition costs and propagates them back to causal policy actions.
     """
 
     if int(max_episode_steps) <= 0:
         raise ValueError("max_episode_steps must be positive")
+    cmdp_cost_names_for_mode(cost_mode)
+    if cost_mode in {
+        "fixed_contact_quality",
+        "fixed_contact_gate_aligned",
+        "fixed_contact_target_aligned_recurrent",
+    }:
+        if (
+            cost_mode != "fixed_contact_target_aligned_recurrent"
+            and len(contact_quality_floors) != 5
+        ):
+            raise ValueError("fixed-contact CMDP requires five quality floors")
+        if any(
+            not np.isfinite(float(value)) or not 0.0 < float(value) <= 1.0
+            for value in contact_quality_floors
+        ):
+            raise ValueError("fixed-contact CMDP quality floors must be in (0, 1]")
+        positive_values = {
+            "approach_vxy_terminal_limit_m_s": approach_vxy_terminal_limit_m_s,
+            "approach_vxy_brake_accel_m_s2": approach_vxy_brake_accel_m_s2,
+            "approach_vxy_window_s": approach_vxy_window_s,
+            "approach_vxy_excess_scale_m_s": approach_vxy_excess_scale_m_s,
+        }
+        invalid = [
+            name
+            for name, value in positive_values.items()
+            if not np.isfinite(float(value)) or float(value) <= 0.0
+        ]
+        if invalid:
+            raise ValueError(
+                "fixed-contact CMDP values must be positive and finite: "
+                + ", ".join(invalid)
+            )
+        if (
+            not np.isfinite(float(approach_vxy_delay_s))
+            or float(approach_vxy_delay_s) < 0.0
+            or float(approach_vxy_delay_s) >= float(approach_vxy_window_s)
+        ):
+            raise ValueError(
+                "approach_vxy_delay_s must be finite and in [0, window)"
+            )
+
+        required_metrics = [
+            "racket_contact_point_vxy",
+            "fixed_contact_time_to_contact_s",
+            "fixed_contact_crossing_valid",
+        ]
+        if cost_mode == "fixed_contact_quality":
+            required_metrics.extend(
+                (
+                    "physical_contact_edge",
+                    "contact_edge_fixed_contact_q_z",
+                    "contact_edge_fixed_contact_q_pose",
+                    "contact_edge_fixed_contact_q_vxy",
+                    "contact_edge_fixed_contact_q_omega",
+                    "contact_edge_fixed_contact_q_offset",
+                )
+            )
+        elif cost_mode == "fixed_contact_gate_aligned":
+            required_metrics.extend(
+                (
+                    "rewardable_hit",
+                    "fixed_contact_q_z_sum",
+                    "fixed_contact_q_pose_sum",
+                    "fixed_contact_q_vxy_sum",
+                    "fixed_contact_q_omega_sum",
+                    "fixed_contact_q_offset_sum",
+                )
+            )
+        else:
+            required_metrics.extend(
+                (
+                    "rewardable_hit",
+                    "fixed_contact_outcome_all_ready_sum",
+                    "hit_next_contact_anchor_err_sum",
+                )
+            )
+        missing = [
+            name for name in required_metrics if name not in transitions.metrics
+        ]
+        if missing:
+            raise ValueError(
+                "fixed-contact CMDP metric is missing: " + ", ".join(missing)
+            )
+
+        time_to_contact_s = transitions.metrics[
+            "fixed_contact_time_to_contact_s"
+        ].astype(jnp.float32)
+        crossing_valid = transitions.metrics[
+            "fixed_contact_crossing_valid"
+        ] >= 0.5
+        approach_active = (
+            crossing_valid
+            & (time_to_contact_s > 0.0)
+            & (time_to_contact_s <= float(approach_vxy_window_s))
+        )
+        braking_time_s = jnp.maximum(
+            time_to_contact_s - float(approach_vxy_delay_s), 0.0
+        )
+        admissible_vxy_m_s = (
+            float(approach_vxy_terminal_limit_m_s)
+            + float(approach_vxy_brake_accel_m_s2) * braking_time_s
+        )
+        measured_vxy_m_s = transitions.metrics[
+            "racket_contact_point_vxy"
+        ].astype(jnp.float32)
+        approach_cost = jnp.where(
+            approach_active,
+            jnp.maximum(measured_vxy_m_s - admissible_vxy_m_s, 0.0)
+            / float(approach_vxy_excess_scale_m_s),
+            0.0,
+        )
+
+        if cost_mode == "fixed_contact_target_aligned_recurrent":
+            hit_active = transitions.metrics["rewardable_hit"] >= 0.5
+            recurrent_active = hit_active & (transitions.hit_count >= 2.0)
+            all_ready = jnp.clip(
+                transitions.metrics[
+                    "fixed_contact_outcome_all_ready_sum"
+                ].astype(jnp.float32),
+                0.0,
+                1.0,
+            )
+            target_error_m = jnp.maximum(
+                transitions.metrics[
+                    "hit_next_contact_anchor_err_sum"
+                ].astype(jnp.float32),
+                0.0,
+            )
+            not_all_ready = jnp.where(hit_active, 1.0 - all_ready, 0.0)
+            recurrent_not_all_ready = jnp.where(
+                recurrent_active, 1.0 - all_ready, 0.0
+            )
+            next_target_error = jnp.where(
+                hit_active, target_error_m, 0.0
+            )
+            recurrent_next_target_error = jnp.where(
+                recurrent_active, target_error_m, 0.0
+            )
+            costs = jnp.stack(
+                (
+                    approach_cost,
+                    not_all_ready,
+                    recurrent_not_all_ready,
+                    next_target_error,
+                    recurrent_next_target_error,
+                ),
+                axis=-1,
+            )
+            active = jnp.stack(
+                (
+                    approach_active,
+                    hit_active,
+                    recurrent_active,
+                    hit_active,
+                    recurrent_active,
+                ),
+                axis=-1,
+            )
+            return costs, active
+
+        if cost_mode == "fixed_contact_quality":
+            quality_active = transitions.metrics["physical_contact_edge"] >= 0.5
+            quality_metric_names = (
+                "contact_edge_fixed_contact_q_z",
+                "contact_edge_fixed_contact_q_pose",
+                "contact_edge_fixed_contact_q_vxy",
+                "contact_edge_fixed_contact_q_omega",
+                "contact_edge_fixed_contact_q_offset",
+            )
+        else:
+            quality_active = transitions.metrics["rewardable_hit"] >= 0.5
+            quality_metric_names = (
+                "fixed_contact_q_z_sum",
+                "fixed_contact_q_pose_sum",
+                "fixed_contact_q_vxy_sum",
+                "fixed_contact_q_omega_sum",
+                "fixed_contact_q_offset_sum",
+            )
+        quality_costs = []
+        for metric_name, floor in zip(
+            quality_metric_names, contact_quality_floors, strict=True
+        ):
+            quality = transitions.metrics[metric_name].astype(jnp.float32)
+            if cost_mode == "fixed_contact_quality":
+                quality_costs.append(
+                    jnp.where(
+                        quality_active,
+                        jnp.maximum(float(floor) - quality, 0.0)
+                        / float(floor),
+                        0.0,
+                    )
+                )
+            else:
+                quality_costs.append(
+                    jnp.where(
+                        quality_active,
+                        1.0 - jnp.clip(quality, 0.0, 1.0),
+                        0.0,
+                    )
+                )
+        costs = jnp.stack((approach_cost, *quality_costs), axis=-1)
+        active = jnp.stack(
+            (
+                approach_active,
+                quality_active,
+                quality_active,
+                quality_active,
+                quality_active,
+                quality_active,
+            ),
+            axis=-1,
+        )
+        return costs, active
+
     terminated = transitions.terminated.astype(jnp.float32)
     remaining = jnp.clip(
         (float(max_episode_steps) - transitions.episode_length.astype(jnp.float32))
@@ -778,7 +1170,7 @@ def cmdp_transition_costs(
             raise ValueError(f"CMDP termination metric is missing: {key}")
         return terminated * transitions.metrics[key].astype(jnp.float32)
 
-    return jnp.stack(
+    costs = jnp.stack(
         (
             terminated,
             terminated * remaining,
@@ -789,6 +1181,43 @@ def cmdp_transition_costs(
         ),
         axis=-1,
     )
+    # Legacy dual ascent is episode-normalized, so this mask is intentionally
+    # not used by that mode.  Returning it keeps one auditable API.
+    return costs, costs != 0.0
+
+
+def cmdp_transition_costs(
+    transitions: Transition,
+    *,
+    max_episode_steps: int,
+    cost_mode: str = "legacy_terminal",
+    **kwargs,
+) -> jax.Array:
+    """Return only transition costs; preserves the historical public API."""
+
+    costs, _active = cmdp_transition_costs_and_active(
+        transitions,
+        max_episode_steps=max_episode_steps,
+        cost_mode=cost_mode,
+        **kwargs,
+    )
+    return costs
+
+
+def cmdp_active_mean_costs(
+    costs: jax.Array,
+    active: jax.Array,
+    *,
+    fallback: jax.Array,
+) -> jax.Array:
+    """Return per-channel active-sample means without rare-event dilution."""
+
+    costs = jnp.asarray(costs, dtype=jnp.float32)
+    active = jnp.asarray(active, dtype=bool)
+    fallback = jnp.asarray(fallback, dtype=jnp.float32)
+    active_count = jnp.sum(active.astype(jnp.float32), axis=(0, 1))
+    cost_sum = jnp.sum(jnp.where(active, costs, 0.0), axis=(0, 1))
+    return jnp.where(active_count > 0.0, cost_sum / active_count, fallback)
 
 
 def flatten_time_env(x: jax.Array) -> jax.Array:
@@ -915,6 +1344,156 @@ def completed_success_focus_mask(
     )
 
 
+
+def fourth_arrival_focus_masks(
+    dones: jax.Array,
+    weak_ordinals: jax.Array,
+    confirmed_ordinals: jax.Array,
+    landing_errors_m: jax.Array,
+    outgoing_vxy_m_s: jax.Array,
+    apex_errors_m: jax.Array,
+    contact_height_errors_m: jax.Array,
+    *,
+    tail_steps: int,
+    racket_vxy_m_s: jax.Array | None = None,
+    good_racket_vxy_limit_m_s: float = 0.0,
+    max_ordinal: int = 4,
+) -> tuple[jax.Array, jax.Array]:
+    """Label actual fourth-arrival transitions without crossing episode resets.
+
+    A good confirmed fourth outcome must meet all four physical error bands.
+    Each event labels at most ``tail_steps`` preceding transitions in the same
+    rollout and episode; later events replace earlier labels. No synthetic
+    reset or privileged outcome is supplied to the actor observation.
+    """
+
+    if int(tail_steps) <= 0:
+        raise ValueError("fourth-arrival tail_steps must be positive")
+    if int(max_ordinal) not in (4, 5, 6):
+        raise ValueError("fourth-arrival max_ordinal must be 4, 5 or 6")
+    shapes = (
+        weak_ordinals.shape, confirmed_ordinals.shape,
+        landing_errors_m.shape, outgoing_vxy_m_s.shape,
+        apex_errors_m.shape, contact_height_errors_m.shape,
+    )
+    if any(shape != dones.shape for shape in shapes):
+        raise ValueError("fourth-arrival metric shapes must match dones")
+    if float(good_racket_vxy_limit_m_s) > 0.0:
+        if racket_vxy_m_s is None or racket_vxy_m_s.shape != dones.shape:
+            raise ValueError("fourth-arrival racket VXY metric shape mismatch")
+        racket_vxy_ok = (
+            jnp.isfinite(racket_vxy_m_s)
+            & (racket_vxy_m_s <= float(good_racket_vxy_limit_m_s))
+        )
+    else:
+        racket_vxy_ok = jnp.ones_like(dones, dtype=bool)
+    weak_event = (weak_ordinals >= 4) & (weak_ordinals <= int(max_ordinal))
+    good_event = (
+        racket_vxy_ok &
+        (confirmed_ordinals >= 4)
+        & (confirmed_ordinals <= int(max_ordinal))
+        & jnp.isfinite(landing_errors_m)
+        & jnp.isfinite(outgoing_vxy_m_s)
+        & jnp.isfinite(apex_errors_m)
+        & jnp.isfinite(contact_height_errors_m)
+        & (landing_errors_m <= 0.050)
+        & (outgoing_vxy_m_s <= 0.100)
+        & (apex_errors_m <= 0.025)
+        & (contact_height_errors_m <= 0.015)
+    )
+
+    def scan(carry, current):
+        remaining, event_kind = carry
+        done_t, weak_t, good_t = current
+        remaining = jnp.where(done_t, 0, remaining)
+        event_kind = jnp.where(done_t, 0, event_kind)
+        event_kind = jnp.where(weak_t, 1, jnp.where(good_t, 2, event_kind))
+        remaining = jnp.where(weak_t | good_t, int(tail_steps), remaining)
+        weak_focus = (remaining > 0) & (event_kind == 1)
+        good_focus = (remaining > 0) & (event_kind == 2)
+        return (jnp.maximum(remaining - 1, 0), event_kind), (weak_focus, good_focus)
+
+    initial = (
+        jnp.zeros_like(dones[-1], dtype=jnp.int32),
+        jnp.zeros_like(dones[-1], dtype=jnp.int32),
+    )
+    _, masks = jax.lax.scan(
+        scan, initial, (dones, weak_event, good_event), reverse=True
+    )
+    return masks
+
+
+def steady_band_focus_masks(
+    dones: jax.Array,
+    late_events: jax.Array,
+    low_events: jax.Array,
+    high_events: jax.Array,
+    band_events: jax.Array,
+    pair_events: jax.Array,
+    pair_jump_m: jax.Array,
+    *,
+    tail_steps: int,
+    jump_limit_m: float = 0.05,
+    racket_vxy_m_s: jax.Array | None = None,
+    good_racket_vxy_limit_m_s: float = 0.0,
+) -> tuple[jax.Array, jax.Array]:
+    """Label all late physical rebounds by height band and adjacent jump.
+
+    A confirmed high rebound is a bad outcome, just like a weak low rebound.
+    Event labels propagate only to preceding transitions of the same episode.
+    """
+
+    if tail_steps <= 0 or jump_limit_m <= 0.0:
+        raise ValueError("steady band focus needs positive tail and jump limit")
+    arrays = (
+        late_events, low_events, high_events, band_events,
+        pair_events, pair_jump_m,
+    )
+    if any(array.shape != dones.shape for array in arrays):
+        raise ValueError("steady band focus metric shapes must match dones")
+    if good_racket_vxy_limit_m_s > 0.0:
+        if racket_vxy_m_s is None or racket_vxy_m_s.shape != dones.shape:
+            raise ValueError("steady band racket VXY metric shape mismatch")
+        fast_racket = (
+            ~jnp.isfinite(racket_vxy_m_s)
+            | (racket_vxy_m_s > float(good_racket_vxy_limit_m_s))
+        )
+    else:
+        fast_racket = jnp.zeros_like(dones, dtype=bool)
+    event = jnp.asarray(late_events) > 0.5
+    large_jump = (
+        (jnp.asarray(pair_events) > 0.5)
+        & (jnp.asarray(pair_jump_m) > float(jump_limit_m))
+    )
+    bad_event = event & (
+        (jnp.asarray(low_events) > 0.5)
+        | (jnp.asarray(high_events) > 0.5)
+        | large_jump
+        | fast_racket
+    )
+    good_event = event & (jnp.asarray(band_events) > 0.5) & ~bad_event
+
+    def scan(carry, current):
+        remaining, event_kind = carry
+        done_t, bad_t, good_t = current
+        remaining = jnp.where(done_t, 0, remaining)
+        event_kind = jnp.where(done_t, 0, event_kind)
+        event_kind = jnp.where(bad_t, 1, jnp.where(good_t, 2, event_kind))
+        remaining = jnp.where(bad_t | good_t, int(tail_steps), remaining)
+        bad_focus = (remaining > 0) & (event_kind == 1)
+        good_focus = (remaining > 0) & (event_kind == 2)
+        return (jnp.maximum(remaining - 1, 0), event_kind), (bad_focus, good_focus)
+
+    initial = (
+        jnp.zeros_like(dones[-1], dtype=jnp.int32),
+        jnp.zeros_like(dones[-1], dtype=jnp.int32),
+    )
+    _, masks = jax.lax.scan(
+        scan, initial, (dones, bad_event, good_event), reverse=True
+    )
+    return masks
+
+
 def apply_outcome_balanced_advantage_focus(
     advantages: jax.Array,
     failure_focus: jax.Array,
@@ -1010,6 +1589,56 @@ def hard_lane_focus_mask(
     return condition_count >= int(min_conditions), condition_count
 
 
+def minimum_group_actor_weights(
+    group_mask: jax.Array,
+    *,
+    minimum_mass: float,
+) -> tuple[jax.Array, dict[str, jax.Array]]:
+    """Allocate a minimum normalized actor-sample mass to a rare group.
+
+    When the observed group fraction is below ``minimum_mass``, group and
+    complement weights are chosen so their mean remains exactly one and the
+    group's normalized weight becomes ``minimum_mass``. Empty, complete, or
+    already-sufficient batches are exact no-ops. These weights are intended
+    for actor advantages only; critic targets must remain population-uniform.
+    """
+
+    if not 0.0 <= float(minimum_mass) <= 1.0:
+        raise ValueError("minimum_mass must be in [0, 1]")
+    mask = jnp.asarray(group_mask, dtype=bool)
+    dtype = jnp.float32
+    fraction = jnp.mean(mask.astype(dtype))
+    target = jnp.asarray(float(minimum_mass), dtype=dtype)
+    applied = (
+        (target > 0.0)
+        & (fraction > 0.0)
+        & (fraction < 1.0)
+        & (fraction < target)
+    )
+    group_weight = jnp.where(
+        applied,
+        target / jnp.maximum(fraction, 1.0e-8),
+        jnp.asarray(1.0, dtype=dtype),
+    )
+    main_weight = jnp.where(
+        applied,
+        (1.0 - target) / jnp.maximum(1.0 - fraction, 1.0e-8),
+        jnp.asarray(1.0, dtype=dtype),
+    )
+    weights = jnp.where(mask, group_weight, main_weight)
+    weighted_fraction = jnp.sum(weights * mask.astype(dtype)) / jnp.maximum(
+        jnp.sum(weights), 1.0e-8
+    )
+    return weights, {
+        "raw_fraction": fraction,
+        "minimum_mass": target,
+        "weighted_fraction": weighted_fraction,
+        "group_weight": group_weight,
+        "main_weight": main_weight,
+        "applied": applied.astype(dtype),
+    }
+
+
 def mix_hard_episode_reset_keys(
     random_reset_keys: jax.Array,
     *,
@@ -1064,6 +1693,18 @@ def mix_hard_episode_reset_keys(
     return jnp.where(selected[:, None], replay_keys, random_reset_keys)
 
 
+def reset_done_if_needed(env, state, obs, done, keys, enabled: bool):
+    """Skip the pure, discarded reset only when no lane is done."""
+    if not enabled:
+        return env.reset_done(state, obs, done, keys)
+    return jax.lax.cond(
+        jnp.any(done),
+        lambda inputs: env.reset_done(*inputs),
+        lambda inputs: (inputs[0], inputs[1]),
+        (state, obs, done, keys),
+    )
+
+
 def make_train_fns(
     env: MjxJuggleEnv,
     n_steps: int,
@@ -1094,6 +1735,11 @@ def make_train_fns(
     failure_focus_weight: float = 1.0,
     failure_focus_tail_steps: int = 0,
     failure_focus_balanced_mass: float = 0.0,
+    fourth_arrival_focus_tail_steps: int = 0,
+    fourth_arrival_focus_mass: float = 0.0,
+    fourth_arrival_focus_max_ordinal: int = 4,
+    fourth_arrival_good_racket_vxy_limit_m_s: float = 0.0,
+    steady_band_focus_enabled: bool = False,
     success_focus_hit_threshold: int = 0,
     success_focus_weight: float = 1.0,
     success_focus_tail_steps: int = 0,
@@ -1101,6 +1747,7 @@ def make_train_fns(
     hard_lane_focus_conditions: tuple[tuple[str, str, float], ...] = (),
     hard_lane_focus_min_conditions: int = 1,
     hard_lane_focus_weight: float = 1.0,
+    reset_family_min_actor_mass: float = 0.0,
     counterfactual_replay_obs: jax.Array | None = None,
     counterfactual_replay_actions: jax.Array | None = None,
     counterfactual_supervision_coef: float = 0.0,
@@ -1114,13 +1761,29 @@ def make_train_fns(
     action_feedback_perturb_scale: float = 0.0,
     action_feedback_obs_starts: tuple[int, ...] = (),
     cmdp_enabled: bool = False,
+    cmdp_cost_mode: str = "legacy_terminal",
     cmdp_cost_limits: tuple[float, ...] = (),
+    cmdp_contact_quality_floors: tuple[float, ...] = (
+        0.50,
+        0.35,
+        0.35,
+        0.35,
+        0.35,
+    ),
+    cmdp_approach_vxy_terminal_limit_m_s: float = 0.05,
+    cmdp_approach_vxy_brake_accel_m_s2: float = 1.0,
+    cmdp_approach_vxy_delay_s: float = 0.025,
+    cmdp_approach_vxy_window_s: float = 0.12,
+    cmdp_approach_vxy_excess_scale_m_s: float = 0.05,
     cmdp_cost_gae_lambda: float = 0.99,
     cmdp_cost_vf_coef: float = 0.5,
     cmdp_dual_learning_rate: float = 0.1,
     cmdp_dual_max: float = 2.0,
     hard_reset_keys: jax.Array | None = None,
     hard_reset_episode_mass: float = 0.0,
+    compact_rollout_metrics: bool = False,
+    full_rollout_metric_names: tuple[str, ...] = (),
+    conditional_reset_done: bool = False,
 ):
     if (
         min_log_std is not None
@@ -1134,6 +1797,23 @@ def make_train_fns(
         raise ValueError("failure_focus_weight must be >= 1")
     if not 0.0 <= float(failure_focus_balanced_mass) <= 1.0:
         raise ValueError("failure_focus_balanced_mass must be in [0, 1]")
+    if int(fourth_arrival_focus_tail_steps) < 0:
+        raise ValueError("fourth_arrival_focus_tail_steps must be >= 0")
+    if not 0.0 <= float(fourth_arrival_focus_mass) <= 0.25:
+        raise ValueError("fourth_arrival_focus_mass must be in [0, 0.25]")
+    if fourth_arrival_focus_mass > 0.0 and fourth_arrival_focus_tail_steps <= 0:
+        raise ValueError("fourth arrival focus requires a positive tail")
+    if int(fourth_arrival_focus_max_ordinal) not in (4, 5, 6):
+        raise ValueError("fourth_arrival_focus_max_ordinal must be 4, 5 or 6")
+    if steady_band_focus_enabled and fourth_arrival_focus_mass <= 0.0:
+        raise ValueError("steady band focus requires positive focus mass")
+    if float(fourth_arrival_good_racket_vxy_limit_m_s) < 0.0:
+        raise ValueError("fourth-arrival racket VXY limit must be >= 0")
+    if (
+        fourth_arrival_good_racket_vxy_limit_m_s > 0.0
+        and fourth_arrival_focus_mass <= 0.0
+    ):
+        raise ValueError("fourth-arrival racket VXY limit requires focus mass")
     if int(success_focus_hit_threshold) < 0 or int(success_focus_tail_steps) < 0:
         raise ValueError("success focus thresholds/tail must be >= 0")
     if float(success_focus_weight) < 1.0:
@@ -1142,6 +1822,8 @@ def make_train_fns(
         raise ValueError("success_focus_balanced_mass must be in [0, 1]")
     if float(hard_lane_focus_weight) < 1.0:
         raise ValueError("hard_lane_focus_weight must be >= 1")
+    if not 0.0 <= float(reset_family_min_actor_mass) <= 1.0:
+        raise ValueError("reset_family_min_actor_mass must be in [0, 1]")
     if hard_lane_focus_conditions and (
         int(hard_lane_focus_min_conditions) <= 0
         or int(hard_lane_focus_min_conditions) > len(hard_lane_focus_conditions)
@@ -1223,8 +1905,9 @@ def make_train_fns(
             raise ValueError(
                 "action feedback sensitivity observation slice is outside obs_dim"
             )
+    cmdp_cost_names = cmdp_cost_names_for_mode(cmdp_cost_mode)
     if bool(cmdp_enabled):
-        if len(cmdp_cost_limits) != len(CMDP_COST_NAMES):
+        if len(cmdp_cost_limits) != len(cmdp_cost_names):
             raise ValueError(
                 "CMDP cost limits must match the registered cost channels"
             )
@@ -1238,6 +1921,40 @@ def make_train_fns(
             raise ValueError("cmdp_dual_max must be positive")
         if any(float(limit) < 0.0 for limit in cmdp_cost_limits):
             raise ValueError("CMDP cost limits must be nonnegative")
+        if cmdp_cost_mode in {
+            "fixed_contact_quality",
+            "fixed_contact_gate_aligned",
+            "fixed_contact_target_aligned_recurrent",
+        }:
+            # Validate every fixed-contact parameter before JIT tracing.
+            if (
+                cmdp_cost_mode != "fixed_contact_target_aligned_recurrent"
+                and len(cmdp_contact_quality_floors) != 5
+            ):
+                raise ValueError(
+                    "fixed-contact CMDP requires five contact quality floors"
+                )
+            if (
+                cmdp_cost_mode != "fixed_contact_target_aligned_recurrent"
+                and any(
+                not np.isfinite(float(value))
+                or not 0.0 < float(value) <= 1.0
+                for value in cmdp_contact_quality_floors
+                )
+            ):
+                raise ValueError(
+                    "fixed-contact CMDP quality floors must be in (0, 1]"
+                )
+            if (
+                float(cmdp_approach_vxy_terminal_limit_m_s) <= 0.0
+                or float(cmdp_approach_vxy_brake_accel_m_s2) <= 0.0
+                or float(cmdp_approach_vxy_window_s) <= 0.0
+                or float(cmdp_approach_vxy_excess_scale_m_s) <= 0.0
+                or float(cmdp_approach_vxy_delay_s) < 0.0
+                or float(cmdp_approach_vxy_delay_s)
+                >= float(cmdp_approach_vxy_window_s)
+            ):
+                raise ValueError("invalid fixed-contact CMDP braking contract")
     if not 0.0 <= float(hard_reset_episode_mass) <= 1.0:
         raise ValueError("hard_reset_episode_mass must be in [0, 1]")
     if float(hard_reset_episode_mass) > 0.0:
@@ -1252,6 +1969,66 @@ def make_train_fns(
     batch_size = env.n_envs * int(n_steps)
     num_minibatches = max(1, batch_size // int(minibatch_size))
     used_batch_size = num_minibatches * int(minibatch_size)
+    required_full_metric_names = list(full_rollout_metric_names)
+    if float(fourth_arrival_focus_mass) > 0.0:
+        required_full_metric_names.extend((
+            "v34_weak_launch_ordinal", "v34_impact_ordinal",
+            "v34_landing_error_m", "v34_outgoing_vxy_m_s",
+            "v34_apex_error_m", "v34_contact_height_error_m",
+        ))
+        if float(fourth_arrival_good_racket_vxy_limit_m_s) > 0.0:
+            required_full_metric_names.append("hit_racket_vxy_sum")
+    required_full_metric_names.extend(
+        metric_name for metric_name, _direction, _threshold
+        in hard_lane_focus_conditions
+    )
+    if float(reset_family_min_actor_mass) > 0.0:
+        required_full_metric_names.append("reset_falling_contact_active")
+    if bool(cmdp_enabled):
+        if cmdp_cost_mode == "legacy_terminal":
+            required_full_metric_names.extend(
+                f"done/{name}" for name in CMDP_COST_NAMES[2:]
+            )
+        elif cmdp_cost_mode == "fixed_contact_quality":
+            required_full_metric_names.extend(
+                (
+                    "physical_contact_edge",
+                    "racket_contact_point_vxy",
+                    "fixed_contact_time_to_contact_s",
+                    "fixed_contact_crossing_valid",
+                    "contact_edge_fixed_contact_q_z",
+                    "contact_edge_fixed_contact_q_pose",
+                    "contact_edge_fixed_contact_q_vxy",
+                    "contact_edge_fixed_contact_q_omega",
+                    "contact_edge_fixed_contact_q_offset",
+                )
+            )
+        elif cmdp_cost_mode == "fixed_contact_gate_aligned":
+            required_full_metric_names.extend(
+                (
+                    "racket_contact_point_vxy",
+                    "fixed_contact_time_to_contact_s",
+                    "fixed_contact_crossing_valid",
+                    "rewardable_hit",
+                    "fixed_contact_q_z_sum",
+                    "fixed_contact_q_pose_sum",
+                    "fixed_contact_q_vxy_sum",
+                    "fixed_contact_q_omega_sum",
+                    "fixed_contact_q_offset_sum",
+                )
+            )
+        else:
+            required_full_metric_names.extend(
+                (
+                    "racket_contact_point_vxy",
+                    "fixed_contact_time_to_contact_s",
+                    "fixed_contact_crossing_valid",
+                    "rewardable_hit",
+                    "fixed_contact_outcome_all_ready_sum",
+                    "hit_next_contact_anchor_err_sum",
+                )
+            )
+    required_full_metric_names = tuple(dict.fromkeys(required_full_metric_names))
 
     def collect_rollout(params, runner: RunnerState) -> tuple[RunnerState, Transition]:
         def rollout_step(carry: RunnerState, _):
@@ -1262,9 +2039,19 @@ def make_train_fns(
                 params["log_std"], min_log_std, max_log_std
             )
             raw_action = mean + jnp.exp(log_std) * jax.random.normal(action_key, mean.shape)
-            env_action = jnp.clip(raw_action, -1.0, 1.0)
+            env_action = policy_action_reward_input(
+                raw_action,
+                expose_raw_action_for_reward=bool(getattr(
+                    env.cfg, "fixed_contact_include_action_clip_excess_penalty", False
+                )),
+            )
             logp = normal_logprob(raw_action, mean, log_std)
             next_env_state, next_obs, reward, done, metrics = env.step(env_state, env_action)
+            rollout_metrics = compact_step_metrics(
+                metrics,
+                enabled=bool(compact_rollout_metrics),
+                full_metric_names=required_full_metric_names,
+            )
 
             # Capture V(s_{t+1}) before reset.  This is used only for time-limit
             # truncations; evaluating it here avoids storing a full privileged
@@ -1282,7 +2069,10 @@ def make_train_fns(
                 episode_mass=hard_reset_episode_mass,
                 eligible=done,
             )
-            next_env_state, next_obs = env.reset_done(next_env_state, next_obs, done, reset_keys)
+            next_env_state, next_obs = reset_done_if_needed(
+                env, next_env_state, next_obs, done, reset_keys,
+                enabled=conditional_reset_done,
+            )
             next_critic_obs = env.get_critic_obs(next_env_state, next_obs)
             next_running_return = jnp.where(done, 0.0, completed_return)
             next_running_length = jnp.where(done, 0, completed_length)
@@ -1302,7 +2092,7 @@ def make_train_fns(
                 episode_length=completed_length,
                 new_hit=metrics["new_hit"],
                 hit_count=metrics["hit_count"],
-                metrics=metrics,
+                metrics=rollout_metrics,
             )
             return (
                 RunnerState(next_env_state, next_obs, next_critic_obs, rng, next_running_return, next_running_length),
@@ -1332,10 +2122,10 @@ def make_train_fns(
         cmdp_cost_returns = None
         cmdp_cost_old_values = None
         cmdp_observed_costs = jnp.zeros(
-            (len(CMDP_COST_NAMES),), dtype=jnp.float32
+            (len(cmdp_cost_names),), dtype=jnp.float32
         )
         cmdp_dual_before = jnp.zeros(
-            (len(CMDP_COST_NAMES),), dtype=jnp.float32
+            (len(cmdp_cost_names),), dtype=jnp.float32
         )
         cmdp_completed_count = jnp.asarray(0.0, dtype=jnp.float32)
         if bool(cmdp_enabled):
@@ -1345,13 +2135,26 @@ def make_train_fns(
             last_cost_value = cmdp_cost_value_fn(
                 train_state.params, runner.critic_obs
             )
-            costs = cmdp_transition_costs(
+            costs, cost_active = cmdp_transition_costs_and_active(
                 transitions,
                 max_episode_steps=int(env.max_steps),
+                cost_mode=cmdp_cost_mode,
+                contact_quality_floors=cmdp_contact_quality_floors,
+                approach_vxy_terminal_limit_m_s=(
+                    cmdp_approach_vxy_terminal_limit_m_s
+                ),
+                approach_vxy_brake_accel_m_s2=(
+                    cmdp_approach_vxy_brake_accel_m_s2
+                ),
+                approach_vxy_delay_s=cmdp_approach_vxy_delay_s,
+                approach_vxy_window_s=cmdp_approach_vxy_window_s,
+                approach_vxy_excess_scale_m_s=(
+                    cmdp_approach_vxy_excess_scale_m_s
+                ),
             )
             channel_advantages = []
             channel_returns = []
-            for channel_index in range(len(CMDP_COST_NAMES)):
+            for channel_index in range(len(cmdp_cost_names)):
                 cost_advantage, cost_return = compute_gae(
                     costs[..., channel_index],
                     transitions.done,
@@ -1384,17 +2187,30 @@ def make_train_fns(
             cmdp_completed_count = jnp.sum(
                 transitions.done.astype(jnp.float32)
             )
-            cmdp_observed_costs = jnp.where(
-                cmdp_completed_count > 0.0,
-                jnp.sum(costs, axis=(0, 1))
-                / jnp.maximum(cmdp_completed_count, 1.0),
-                jnp.asarray(cmdp_cost_limits, dtype=jnp.float32),
-            )
+            if cmdp_cost_mode == "legacy_terminal":
+                cmdp_observed_costs = jnp.where(
+                    cmdp_completed_count > 0.0,
+                    jnp.sum(costs, axis=(0, 1))
+                    / jnp.maximum(cmdp_completed_count, 1.0),
+                    jnp.asarray(cmdp_cost_limits, dtype=jnp.float32),
+                )
+            else:
+                cmdp_observed_costs = cmdp_active_mean_costs(
+                    costs,
+                    cost_active,
+                    fallback=jnp.asarray(
+                        cmdp_cost_limits, dtype=jnp.float32
+                    ),
+                )
         failure_focus_fraction = jnp.asarray(0.0, dtype=jnp.float32)
         success_focus_fraction = jnp.asarray(0.0, dtype=jnp.float32)
         failure_focus_balanced_mass_applied = jnp.asarray(0.0, dtype=jnp.float32)
         success_focus_balanced_mass_applied = jnp.asarray(0.0, dtype=jnp.float32)
         outcome_focus_sample_weight_mean = jnp.asarray(1.0, dtype=jnp.float32)
+        fourth_weak_focus_fraction = jnp.asarray(0.0, dtype=jnp.float32)
+        fourth_good_focus_fraction = jnp.asarray(0.0, dtype=jnp.float32)
+        fourth_weak_mass_applied = jnp.asarray(0.0, dtype=jnp.float32)
+        fourth_good_mass_applied = jnp.asarray(0.0, dtype=jnp.float32)
         hard_lane_focus_fraction = jnp.asarray(0.0, dtype=jnp.float32)
         hard_lane_focus_mean_condition_count = jnp.asarray(
             0.0, dtype=jnp.float32
@@ -1402,6 +2218,11 @@ def make_train_fns(
         hard_lane_focus_advantage_abs_fraction = jnp.asarray(
             0.0, dtype=jnp.float32
         )
+        reset_family_raw_fraction = jnp.asarray(0.0, dtype=jnp.float32)
+        reset_family_weighted_fraction = jnp.asarray(0.0, dtype=jnp.float32)
+        reset_family_group_weight = jnp.asarray(1.0, dtype=jnp.float32)
+        reset_family_main_weight = jnp.asarray(1.0, dtype=jnp.float32)
+        reset_family_mass_applied = jnp.asarray(0.0, dtype=jnp.float32)
         advantage_weight = jnp.ones_like(advantages)
         focus_enabled = False
         failure_focus = jnp.zeros_like(transitions.done, dtype=bool)
@@ -1509,6 +2330,76 @@ def make_train_fns(
                 advantages = advantages / jnp.sqrt(
                     jnp.mean(advantages * advantages) + 1e-8
                 )
+        if float(fourth_arrival_focus_mass) > 0.0:
+            if steady_band_focus_enabled:
+                weak_focus, good_focus = steady_band_focus_masks(
+                    transitions.done,
+                    transitions.metrics["v80_late_event"],
+                    transitions.metrics["v80_late_below_floor_event"],
+                    transitions.metrics["v80_late_above_ceiling_event"],
+                    transitions.metrics["v80_late_in_band_event"],
+                    transitions.metrics["v80_late_pair_event"],
+                    transitions.metrics["v80_late_pair_jump_sum_m"],
+                    tail_steps=fourth_arrival_focus_tail_steps,
+                    jump_limit_m=0.05,
+                    racket_vxy_m_s=transitions.metrics["hit_racket_vxy_sum"],
+                    good_racket_vxy_limit_m_s=(
+                        fourth_arrival_good_racket_vxy_limit_m_s
+                    ),
+                )
+            else:
+                weak_focus, good_focus = fourth_arrival_focus_masks(
+                    transitions.done,
+                    transitions.metrics["v34_weak_launch_ordinal"],
+                    transitions.metrics["v34_impact_ordinal"],
+                    transitions.metrics["v34_landing_error_m"],
+                    transitions.metrics["v34_outgoing_vxy_m_s"],
+                    transitions.metrics["v34_apex_error_m"],
+                    transitions.metrics["v34_contact_height_error_m"],
+                    tail_steps=fourth_arrival_focus_tail_steps,
+                    max_ordinal=fourth_arrival_focus_max_ordinal,
+                    racket_vxy_m_s=(
+                        transitions.metrics["hit_racket_vxy_sum"]
+                        if fourth_arrival_good_racket_vxy_limit_m_s > 0.0
+                        else None
+                    ),
+                    good_racket_vxy_limit_m_s=(
+                        fourth_arrival_good_racket_vxy_limit_m_s
+                    ),
+                )
+            advantages, fourth_metrics = apply_outcome_balanced_advantage_focus(
+                advantages,
+                weak_focus,
+                good_focus,
+                failure_mass=fourth_arrival_focus_mass,
+                success_mass=fourth_arrival_focus_mass,
+            )
+            fourth_weak_focus_fraction = fourth_metrics["failure_focus_fraction"]
+            fourth_good_focus_fraction = fourth_metrics["success_focus_fraction"]
+            fourth_weak_mass_applied = fourth_metrics[
+                "failure_focus_balanced_mass_applied"
+            ]
+            fourth_good_mass_applied = fourth_metrics[
+                "success_focus_balanced_mass_applied"
+            ]
+        if float(reset_family_min_actor_mass) > 0.0:
+            reset_family_weights, reset_family_metrics = (
+                minimum_group_actor_weights(
+                    transitions.metrics["reset_falling_contact_active"] >= 0.5,
+                    minimum_mass=reset_family_min_actor_mass,
+                )
+            )
+            advantages = advantages * reset_family_weights
+            advantages = advantages / jnp.sqrt(
+                jnp.mean(advantages * advantages) + 1e-8
+            )
+            reset_family_raw_fraction = reset_family_metrics["raw_fraction"]
+            reset_family_weighted_fraction = reset_family_metrics[
+                "weighted_fraction"
+            ]
+            reset_family_group_weight = reset_family_metrics["group_weight"]
+            reset_family_main_weight = reset_family_metrics["main_weight"]
+            reset_family_mass_applied = reset_family_metrics["applied"]
 
         batch = PpoBatch(
             obs=flatten_time_env(transitions.obs),
@@ -1972,7 +2863,7 @@ def make_train_fns(
         aux_mean["entropy"] = normal_entropy(accepted_final_log_std)
         if bool(cmdp_enabled):
             aux_mean["cmdp/completed_episodes"] = cmdp_completed_count
-            for channel_index, channel_name in enumerate(CMDP_COST_NAMES):
+            for channel_index, channel_name in enumerate(cmdp_cost_names):
                 cost_returns_flat = flatten_time_env(cmdp_cost_returns)[
                     :, channel_index
                 ]
@@ -2007,6 +2898,15 @@ def make_train_fns(
         aux_mean["outcome_focus_sample_weight_mean"] = (
             outcome_focus_sample_weight_mean
         )
+        aux_mean["fourth_weak_focus_fraction"] = fourth_weak_focus_fraction
+        aux_mean["fourth_good_focus_fraction"] = fourth_good_focus_fraction
+        aux_mean["fourth_weak_mass_applied"] = fourth_weak_mass_applied
+        aux_mean["fourth_good_mass_applied"] = fourth_good_mass_applied
+        if steady_band_focus_enabled:
+            aux_mean["steady_bad_focus_fraction"] = fourth_weak_focus_fraction
+            aux_mean["steady_good_focus_fraction"] = fourth_good_focus_fraction
+            aux_mean["steady_bad_mass_applied"] = fourth_weak_mass_applied
+            aux_mean["steady_good_mass_applied"] = fourth_good_mass_applied
         aux_mean["hard_lane_focus_fraction"] = hard_lane_focus_fraction
         aux_mean["hard_lane_focus_mean_condition_count"] = (
             hard_lane_focus_mean_condition_count
@@ -2017,6 +2917,16 @@ def make_train_fns(
         aux_mean["hard_lane_focus_weight"] = jnp.asarray(
             float(hard_lane_focus_weight), dtype=jnp.float32
         )
+        aux_mean["reset_family_raw_fraction"] = reset_family_raw_fraction
+        aux_mean["reset_family_min_actor_mass"] = jnp.asarray(
+            float(reset_family_min_actor_mass), dtype=jnp.float32
+        )
+        aux_mean["reset_family_weighted_fraction"] = (
+            reset_family_weighted_fraction
+        )
+        aux_mean["reset_family_group_weight"] = reset_family_group_weight
+        aux_mean["reset_family_main_weight"] = reset_family_main_weight
+        aux_mean["reset_family_mass_applied"] = reset_family_mass_applied
         aux_mean["explained_var"] = 1.0 - jnp.var(flatten_time_env(returns) - batch.old_values) / (
             jnp.var(flatten_time_env(returns)) + 1e-8
         )
@@ -2302,6 +3212,14 @@ def main() -> None:
         mean_return = float(ep_ret[done].mean()) if done_count > 0 else float("nan")
         mean_len = float(ep_len[done].mean()) if done_count > 0 else float("nan")
         mean_hits = float(hit_count[done].mean()) if done_count > 0 else float("nan")
+        hit_survival = {
+            f"hit{threshold}_rate": (
+                float(np.mean(hit_count[done] >= threshold))
+                if done_count > 0
+                else float("nan")
+            )
+            for threshold in (1, 2, 3, 5, 6, 12)
+        }
         sps = float(args.n_envs * args.n_steps / max(elapsed, 1e-9))
         loss_host = {k: float(v) for k, v in jax.device_get(losses).items()}
         row = {
@@ -2312,6 +3230,7 @@ def main() -> None:
             "mean_return": mean_return,
             "mean_len": mean_len,
             "mean_hits": mean_hits,
+            **hit_survival,
             **loss_host,
             **rollout_metrics,
         }

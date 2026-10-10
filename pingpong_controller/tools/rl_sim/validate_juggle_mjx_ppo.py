@@ -8,11 +8,13 @@ import pickle
 import subprocess
 import sys
 import time
-from dataclasses import fields, replace
+from dataclasses import fields, is_dataclass, replace
 from pathlib import Path
 
 import jax
 import jax.numpy as jnp
+
+from fixed_contact_plane_training import policy_action_reward_input
 import mujoco as mj
 import numpy as np
 
@@ -27,8 +29,18 @@ if str(RL_SIM_DIR) not in sys.path:
 
 from mjx_juggle_env import (
     BALL_OBS_FRAME_PIVOT_MODES,
+    MjxBallRacketContactPairConfig,
+    MjxBaseModeConfig,
+    MjxFixedContactPlaneVisionConfig,
+    MjxFixedPlaneV98CoarseContactConfig,
+    MjxFixedPlaneV153ContactConfig,
+    MjxFixedPlaneV154ContactConfig,
+    MjxFixedPlaneV156RewardConfig,
+    MjxFixedPlaneV158RewardConfig,
+    MjxFixedPlaneV159RewardConfig,
     MjxJuggleConfig,
     MjxJuggleEnv,
+    MjxPredictiveContactCurriculumConfig,
 )
 from rl_juggle_env_random import RIGHT_ARM_JOINTS
 from train_juggle_mjx_ppo import policy_mean
@@ -824,11 +836,49 @@ def disable_ball_state_dr(cfg: MjxJuggleConfig) -> MjxJuggleConfig:
 
 def env_config_from_checkpoint(payload: dict, args: argparse.Namespace) -> MjxJuggleConfig:
     cfg_payload = payload.get("env_cfg") or {}
-    valid_fields = {f.name for f in fields(MjxJuggleConfig)}
+    # Checkpoints store ``asdict(stage.cfg)`` without the concrete dataclass
+    # type.  Reconstructing every payload as the legacy base class silently
+    # discarded all fixed-contact/predictive fields and made newer actors
+    # impossible to validate (or, worse, changed their environment contract).
+    if "fixed_plane_v159_adjacent_height_linear" in cfg_payload:
+        config_type = MjxFixedPlaneV159RewardConfig
+    elif "fixed_plane_v158_late_squared_vxy_weight" in cfg_payload:
+        config_type = MjxFixedPlaneV158RewardConfig
+    elif "fixed_plane_v156_adjacent_height_penalty_multiplier" in cfg_payload:
+        config_type = MjxFixedPlaneV156RewardConfig
+    elif "fixed_contact_quality_pose_uses_normal_tilt" in cfg_payload:
+        config_type = MjxFixedPlaneV154ContactConfig
+    elif "fixed_contact_quality_surface_z_sigma_m" in cfg_payload:
+        config_type = MjxFixedPlaneV153ContactConfig
+    elif bool(cfg_payload.get("fixed_plane_v98_coarse_contact", False)):
+        config_type = MjxFixedPlaneV98CoarseContactConfig
+    elif (
+        "fixed_contact_skill_mode" in cfg_payload
+        or "scripted_airborne_handoff_enabled" in cfg_payload
+    ):
+        config_type = MjxPredictiveContactCurriculumConfig
+    elif bool(cfg_payload.get("fixed_contact_plane_training_enabled", False)):
+        config_type = MjxFixedContactPlaneVisionConfig
+    elif "ball_racket_pair_override_enabled" in cfg_payload:
+        config_type = MjxBallRacketContactPairConfig
+    elif "simulation_base_mode" in cfg_payload:
+        config_type = MjxBaseModeConfig
+    else:
+        config_type = MjxJuggleConfig
+    valid_fields = {f.name for f in fields(config_type)}
     cfg_kwargs = {k: v for k, v in cfg_payload.items() if k in valid_fields}
+    default_cfg = config_type()
+    for name, value in tuple(cfg_kwargs.items()):
+        default_value = getattr(default_cfg, name)
+        if is_dataclass(default_value) and isinstance(value, dict):
+            nested_type = type(default_value)
+            nested_fields = {field.name for field in fields(nested_type)}
+            cfg_kwargs[name] = nested_type(
+                **{key: item for key, item in value.items() if key in nested_fields}
+            )
     if "virtual_camera_pose_mode" not in cfg_payload:
         cfg_kwargs["virtual_camera_pose_mode"] = "body_mount"
-    cfg = MjxJuggleConfig(**cfg_kwargs)
+    cfg = config_type(**cfg_kwargs)
     racket_launch_hold_time_s = getattr(args, "racket_launch_hold_time_s", None)
     if racket_launch_hold_time_s is not None:
         if float(racket_launch_hold_time_s) < 0.0:
@@ -1706,6 +1756,7 @@ def make_eval_step(
     ball_replay_obs_ablation: str = "none",
     reference_ball_xy_base: jax.Array | None = None,
     policy_dq_adapter_mode: str = "off",
+    include_predictive_contact_trace: bool = False,
 ):
     base_joint_names = ("base_x", "base_y", "base_z", "base_roll", "base_pitch", "base_yaw")
     base_joint_ids = [
@@ -1778,7 +1829,31 @@ def make_eval_step(
         action = jnp.clip(raw_action * float(action_gain), -1.0, 1.0)
 
         prev_arm_qvel = env_state.data.qvel[:, env.arm_vadr]
-        next_env_state, next_obs, reward, done, metrics = env.step(env_state, action)
+        if bool(include_predictive_contact_trace):
+            trace_ball_position_world_m = env_state.data.xpos[
+                :, env.ball_body_id
+            ]
+            trace_ball_velocity_world_m_s = env_state.data.qvel[
+                :, env.ball_vadr : env.ball_vadr + 3
+            ]
+            trace_racket_position_world_m = env_state.data.site_xpos[
+                :, env.racket_site_id
+            ]
+            trace_racket_rotation_world = env_state.data.site_xmat[
+                :, env.racket_site_id
+            ]
+            trace_racket_spatial_velocity_world = env_state.data.cvel[
+                :, env.racket_body_id
+            ]
+        reward_input_action = policy_action_reward_input(
+            raw_action * float(action_gain),
+            expose_raw_action_for_reward=bool(getattr(
+                env.cfg, "fixed_contact_include_action_clip_excess_penalty", False
+            )),
+        )
+        next_env_state, next_obs, reward, done, metrics = env.step(
+            env_state, reward_input_action
+        )
         if fixed_ball_position is not None:
             next_env_state, next_obs = freeze_ball_state(
                 env,
@@ -1837,6 +1912,54 @@ def make_eval_step(
 
         reset_keys = jax.random.split(reset_key, env.n_envs)
         camera_metrics = camera_trace_metrics(env, next_env_state)
+        predictive_contact_trace = {}
+        if bool(include_predictive_contact_trace):
+            predictive_contact_trace = {
+                "trace_ball_position_world_m": (
+                    trace_ball_position_world_m
+                ),
+                "trace_ball_velocity_world_m_s": (
+                    trace_ball_velocity_world_m_s
+                ),
+                "trace_step_end_ball_velocity_world_m_s": (
+                    next_env_state.data.qvel[
+                        :, env.ball_vadr : env.ball_vadr + 3
+                    ]
+                ),
+                "trace_racket_position_world_m": (
+                    trace_racket_position_world_m
+                ),
+                "trace_racket_rotation_world": (
+                    trace_racket_rotation_world
+                ),
+                "trace_racket_spatial_velocity_world": (
+                    trace_racket_spatial_velocity_world
+                ),
+                "trace_contact_edge_pre_ball_position_world_m": (
+                    next_env_state.collision_outcome_pending_pre_ball_position_m
+                ),
+                "trace_contact_edge_pre_ball_velocity_world_m_s": (
+                    next_env_state.collision_outcome_pending_pre_ball_velocity_m_s
+                ),
+                "trace_contact_edge_racket_position_world_m": (
+                    next_env_state.collision_outcome_pending_racket_position_m
+                ),
+                "trace_contact_edge_racket_rotation_world": (
+                    next_env_state.collision_outcome_pending_racket_rotation_world
+                ),
+                "trace_contact_edge_racket_linear_velocity_world_m_s": (
+                    next_env_state.collision_outcome_pending_racket_linear_velocity_m_s
+                ),
+                "trace_contact_edge_racket_angular_velocity_world_rad_s": (
+                    next_env_state.collision_outcome_pending_racket_angular_velocity_rad_s
+                ),
+                "trace_contact_edge_impact_offset_racket_xy_m": (
+                    next_env_state.collision_outcome_pending_impact_offset_m
+                ),
+                "trace_contact_edge_time_s": (
+                    next_env_state.collision_outcome_pending_contact_time_s
+                ),
+            }
         next_env_state, next_obs = env.reset_done(next_env_state, next_obs, done, reset_keys)
         if fixed_ball_position is not None:
             next_env_state, next_obs = freeze_ball_state(
@@ -1915,6 +2038,7 @@ def make_eval_step(
             "base_qvel6": base_qvel6,
         }
         step_metrics.update(camera_metrics)
+        step_metrics.update(predictive_contact_trace)
         for key, value in metrics.items():
             if (
                 key.startswith("done/")
@@ -1933,6 +2057,10 @@ def make_eval_step(
                 or key.startswith("hit_racket_angular_")
                 or key.startswith("hit_racket_full_angular_")
                 or key.startswith("hit_racket_local_")
+                or (
+                    bool(include_predictive_contact_trace)
+                    and key.startswith("fixed_contact_")
+                )
                 or key.startswith("racket_cycle_")
                 or key.startswith("racket_angular_velocity_")
                 or key == "racket_tilt_angular_speed_rad_s"
@@ -1963,6 +2091,12 @@ def make_eval_step(
                     "hit_contact_anchor_contraction_sum",
                     "counted_hit_interval_event",
                     "counted_hit_interval_sum_s",
+                    "contact_detach_event",
+                    "contact_duration_event",
+                    "contact_duration_s",
+                    "contact_duration_event_sum_s",
+                    "contact_edge_to_hit_numerator",
+                    "contact_edge_to_hit_denominator",
                 }
                 or key.startswith("reset_")
                 or key.startswith("dr_")

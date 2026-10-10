@@ -33,6 +33,7 @@ SWAP_RESERVE_KB=${GUARD_SWAP_RESERVE_KB:-$((128 * 1024))}
 # swap count crossed its launch-relative budget; treat it as pressure only
 # when available RAM is also below this early-warning line.
 SWAP_PRESSURE_AVAILABLE_KB=${GUARD_SWAP_PRESSURE_AVAILABLE_KB:-$((6 * 1024 * 1024))}
+POLL_INTERVAL_SEC=${GUARD_POLL_INTERVAL_SEC:-5}
 if (( LOW_MEMORY_GRACE_CHECKS < 1 )); then
   echo "GUARD_LOW_MEMORY_GRACE_CHECKS must be >= 1" >&2
   exit 2
@@ -72,6 +73,19 @@ STOP_REQUESTED=0
 STOP_REQUEST_TIME=0
 LOW_MEMORY_CHECKS=0
 
+forward_signal_to_trainer() {
+  local signal_name=$1
+  if kill -0 "$TRAIN_PID" 2>/dev/null; then
+    echo "[host_memory_guard] forwarding SIG${signal_name} to trainer pid=${TRAIN_PID}" | tee -a "$LOG_FILE"
+    kill "-${signal_name}" "$TRAIN_PID" 2>/dev/null || true
+    STOP_REQUESTED=1
+    STOP_REQUEST_TIME=$SECONDS
+  fi
+}
+
+trap 'forward_signal_to_trainer INT' INT
+trap 'forward_signal_to_trainer TERM' TERM
+
 while kill -0 "$TRAIN_PID" 2>/dev/null; do
   MEM_AVAILABLE_KB=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)
   SWAP_TOTAL_KB=$(awk '/^SwapTotal:/ {print $2}' /proc/meminfo)
@@ -106,7 +120,7 @@ while kill -0 "$TRAIN_PID" 2>/dev/null; do
     echo "[host_memory_guard] critical memory persisted; terminating pid=${TRAIN_PID}" | tee -a "$LOG_FILE"
     kill -TERM "$TRAIN_PID" 2>/dev/null || true
   fi
-  sleep 5
+  sleep "$POLL_INTERVAL_SEC"
 done
 
 wait "$TRAIN_PID"
