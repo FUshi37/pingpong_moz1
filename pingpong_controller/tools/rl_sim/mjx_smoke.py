@@ -8,6 +8,7 @@ stepped under JIT. It is not a replacement for the Gym/SB3 environment yet.
 from __future__ import annotations
 
 import argparse
+import math
 import time
 from pathlib import Path
 import tempfile
@@ -16,6 +17,138 @@ import xml.etree.ElementTree as ET
 
 RL_SIM_DIR = Path(__file__).resolve().parent
 DEFAULT_XML = RL_SIM_DIR / "moz1_pd.xml"
+SIMULATION_BASE_MODES = (
+    "legacy_floating",
+    "aligned_floating",
+    "aligned_fixed",
+)
+FIXED_BASE_JOINT_NAMES = (
+    "base_x",
+    "base_y",
+    "base_z",
+    "base_roll",
+    "base_pitch",
+    "base_yaw",
+)
+BALL_RACKET_COLLISION_GEOMETRIES = (
+    "legacy_cylinder",
+    "finite_mesh16",
+)
+BALL_RACKET_CONTACT_BOUNDARY_MODES = (
+    "robot_dynamic",
+    "fk_heavy_proxy_v1",
+)
+IDENTIFIED_RACKET_RADIUS_M = 0.075
+IDENTIFIED_RACKET_HALF_THICKNESS_M = 0.001
+RACKET_CONTACT_PROXY_BODY_NAME = "mjx_racket_contact_proxy"
+RACKET_CONTACT_PROXY_JOINT_NAME = "mjx_racket_contact_proxy_free"
+RACKET_CONTACT_PROXY_GEOM_NAME = "mjx_racket_contact_proxy_geom"
+IDENTIFIED_RACKET_CONTACT_PROXY_MASS_KG = 1000.0
+
+
+def _finite_racket_mesh16_vertices() -> str:
+    """Return a deterministic 16-sided physical racket collision disk."""
+
+    values = []
+    for z_m in (
+        -IDENTIFIED_RACKET_HALF_THICKNESS_M,
+        IDENTIFIED_RACKET_HALF_THICKNESS_M,
+    ):
+        for index in range(16):
+            angle = 2.0 * math.pi * index / 16
+            values.extend((
+                IDENTIFIED_RACKET_RADIUS_M * math.cos(angle),
+                IDENTIFIED_RACKET_RADIUS_M * math.sin(angle),
+                z_m,
+            ))
+    return " ".join(f"{value:.12g}" for value in values)
+
+
+def _set_ball_racket_collision_geometry(
+    root: ET.Element,
+    geometry: str,
+) -> None:
+    """Apply an explicit opt-in collision geometry without touching legacy."""
+
+    if geometry not in BALL_RACKET_COLLISION_GEOMETRIES:
+        raise ValueError(
+            "ball_racket_collision_geometry must be one of "
+            f"{BALL_RACKET_COLLISION_GEOMETRIES}, got {geometry!r}"
+        )
+    if geometry == "legacy_cylinder":
+        return
+    rackets = [
+        geom
+        for geom in root.iter("geom")
+        if geom.get("name") == "racket_rubber_fore"
+    ]
+    if len(rackets) != 1:
+        raise ValueError("expected exactly one racket_rubber_fore geom")
+    asset = root.find("asset")
+    if asset is None:
+        asset = ET.SubElement(root, "asset")
+    mesh_name = "racket_collision_mesh16"
+    for old in list(asset.findall("mesh")):
+        if old.get("name") == mesh_name:
+            asset.remove(old)
+    ET.SubElement(
+        asset,
+        "mesh",
+        name=mesh_name,
+        vertex=_finite_racket_mesh16_vertices(),
+    )
+    racket = rackets[0]
+    racket.set("type", "mesh")
+    racket.set("mesh", mesh_name)
+    racket.attrib.pop("size", None)
+
+
+def _add_fk_heavy_racket_contact_proxy(
+    root: ET.Element,
+    *,
+    mass_kg: float,
+) -> None:
+    """Add the V33-validated free-body contact boundary to a temporary XML."""
+
+    if not math.isclose(
+        float(mass_kg),
+        IDENTIFIED_RACKET_CONTACT_PROXY_MASS_KG,
+        rel_tol=0.0,
+        abs_tol=0.0,
+    ):
+        raise ValueError(
+            "fk_heavy_proxy_v1 requires the validated exact 1000 kg mass"
+        )
+    worldbody = root.find("worldbody")
+    if worldbody is None:
+        raise ValueError("contact proxy requires a worldbody")
+    if root.find(
+        f".//body[@name='{RACKET_CONTACT_PROXY_BODY_NAME}']"
+    ) is not None:
+        raise ValueError("racket contact proxy already exists")
+    mesh = root.find(".//mesh[@name='racket_collision_mesh16']")
+    if mesh is None:
+        raise ValueError("contact proxy requires finite mesh16 geometry")
+    body = ET.SubElement(
+        worldbody,
+        "body",
+        name=RACKET_CONTACT_PROXY_BODY_NAME,
+        pos="0 0 0",
+    )
+    ET.SubElement(
+        body,
+        "freejoint",
+        name=RACKET_CONTACT_PROXY_JOINT_NAME,
+    )
+    ET.SubElement(
+        body,
+        "geom",
+        name=RACKET_CONTACT_PROXY_GEOM_NAME,
+        type="mesh",
+        mesh="racket_collision_mesh16",
+        mass=f"{float(mass_kg):.12g}",
+        rgba="0 0 0 0",
+    )
 
 
 def _require_mjx():
@@ -44,7 +177,16 @@ def _batch_tree(jax, jnp, tree, n_envs: int):
     return jax.tree_util.tree_map(batch_leaf, tree)
 
 
-def _write_mjx_contact_only_xml(xml_path: Path) -> Path:
+def _write_mjx_contact_only_xml(
+    xml_path: Path,
+    *,
+    simulation_base_mode: str = "legacy_floating",
+    ball_racket_collision_geometry: str = "legacy_cylinder",
+    ball_racket_contact_boundary_mode: str = "robot_dynamic",
+    ball_racket_contact_proxy_mass_kg: float = (
+        IDENTIFIED_RACKET_CONTACT_PROXY_MASS_KG
+    ),
+) -> Path:
     """Write an MJX-compatible training collision XML.
 
     Visual mesh/cylinder/box geoms in the robot are kept for rendering but made
@@ -54,7 +196,39 @@ def _write_mjx_contact_only_xml(xml_path: Path) -> Path:
     unsupported broadphase pairs from the full MuJoCo scene.
     """
 
+    if simulation_base_mode not in SIMULATION_BASE_MODES:
+        raise ValueError(
+            "simulation_base_mode must be one of "
+            f"{SIMULATION_BASE_MODES}, got {simulation_base_mode!r}"
+        )
+    if (
+        ball_racket_contact_boundary_mode
+        not in BALL_RACKET_CONTACT_BOUNDARY_MODES
+    ):
+        raise ValueError(
+            "ball_racket_contact_boundary_mode must be one of "
+            f"{BALL_RACKET_CONTACT_BOUNDARY_MODES}"
+        )
+    if (
+        ball_racket_contact_boundary_mode == "fk_heavy_proxy_v1"
+        and ball_racket_collision_geometry != "finite_mesh16"
+    ):
+        raise ValueError("fk_heavy_proxy_v1 requires finite_mesh16")
+
     root = ET.parse(xml_path).getroot()
+    _set_ball_racket_collision_geometry(
+        root, ball_racket_collision_geometry
+    )
+    if ball_racket_contact_boundary_mode == "fk_heavy_proxy_v1":
+        _add_fk_heavy_racket_contact_proxy(
+            root,
+            mass_kg=ball_racket_contact_proxy_mass_kg,
+        )
+    contact_racket_geom_name = (
+        RACKET_CONTACT_PROXY_GEOM_NAME
+        if ball_racket_contact_boundary_mode == "fk_heavy_proxy_v1"
+        else "racket_rubber_fore"
+    )
 
     for geom in root.iter("geom"):
         geom.set("contype", "0")
@@ -66,7 +240,7 @@ def _write_mjx_contact_only_xml(xml_path: Path) -> Path:
             geom.set("contype", "1")
             geom.set("conaffinity", "6")
             geom.set("condim", "3")
-        elif name == "racket_rubber_fore":
+        elif name == contact_racket_geom_name:
             geom.set("contype", "2")
             geom.set("conaffinity", "1")
             geom.set("condim", "3")
@@ -87,7 +261,12 @@ def _write_mjx_contact_only_xml(xml_path: Path) -> Path:
                 if support is None:
                     support = ET.SubElement(body, "geom", name="mjx_base_support")
                 support.set("type", "box")
-                support.set("pos", "0 0 -0.045")
+                support_z_m = (
+                    -0.045
+                    if simulation_base_mode == "legacy_floating"
+                    else -0.055
+                )
+                support.set("pos", f"0 0 {support_z_m:.3f}")
                 support.set("size", "0.28 0.28 0.045")
                 support.set("rgba", "0 0 0 0")
                 support.set("contype", "8")
@@ -95,6 +274,25 @@ def _write_mjx_contact_only_xml(xml_path: Path) -> Path:
                 support.set("friction", "0.8 0.1 0.1")
                 support.set("condim", "3")
                 break
+
+        equality = root.find("equality")
+        if equality is not None:
+            for constraint in list(equality.findall("joint")):
+                if constraint.get("name", "").startswith("mjx_fixed_base_"):
+                    equality.remove(constraint)
+        if simulation_base_mode == "aligned_fixed":
+            if equality is None:
+                equality = ET.SubElement(root, "equality")
+            for joint_name in FIXED_BASE_JOINT_NAMES:
+                ET.SubElement(
+                    equality,
+                    "joint",
+                    name=f"mjx_fixed_base_{joint_name}",
+                    joint1=joint_name,
+                    polycoef="0 0 0 0 0",
+                    solref="0.001 1",
+                    solimp="0.9999 0.9999 0.001",
+                )
 
         proxy_specs = {
             "waist03": [("torso", "0 0 0.02", "0.080")],
@@ -133,15 +331,19 @@ def _write_mjx_contact_only_xml(xml_path: Path) -> Path:
 
     for pair in list(contact.findall("pair")):
         g1, g2 = pair.get("geom1"), pair.get("geom2")
-        if {g1, g2} != {"ball", "racket_rubber_fore"}:
+        if {g1, g2} != {"ball", contact_racket_geom_name}:
             contact.remove(pair)
 
-    if not any({p.get("geom1"), p.get("geom2")} == {"ball", "racket_rubber_fore"} for p in contact.findall("pair")):
+    if not any(
+        {p.get("geom1"), p.get("geom2")}
+        == {"ball", contact_racket_geom_name}
+        for p in contact.findall("pair")
+    ):
         ET.SubElement(
             contact,
             "pair",
             geom1="ball",
-            geom2="racket_rubber_fore",
+            geom2=contact_racket_geom_name,
             friction="0.35 0.002 0.0001",
             solref="0.003 0.80",
             solimp="0.90 0.995 0.001",

@@ -37,8 +37,215 @@ from camera_calibration import (
     D455_848_UNDISTORTED_VFOV_DEG,
     D455_848_UNDISTORTED_WIDTH,
 )
+from cartesian_pose_action_projection_jax import (
+    matrix_to_euler_xyz_jax,
+    project_cartesian_pose_qvel_jax,
+    relative_xyz_euler_rate_jacobian_jax,
+)
+from collision_outcome_residual import (
+    MODE_OFF as COLLISION_OUTCOME_MODE_OFF,
+    CollisionOutcomeResidualV1Config,
+    apply_collision_outcome_residual_jax,
+    collision_outcome_event_edges,
+)
 from delay_control import DEFAULT_DELAY_BIN_EDGES_MS
-from mjx_smoke import _write_mjx_contact_only_xml
+from fixed_contact_plane_training import (
+    ContactTargetConfig,
+    FIXED_CONTACT_PHASE_APPROACH,
+    FIXED_CONTACT_PHASE_ARRIVAL_GATE,
+    FIXED_CONTACT_PHASE_RECOVER,
+    FIXED_CONTACT_PHASE_RETRACT,
+    FIXED_CONTACT_PHASE_SETTLE,
+    FIXED_CONTACT_PHASE_STRIKE,
+    FIXED_CONTACT_SKILL_MODE_ARRIVAL_ONLY,
+    FIXED_CONTACT_SKILL_MODE_ARRIVED_HIT,
+    FIXED_CONTACT_SKILL_MODE_RECURRENT,
+    FIXED_CONTACT_ACTOR_OBS_DIM,
+    FIXED_CONTACT_ACTOR_OBSERVATION_SCHEMA_V15,
+    FIXED_CONTACT_ACTOR_OBSERVATION_SCHEMA_V16,
+    FIXED_CONTACT_ACTOR_OBS_SLICES,
+    HighBallPredictorState,
+    HighBallPredictorConfig,
+    apply_sampled_reset_target_follow_blend,
+    cartesian_reset_blend_ik_axis_knots,
+    cartesian_reset_blend_ik_axis_range,
+    cartesian_reset_blend_offsets,
+    clear_high_ball_predictor_lanes,
+    compute_dynamic_contact_target,
+    contact_quality_scores,
+    empty_high_ball_predictor_state,
+    factorized_reset_lane_indices,
+    factorized_reset_lane_indices_with_ttc,
+    feasibility_conditioned_reset_ttc_s,
+    seed_permuted_xy_lane_indices,
+    aggregate_fixed_contact_outcome_constraint_costs,
+    fixed_contact_apex_error_cost,
+    fixed_contact_event_joint_quality_gate,
+    bound_fixed_contact_hit_event_reward,
+    racket_surface_frame,
+    fixed_contact_outcome_constraint_costs,
+    fixed_contact_outcome_constraint_event_penalty,
+    early_racket_xy_motion_penalty,
+    early_ball_xy_motion_penalty,
+    motion_penalty_cost,
+    late_racket_xy_anchor_penalty,
+    workspace_barrier_height,
+    early_action_overflow_multiplier,
+    action_overflow_loss,
+    fixed_contact_s0_component_scores,
+    fixed_contact_gate_qualified_action_penalty,
+    fixed_contact_gate_qualified_low_action_reward,
+    fixed_contact_first_hit_timeout_mask,
+    fixed_contact_next_contact_target_xy,
+    fixed_contact_conversion_events,
+    fixed_contact_physical_edge_events,
+    fixed_contact_confirmed_hit_handoff_reward,
+    fixed_contact_edge_racket_vz_target_reward,
+    fixed_contact_gate_event_reward_by_quality,
+    fixed_contact_dynamic_phase_stroke_targets,
+    fixed_contact_impact_consistent_racket_vz_target,
+    fixed_contact_phase_consistent_stroke_z_cost,
+    fixed_contact_phase_dense_z_target,
+    fixed_contact_phase_stroke_vz_cost,
+    fixed_contact_task_twist_cost,
+    fixed_contact_hit_racket_vxy_penalty_mask,
+    fixed_contact_recurrent_hit_timeout_mask,
+    fixed_contact_s0_gate_aligned_costs,
+    fixed_contact_s0_progress_active_mask,
+    fixed_contact_s0_reward_active_mask,
+    fixed_contact_post_hit_motion_active_dt,
+    fixed_contact_s0_worst_normalized_violation,
+    fixed_contact_ready_deadline_reward,
+    fixed_contact_post_hit_recovery_reference_errors,
+    fixed_contact_post_hit_recovery_failure_penalty,
+    fixed_contact_post_hit_recovery_joint_constraint_penalty,
+    fixed_contact_post_hit_recovery_success_mask,
+    fixed_contact_post_hit_recovery_timeout_penalty,
+    fixed_contact_return_basin_success_mask,
+    fixed_contact_pending_hit_retract_vz_reward,
+    fixed_contact_pre_hit_launch_pending_mask,
+    fixed_contact_pre_hit_launch_vz_reward,
+    fixed_contact_recurrent_launch_vz_reward,
+    fixed_contact_smooth_stroke_vz_cost,
+    fixed_contact_smooth_stroke_vz_reward,
+    fixed_contact_workspace_z_barrier_cost,
+    fixed_contact_reward_sum,
+    reflect_local_xy_jitter_into_bounds,
+    fixed_contact_ttc_phase,
+    sample_reset_target_follow_blend,
+    sample_local_contact_xy_jitter,
+    sample_fixed_contact_skill_mode,
+    scripted_airborne_handoff_ball_state,
+    select_reset_ball_observation_velocity,
+    fixed_contact_s0_readiness_mask,
+    make_fixed_contact_actor_observation,
+    predict_descending_plane_crossing,
+    propagate_ballistic_state_to_age,
+    resolve_falling_reset_time_to_contact_s,
+    return_quality_scores,
+    rotation_6d_to_matrix,
+    so3_log_error,
+    update_high_ball_predictor,
+)
+from plant_aware_fixed_plane_v1 import (
+    PLANT_AWARE_FIXED_PLANE_ACTOR_OBS_DIM,
+    PLANT_AWARE_FIXED_PLANE_ACTOR_OBSERVATION_SCHEMA_V1,
+    apply_post_first_contact_slew,
+    apply_rmp_tracking_precompensation,
+    compose_bounded_residual_action,
+    make_plant_aware_fixed_plane_observation,
+    plant_aware_phase_reference,
+    restitution_consistent_racket_velocity,
+)
+from fixed_plane_limit_cycle_v1 import (
+    FIXED_PLANE_LIMIT_CYCLE_ACTOR_OBS_DIM,
+    FIXED_PLANE_LIMIT_CYCLE_ACTOR_OBS_DIM_V63,
+    FIXED_PLANE_LIMIT_CYCLE_ACTOR_OBSERVATION_SCHEMA_V63,
+    FIXED_PLANE_LIMIT_CYCLE_ACTOR_OBSERVATION_SCHEMA_V1,
+    limit_cycle_dynamic_racket_vz_target_m_s,
+    limit_cycle_apex_progress,
+    limit_cycle_desired_apex_z_m,
+    limit_cycle_hit_apex_thresholds_m,
+    limit_cycle_workspace_bounded_stroke_reference,
+    make_fixed_plane_limit_cycle_observation,
+    restitution_consistent_racket_velocity_m_s,
+)
+from fixed_plane_limit_cycle_contact_vxy_v32 import (
+    confirmed_contact_vxy_event_bonus,
+)
+from fixed_plane_rapid_steady_v1 import (
+    apex_progress_for_schedule,
+    per_hit_apex_event_metrics,
+    rapid_steady_apex_event_reward,
+    rapid_steady_subfloor_bridge_reward,
+    rapid_steady_late_motion_bonus,
+    rapid_steady_preimpact_motion_dt,
+    rapid_steady_launch_hold_motion_penalty,
+    scheduled_apex_z_m,
+)
+from fixed_plane_v34 import noncontact_motion_penalty, weak_launch_lift_credit
+from fixed_plane_v36 import weak_launch_apex_floor_penalty
+from fixed_plane_v41 import physical_outcome_credit
+from fixed_plane_v46 import resolved_impact_motion_penalty
+from fixed_plane_v51 import late_weak_floor_penalty
+from fixed_plane_v53 import fast_arrival_vertical_deficit_penalty
+from fixed_plane_v54 import late_physical_apex_score
+from fixed_plane_v94 import (
+    first_confirmed_apex_credit,
+    first_hit_early_failure_penalty,
+    pending_recontact_miss_equivalent,
+)
+from fixed_plane_v95 import early_confirmed_apex_bridge
+from fixed_plane_v96 import second_hit_viability_adjustment
+from fixed_plane_v93 import (
+    ACTOR_OBS_DIM as V93_ACTOR_OBS_DIM,
+    ACTOR_OBSERVATION_SCHEMA as V93_ACTOR_OBSERVATION_SCHEMA,
+    make_predicted_contact_context,
+)
+from fixed_plane_v99 import (
+    ACTOR_OBS_DIM as V99_ACTOR_OBS_DIM,
+    ACTOR_OBSERVATION_SCHEMA as V99_ACTOR_OBSERVATION_SCHEMA,
+    HISTORY_LAGS_TICKS as V99_HISTORY_LAGS_TICKS,
+    HISTORY_LENGTH as V99_HISTORY_LENGTH,
+)
+from fixed_plane_v92 import (
+    ACTOR_OBS_DIM as V92_ACTOR_OBS_DIM,
+    ACTOR_OBSERVATION_SCHEMA as V92_ACTOR_OBSERVATION_SCHEMA,
+    HISTORY_LAGS_TICKS as V92_HISTORY_LAGS_TICKS,
+    HISTORY_LENGTH as V92_HISTORY_LENGTH,
+    advance_position_history, make_history_actor_observation,
+    rotation_matrix_to_6d, signed_steady_height_reward,
+    scale_signed_height_reward,
+)
+from fixed_plane_v72 import atomic_contact_restart_events
+from fixed_plane_v75 import post_hit_same_target_xy_progress_reward
+from fixed_plane_v115 import third_confirmed_hit_bridge_bonus
+from fixed_plane_v116 import post_second_intercept_error_penalty
+from fixed_plane_v118 import (
+    post_second_pending_clearance_credit,
+    post_second_pending_retract_reward,
+)
+from fixed_plane_v119 import terminal_pending_clearance_refund
+from fixed_plane_v120 import third_first_physical_edge_outgoing_vz_credit
+from fixed_plane_v122 import first_third_release_vz_credit
+from fixed_plane_v123 import scheduled_low_apex_penalty
+from fixed_plane_v124 import first_third_edge_preparation_reward
+from fixed_plane_v77 import first_confirmed_peak_vz_credit
+from fixed_plane_v78 import first_resolved_launch_peak_vz_credit
+from fixed_plane_v69 import (
+    failed_first_launch_peak_vz_credit,
+    pending_first_launch_peak_vz,
+)
+from fixed_plane_v71 import fixed_contact_rearm_eligible
+from mjx_smoke import (
+    BALL_RACKET_COLLISION_GEOMETRIES,
+    BALL_RACKET_CONTACT_BOUNDARY_MODES,
+    IDENTIFIED_RACKET_CONTACT_PROXY_MASS_KG,
+    RACKET_CONTACT_PROXY_BODY_NAME,
+    RACKET_CONTACT_PROXY_GEOM_NAME,
+    RACKET_CONTACT_PROXY_JOINT_NAME,
+    _write_mjx_contact_only_xml,
+)
 from recovered_rmp_jax import (
     JointRMPParams,
     JointRMPState,
@@ -54,6 +261,25 @@ from sim2real_bridger import (
 
 BASE_ACTS = ("Base-X", "Base-Y", "Base-Yaw")
 BALL_OBS_FRAME_PIVOT_MODES = ("legacy_base_origin", "camera_center")
+
+
+def command_safety_telemetry(
+    requested_q: jax.Array,
+    applied_q: jax.Array,
+    *,
+    limiter_enabled: bool,
+) -> tuple[jax.Array, jax.Array]:
+    """Return command-limiter delta/clip flags without relabeling plant lag.
+
+    The recovered RMP and low-level PD are motion-stack dynamics, not a servo
+    safety limiter. When neither reviewed servo limiter is enabled, their
+    tracking difference must therefore not appear in ``arm_servo_safety_*``.
+    """
+
+    delta = jnp.asarray(requested_q) - jnp.asarray(applied_q)
+    if not bool(limiter_enabled):
+        return jnp.zeros_like(delta), jnp.zeros_like(delta, dtype=bool)
+    return delta, jnp.abs(delta) > 1.0e-7
 
 D455_REAL_RIGHT_ARM_RESET_DEGREES = (
     5.736,
@@ -71,6 +297,133 @@ D455_REAL_VIEW_Y_BOUNDS_M = (-0.50, -0.25)
 D455_REAL_VIEW_Z_BOUNDS_M = (1.00, 1.47)
 D455_REAL_VIEW_Z_IDEAL_M = (1.02, 1.42)
 D455_REAL_VIEW_Y_TARGET_M = -0.35
+V33_CONTACT_PAIR_SOLREF = (0.0021257295539411024, 1.0420726994889375)
+V33_CONTACT_PAIR_SOLREFFRICTION = (0.0, 0.0)
+V33_CONTACT_PAIR_SOLIMP = (
+    0.6040711874344367,
+    0.6474683100207307,
+    0.00279752137198626,
+    0.8573868560606173,
+    4.870438987793294,
+)
+V33_CONTACT_PAIR_FRICTION = (
+    0.13268182450948787,
+    0.11820649851379933,
+    0.0001544955787453423,
+    2.013852101985789e-05,
+    2.013852101985789e-05,
+)
+V97_STATIC_CONTACT_PAIR_SOLREF = (0.005, 0.165)
+V97_STATIC_CONTACT_TIMESTEP_S = 0.0000625
+# Frozen 11-release static collision calibration:
+# ball_racket_contact_real11_static_1ms_v1.
+V98_STATIC_CONTACT_PAIR_SOLREF = (0.006836, 0.228086)
+V98_STATIC_CONTACT_PAIR_SOLIMP = (
+    0.040000, 0.700000, 0.014298, 0.040000, 8.021856
+)
+V98_STATIC_CONTACT_TIMESTEP_S = 0.001
+V98_RACKET_CONTACT_GEOM_OFFSET_M = 0.003
+
+
+def apply_compiled_ball_racket_pair_override(
+    model: mujoco.MjModel,
+    cfg: Any,
+) -> tuple[int, ...]:
+    """Apply every compiled ball-racket pair field for an opt-in contract."""
+
+    def first_geom_id(names: tuple[str, ...]) -> int:
+        for name in names:
+            geom_id = mujoco.mj_name2id(
+                model, mujoco.mjtObj.mjOBJ_GEOM, name
+            )
+            if geom_id >= 0:
+                return int(geom_id)
+        return -1
+
+    ball_geom_id = first_geom_id(("ball", "ball_geom"))
+    boundary_mode = str(getattr(
+        cfg, "ball_racket_contact_boundary_mode", "robot_dynamic"
+    ))
+    racket_geom_id = first_geom_id(
+        (RACKET_CONTACT_PROXY_GEOM_NAME,)
+        if boundary_mode == "fk_heavy_proxy_v1"
+        else ("racket_rubber_fore", "racket")
+    )
+    pair_ids = tuple(
+        pair_id
+        for pair_id in range(model.npair)
+        if {
+            int(model.pair_geom1[pair_id]),
+            int(model.pair_geom2[pair_id]),
+        }
+        == {ball_geom_id, racket_geom_id}
+    )
+    enabled = bool(getattr(cfg, "ball_racket_pair_override_enabled", False))
+    if not enabled:
+        return pair_ids
+    if ball_geom_id < 0 or racket_geom_id < 0 or len(pair_ids) != 1:
+        raise ValueError(
+            "compiled ball-racket override requires exactly one explicit pair"
+        )
+
+    def vector(name: str, size: int) -> np.ndarray:
+        value = np.asarray(tuple(getattr(cfg, name)), dtype=np.float64)
+        if value.shape != (size,) or not np.all(np.isfinite(value)):
+            raise ValueError(f"{name} must be a finite {size}-vector")
+        return value
+
+    solref = vector("ball_racket_pair_solref", 2)
+    solreffriction = vector("ball_racket_pair_solreffriction", 2)
+    solimp = vector("ball_racket_pair_solimp", 5)
+    friction = vector("ball_racket_pair_friction", 5)
+    margin_m = float(getattr(cfg, "ball_racket_pair_margin_m"))
+    gap_m = float(getattr(cfg, "ball_racket_pair_gap_m"))
+    condim = int(getattr(cfg, "ball_racket_pair_condim"))
+    if solref[0] <= 0.0 or solref[1] <= 0.0:
+        raise ValueError("ball-racket pair solref values must be positive")
+    friction_tied = np.all(solreffriction == 0.0)
+    friction_independent = np.all(solreffriction > 0.0)
+    if not (friction_tied or friction_independent):
+        raise ValueError(
+            "pair solreffriction must be the zero sentinel or positive"
+        )
+    if not (
+        0.0 < solimp[0] < solimp[1] < 1.0
+        and solimp[2] > 0.0
+        and 0.0 < solimp[3] < 1.0
+        and solimp[4] >= 1.0
+    ):
+        raise ValueError("invalid ball-racket pair solimp contract")
+    if np.any(friction < 0.0):
+        raise ValueError("ball-racket pair friction must be non-negative")
+    if (
+        bool(getattr(cfg, "ball_racket_pair_tie_tangent_friction_dr", False))
+        and not np.isclose(friction[0], friction[1], rtol=0.0, atol=1.0e-12)
+    ):
+        raise ValueError(
+            "tied tangential friction DR requires equal nominal axes"
+        )
+    if not (
+        np.isfinite([margin_m, gap_m]).all()
+        and 0.0 <= gap_m <= margin_m
+    ):
+        raise ValueError("pair gap must satisfy 0 <= gap <= margin")
+    if condim not in {1, 3, 4, 6}:
+        raise ValueError("ball-racket pair condim must be 1, 3, 4, or 6")
+    geometry = str(getattr(cfg, "ball_racket_collision_geometry"))
+    if geometry == "finite_mesh16" and (margin_m != 0.0 or gap_m != 0.0):
+        raise ValueError(
+            "MJX finite_mesh16 requires exact-zero pair margin and gap"
+        )
+    pair_id = pair_ids[0]
+    model.pair_solref[pair_id] = solref
+    model.pair_solreffriction[pair_id] = solreffriction
+    model.pair_solimp[pair_id] = solimp
+    model.pair_friction[pair_id] = friction
+    model.pair_margin[pair_id] = margin_m
+    model.pair_gap[pair_id] = gap_m
+    model.pair_dim[pair_id] = condim
+    return pair_ids
 
 
 def bounded_base_local_y_velocity_target_jax(
@@ -479,6 +832,63 @@ def early_termination_remaining_horizon_penalty_jax(
         * remaining_fraction
         * terminated.astype(jnp.float32)
     )
+
+
+def failure_only_termination_mask_jax(
+    terminated: jax.Array,
+    task_success: jax.Array,
+) -> jax.Array:
+    """Remove deliberate task-success termination from failure penalties."""
+
+    return jnp.asarray(terminated, dtype=jnp.bool_) & ~jnp.asarray(
+        task_success, dtype=jnp.bool_
+    )
+
+
+def fixed_contact_racket_workspace_termination_mask_jax(
+    done_terms: dict[str, jax.Array],
+) -> jax.Array:
+    """Combine the versioned fixed-contact racket XYZ workspace failures."""
+
+    required = (
+        "racket_x_out_of_bounds",
+        "racket_y_out_of_bounds",
+        "racket_z_out_of_bounds",
+    )
+    missing = [name for name in required if name not in done_terms]
+    if missing:
+        raise ValueError(
+            "fixed-contact workspace termination terms are missing: "
+            + ", ".join(missing)
+        )
+    result = jnp.asarray(done_terms[required[0]], dtype=jnp.bool_)
+    for name in required[1:]:
+        result = result | jnp.asarray(done_terms[name], dtype=jnp.bool_)
+    return result
+
+
+def aggregate_termination_terms_jax(
+    done_terms: dict[str, jax.Array],
+    *,
+    excluded_keys: tuple[str, ...] = (),
+) -> jax.Array:
+    """OR termination terms while preserving explicitly diagnostic terms."""
+
+    if not done_terms:
+        raise ValueError("termination terms must not be empty")
+    excluded = frozenset(excluded_keys)
+    included = [
+        jnp.asarray(value, dtype=jnp.bool_)
+        for name, value in done_terms.items()
+        if name not in excluded
+    ]
+    if not included:
+        exemplar = next(iter(done_terms.values()))
+        return jnp.zeros_like(exemplar, dtype=jnp.bool_)
+    result = included[0]
+    for value in included[1:]:
+        result = result | value
+    return result
 
 
 def full_episode_joint_height_reward_jax(
@@ -1102,10 +1512,28 @@ class MjxJuggleConfig:
     ball_init_vz: float = -0.28
     ball_init_vz_jitter: float = 0.0
     ball_reset_mode: str = "anchor_drop"
+    # Opt-in lane-wise homotopy between the released main-task reset and the
+    # measured falling-contact recovery reset.  The separate falling target
+    # ranges keep each reset family numerically identical to its pure mode;
+    # generic episode target ranges continue to define racket-launch lanes.
+    falling_reset_mixture_probability: float = 0.0
+    falling_reset_episode_target_x_range_m: tuple[float, float] | None = None
+    falling_reset_episode_target_y_range_m: tuple[float, float] | None = None
+    falling_reset_episode_racket_anchor_z_range_m: tuple[float, float] | None = None
     falling_reset_time_to_contact_range_s: tuple[float, float] = (0.12, 0.22)
+    # Explicitly permit reset states on the rising half of the same ballistic
+    # orbit when a long pre-contact acquisition window is required.  Keep this
+    # default off so every historical falling-contact reset remains unchanged.
+    falling_reset_allow_ascending_phase: bool = False
     falling_reset_apex_height_range_m: tuple[float, float] = (0.20, 0.32)
     falling_reset_vxy_max: float = 0.0
     falling_reset_contact_xy_jitter: float = 0.0
+    falling_reset_contact_xy_sampling_mode: str = "square_uniform"
+    falling_reset_contact_xy_min_radius_m: float = 0.0
+    # Keep the planned initial contact inside the registered fixed-contact
+    # workspace after adding its independently sampled relative displacement.
+    # Default-off preserves every historical falling reset.
+    falling_reset_contact_clip_to_fixed_workspace: bool = False
     # Signed base-local-Y displacement of the falling ball's planned contact
     # point relative to the racket anchor.  Unlike target-anchor randomization
     # this moves only the ball, so a curriculum can teach an inward return
@@ -1118,8 +1546,51 @@ class MjxJuggleConfig:
     # follows the sampled contact.  This prevents a wide-contact curriculum
     # from spending the first 140--200 ms on an artificial acquisition sprint.
     falling_reset_racket_follow_contact_y: bool = False
+    # Absolute-workspace reset.  The episode target is still the planned
+    # falling-ball contact anchor; this option initializes the racket at that
+    # anchor through a pose-preserving 2-D IK table.  It works for both
+    # continuous and binned XY target samplers.  Initial ball-to-racket
+    # displacement remains controlled independently by contact XY jitter.
+    falling_reset_racket_follow_episode_target_xy: bool = False
+    falling_reset_racket_follow_fixed_contact_surface_z: bool = False
+    # Fraction of the pose-preserving target-following IK displacement used at
+    # reset.  One preserves the historical target-follow reset exactly; zero
+    # recovers the warm-pose reset while keeping the same sampled target.  This
+    # is an opt-in acquisition-distance curriculum control.
+    falling_reset_racket_follow_episode_target_xy_blend: float = 1.0
+    # Optional per-lane target-follow blend.  When present, each reset draws
+    # independently from this range; ``None`` preserves the scalar contract.
+    falling_reset_racket_follow_episode_target_xy_blend_range: (
+        tuple[float, float] | None
+    ) = None
+    falling_reset_racket_follow_episode_target_xy_blend_choices: (
+        tuple[float, ...] | None
+    ) = None
+    # Optional non-uniform sampling mass for the discrete choices.  ``None``
+    # preserves the historical uniform randint path exactly.
+    falling_reset_racket_follow_episode_target_xy_blend_choice_probabilities: (
+        tuple[float, ...] | None
+    ) = None
+    # Opt-in semantic repair for discrete choices. Historical profiles sampled
+    # and logged the choice but applied the scalar blend to joint reset state.
+    falling_reset_apply_target_follow_blend_choices: bool = False
+    # Placed-ball counterpart of the falling-reset lookup.  When enabled for
+    # a pure racket-launch reset, initialize the horizontal racket pose at the
+    # sampled fixed-plane workspace target before placing the ball relative to
+    # that racket.  Defaults preserve all historical launch distributions.
+    racket_launch_racket_follow_episode_target_xy: bool = False
+    racket_launch_racket_follow_fixed_contact_surface_z: bool = False
     falling_reset_racket_follow_ik_points: int = 129
+    falling_reset_racket_follow_xy_ik_spacing_m: float = 0.015
+    # Solve every Cartesian reset target from the same warm posture. False
+    # preserves the historical neighbor-seeded table, whose joint-space
+    # branch can depend on the configured global workspace bounds.
+    falling_reset_racket_follow_xy_canonical_ik: bool = False
     falling_reset_racket_follow_max_error_m: float = 0.015
+    # Host-side pose-preserving reset IK used 0.08 historically.  A versioned
+    # constrained course may increase it when a Cartesian edge solution meets
+    # the position tolerance but starts outside the hard roll/pitch set.
+    falling_reset_racket_follow_ik_orientation_weight: float = 0.08
     falling_reset_contact_rel_height: float = -1.0
     falling_reset_min_downward_speed: float = 0.12
     racket_launch_surface_gap_range_m: tuple[float, float] = (0.005, 0.010)
@@ -1387,8 +1858,12 @@ class MjxJuggleConfig:
     racket_stability_angular_speed_penalty_weight: float = 0.0
     racket_stability_angular_speed_soft_limit_rad_s: float = 0.65
     racket_stability_angular_speed_scale_rad_s: float = 1.0
+    racket_stability_angular_speed_linear_tail: bool = False
     racket_up_drift_vel_thresh: float = 0.02
     racket_flatness_penalty_weight: float = 0.0
+    racket_flatness_use_angle_penalty: bool = False
+    racket_flatness_angle_deadband_rad: float = math.radians(0.25)
+    racket_flatness_angle_scale_rad: float = math.radians(0.75)
     racket_flatness_target_cos: float = 0.970
     racket_flatness_sigma: float = 0.060
     # Event-level contact stability.  This uses the realized racket rigid-body
@@ -1489,6 +1964,11 @@ class MjxJuggleConfig:
     terminate_after_confirmed_hits: int = 0
     hit_rearm_no_contact_steps: int = 2
     hit_rearm_distance: float = 0.035
+    # V71 opt-in: require real vertical separation before XY can rearm.
+    hit_rearm_min_vertical_clearance_m: float = 0.0
+    # Historical racket edge uses MuJoCo's <=2 mm proximity contact. An
+    # opt-in true-penetration mode uses 0 while preserving other-ball detection.
+    hit_racket_contact_edge_distance_m: float = 0.002
     stick_contact_penalty_weight: float = 0.60
     stick_rel_speed_thresh: float = 0.25
     stick_rel_dist_thresh: float = 0.040
@@ -1496,6 +1976,15 @@ class MjxJuggleConfig:
     hit_confirm_rel_height: float = 0.06
     hit_confirm_abs_height: float = 1.00
     hit_confirm_max_steps: int = 70
+    # Legacy hit accounting allows a second physical impact to provide the
+    # launch that confirms a still-pending first edge.  Versioned successors
+    # may terminate when a fully re-armed second edge occurs, so contact state,
+    # racket state and outgoing trajectory remain one atomic physical event.
+    hit_pending_recontact_termination_enabled: bool = False
+    # Opt-in single-impact curricula may also terminate when one atomic edge
+    # fails to produce a qualified launch inside its confirmation window.
+    # Historical recurrent courses keep the pending timeout nonterminal.
+    hit_failed_confirmation_termination_enabled: bool = False
     # Keep survival/event accounting separate from the stricter task-quality
     # confirmation.  These fractions are relative to ``target_height`` and do
     # not change reward or hit_count unless a profile explicitly does so.
@@ -1516,6 +2005,12 @@ class MjxJuggleConfig:
     hit_contact_center_excess_penalty_weight: float = 0.0
     hit_contact_center_excess_radius_m: float = 0.020
     hit_contact_center_excess_sigma_m: float = 0.030
+    # V134 routes the existing center event cost into the fixed-task reward.
+    # Earlier fixed-task profiles deliberately retain their original sum.
+    fixed_contact_include_hit_contact_center_excess_penalty: bool = False
+    fixed_contact_hit_center_penalty_outside_budget: bool = False
+    # V143 closes the reward escape through weak/unqualified physical bounces.
+    fixed_contact_center_penalty_all_physical_outcomes: bool = False
     contact_flatness_penalty_weight: float = 0.45
     # Reward-only periodicity guard for the direct actuator policy.  It does
     # not copy a teacher trajectory or constrain the robot's instantaneous
@@ -1608,6 +2103,13 @@ class MjxJuggleConfig:
     # This optional early-phase barrier keeps a usable gradient on that reset
     # transient without constraining later chase/recovery motion.
     early_racket_xy_anchor_penalty_weight: float = 0.0
+    early_racket_xy_anchor_transition_weight: float | None = None
+    # V129 opt-in: route the existing early anchor cost into fixed-task total.
+    fixed_contact_include_early_racket_xy_anchor_penalty: bool = False
+    # V131 restores raw overflow reward/telemetry, retaining bounded execution.
+    fixed_contact_include_action_clip_excess_penalty: bool = False
+    fixed_contact_early_action_clip_excess_multiplier: float = 1.0
+    fixed_contact_early_action_clip_excess_quadratic: bool = False
     early_racket_xy_anchor_hit_count: int = 0
     early_racket_xy_anchor_deadband_m: float = 0.02
     early_racket_xy_anchor_scale_m: float = 0.05
@@ -1683,6 +2185,10 @@ class MjxJuggleConfig:
     hit_racket_vxy_penalty_weight: float = 0.0
     hit_racket_vxy_penalty_scale_m_s: float = 1.0
     hit_racket_vxy_apply_from_first_hit: bool = False
+    # Zero preserves every historical profile.  Versioned recurrent courses
+    # may protect task-required early lateral recentering and shape only hits
+    # at/after this counted-hit ordinal.
+    hit_racket_vxy_penalty_min_hit_count: int = 0
     # Hits right after the spawn are a recentering transient: the ball is
     # intercepted off-center and lateral racket velocity is what brings it back
     # to the cycle center.  Measured on the v44_r5 policy, contact offset decays
@@ -1736,6 +2242,9 @@ class MjxJuggleConfig:
     hit_next_contact_drag_coefficient_m_inv: float = 0.0
     hit_next_contact_anchor_penalty_weight: float = 0.0
     hit_next_contact_anchor_sigma_m: float = 0.10
+    # Default preserves every historical profile.  Opt-in successors may use
+    # the same bounded centerward target as the return-quality objective.
+    fixed_contact_next_contact_target_mode: str = "episode_anchor"
     # Optional physical flight drag.  Unlike the landing predictor above,
     # this coefficient is applied to the simulated ball at every MuJoCo
     # substep using the paper's full 3-D quadratic drag law.
@@ -1835,6 +2344,7 @@ class MjxJuggleConfig:
     # plant delay, and state projection instead of silently stacking them.
     recovered_rmp_motion_mode: bool = False
     recovered_rmp_period_s: float = 0.001
+    recovered_rmp_physics_substeps_per_tick: int = 1
     recovered_rmp_jnt_kp_scale_per_joint: tuple[float, ...] = (
         1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
     )
@@ -2290,6 +2800,9 @@ class MjxJuggleConfig:
     use_delay_bin_value_heads: bool = False  # TODO: PPO critic still uses one value head.
     asymmetric_critic: bool = False
     critic_command_history_steps: int = 4
+    # V173 alone restores the task history/forecast removed from its actor.
+    # The actor remains72-D and every historical critic layout defaults off.
+    critic_fixed_plane_task_context: bool = False
     # Append the sim2real-curriculum privileged block to the asymmetric critic
     # observation: per-joint second-order actuator residuals, execution-hold
     # state, ball inertia/spin, and ball-observation frame bias.  These are the
@@ -2312,6 +2825,820 @@ class MjxJuggleConfig:
     contact_height_offset: float = 0.0
     max_contact_time: float = 0.50
     lost_ball_timeout_ms: float = 150.0
+
+
+@dataclass(frozen=True)
+class MjxBaseModeConfig(MjxJuggleConfig):
+    """Opt-in model-level base geometry/constraint configuration.
+
+    Keeping this field in a subclass preserves the serialized ``env_cfg`` of
+    every historical profile byte-for-byte. The base environment interprets a
+    plain ``MjxJuggleConfig`` as the legacy floating mode.
+    """
+
+    simulation_base_mode: str = "aligned_fixed"
+
+
+@dataclass(frozen=True)
+class MjxBallRacketContactPairConfig(MjxBaseModeConfig):
+    """Default-off complete compiled ball-racket pair configuration."""
+
+    # MuJoCo stores two tangential, one spin, and two rolling friction
+    # coordinates. Keeping this opt-in contract in a subclass preserves every
+    # historical MjxJuggleConfig serialization.
+    ball_racket_collision_geometry: str = "legacy_cylinder"
+    ball_racket_pair_override_enabled: bool = False
+    ball_racket_pair_solref: tuple[float, float] = (0.003, 0.80)
+    ball_racket_pair_solreffriction: tuple[float, float] = (0.0, 0.0)
+    ball_racket_pair_solimp: tuple[float, float, float, float, float] = (
+        0.90,
+        0.995,
+        0.001,
+        0.5,
+        2.0,
+    )
+    ball_racket_pair_friction: tuple[float, float, float, float, float] = (
+        0.35,
+        0.002,
+        0.0001,
+        0.0001,
+        0.0001,
+    )
+    ball_racket_pair_margin_m: float = 0.0
+    ball_racket_pair_gap_m: float = 0.0
+    ball_racket_pair_condim: int = 3
+    ball_racket_pair_tie_tangent_friction_dr: bool = False
+
+
+@dataclass(frozen=True)
+class MjxFixedContactPlaneVisionConfig(MjxBallRacketContactPairConfig):
+    """Opt-in from-scratch fixed-plane, vision-robust QVEL course.
+
+    The subclass is intentionally separate from every released 50/57/67-D
+    profile.  Its checkpoint schema and reward semantics may therefore change
+    without reinterpreting a historical actor.
+    """
+
+    fixed_contact_plane_training_enabled: bool = True
+    ball_racket_contact_boundary_mode: str = "robot_dynamic"
+    fixed_contact_actor_observation_schema: str = (
+        "fixed_contact_plane_v1_separate_current_future_80d"
+    )
+    fixed_contact_training_phase: str = "s0_tracking"
+    fixed_contact_disable_ball_racket_collision: bool = False
+    fixed_contact_surface_z_m: float = 1.075
+    fixed_contact_workspace_center_xy_m: tuple[float, float] = (0.0, -0.49)
+    fixed_contact_ball_xy_bounds_relative_anchor_m: tuple[
+        float, float, float, float
+    ] = (-0.30, 0.50, -0.25, 0.20)
+    fixed_contact_ball_z_bounds_m: tuple[float, float] = (0.98, 1.50)
+    fixed_contact_racket_x_bounds_m: tuple[float, float] = (-0.348, 0.348)
+    fixed_contact_racket_y_bounds_m: tuple[float, float] = (-0.70, -0.28)
+    fixed_contact_racket_z_bounds_m: tuple[float, float] = (1.002, 1.120)
+    fixed_contact_camera_depth_bounds_m: tuple[float, float] = (0.35, 0.90)
+    fixed_contact_eval_grid_x_m: tuple[float, ...] = (
+        -0.30, -0.20, -0.10, 0.0, 0.10, 0.20, 0.30
+    )
+    fixed_contact_eval_grid_y_m: tuple[float, ...] = (
+        -0.18, -0.12, -0.06, 0.0, 0.06, 0.12, 0.18
+    )
+    fixed_contact_xy_bin_sampling_enabled: bool = False
+    fixed_contact_xy_equal_bin_evaluation: bool = False
+    # Preserve equal bin counts but rotate coordinates across environment
+    # lanes per reset seed.  This removes lane/coordinate confounding from
+    # multi-seed frozen evaluation and is default-off for historical runs.
+    fixed_contact_xy_equal_bin_seed_permutation: bool = False
+    # Deterministically cover every XY-bin x discrete reset-blend cell.  This
+    # is stricter than the historical XY-only assignment and remains opt-in.
+    fixed_contact_factorized_reset_evaluation: bool = False
+    # A training stage may sample a focused reset distribution while its
+    # frozen advancement environment covers the full registered product grid.
+    fixed_contact_factorized_reset_validation_enabled: bool = False
+    fixed_contact_factorized_reset_validation_blend_choices: (
+        tuple[float, ...] | None
+    ) = None
+    # Resolve intermediate reset distances in Cartesian task space before the
+    # pose-preserving IK lookup.  False preserves historical joint blending.
+    fixed_contact_cartesian_reset_blend_enabled: bool = False
+    # Expand the host-side IK lookup to include the Cartesian locations
+    # requested by every configured blend.  This is separately opt-in because
+    # historical singleton-target courses silently snapped scaled requests
+    # back to their only target-table entry.
+    fixed_contact_cartesian_reset_blend_expand_ik_domain: bool = False
+    # Reset is an episode bookkeeping boundary, not a real camera cold start.
+    # Opt in to seed the visible velocity with the initialized flight state.
+    fixed_contact_reset_observation_uses_ball_init_velocity: bool = False
+    fixed_contact_xy_center_probability: float = 0.60
+    fixed_contact_xy_bin_jitter_m: float = 0.015
+    fixed_contact_high_ball_predictor_enabled: bool = False
+    fixed_contact_high_ball_predictor: HighBallPredictorConfig = (
+        HighBallPredictorConfig()
+    )
+    fixed_contact_target: ContactTargetConfig = ContactTargetConfig()
+    fixed_contact_quality_reward_weight: float = 1.0
+    fixed_contact_quality_joint_floor_mix: float = 0.0
+    # V114 opt-in repair. Scale positive fixed-contact hit/count credit by
+    # the weakest contact/return quality while retaining a ``1-mix`` floor.
+    # Zero preserves every historical reward path exactly.
+    fixed_contact_event_joint_quality_gate_mix: float = 0.0
+    fixed_contact_return_reward_weight: float = 0.0
+    fixed_contact_survival_reward_weight: float = 0.02
+    fixed_contact_tracking_potential_weight: float = 0.0
+    fixed_contact_final_brake_weight: float = 0.0
+    fixed_contact_final_window_s: float = 0.080
+    fixed_contact_reward_mode: str = "fixed_contact_positive_v1"
+    # ``logical`` preserves historical conversion denominators.  The opt-in
+    # raw mode counts every in-contact rising edge and is required when a
+    # curriculum claims physical-edge conversion.
+    fixed_contact_conversion_edge_mode: str = "logical"
+    # V2 opt-in repair.  Defaults preserve the actually trained V1 behavior.
+    fixed_contact_workspace_termination_penalty_enabled: bool = False
+    # Optional dense guard inside the unchanged physical racket-Z workspace.
+    # Historical courses keep weight zero.  A versioned successor may combine
+    # it with a slightly inset command projection and the hard outer terminal
+    # penalty so tracking lag cannot exploit an unpenalized boundary exit.
+    fixed_contact_workspace_z_barrier_weight: float = 0.0
+    fixed_contact_workspace_z_barrier_margin_m: float = 0.008
+    # V135 corrects only the reward coordinate; termination still uses rpos.
+    fixed_contact_workspace_z_barrier_use_site_height: bool = False
+    fixed_contact_workspace_z_barrier_downward_lookahead_s: float = 0.0
+    # Keep the historical hard XYZ termination by default.  S0 acquisition
+    # curricula may explicitly leave these terms diagnostic-only while still
+    # using dense errors and strict graduation gates.
+    fixed_contact_workspace_termination_enabled: bool = True
+    fixed_contact_racket_surface_size_axis: int = 1
+    fixed_contact_surface_frame_mode: str = "legacy"
+    # S0 only: begin braking before, rather than at, the arrival deadline.
+    fixed_contact_s0_settle_lead_s: float = 0.0
+    # Placed-ball successors may bound pre-hit preparation credit so keeping
+    # the ball stuck on the racket cannot outperform launching it.  Infinity
+    # preserves every historical fixed-contact reward.
+    fixed_contact_pre_hit_s0_reward_max_s: float = float("inf")
+    # Optional reset-family-specific acquisition credit.  This keeps placed
+    # launch lanes on their historical zero pre-hit budget while giving new
+    # falling-contact recovery lanes a bounded dense target-readiness signal.
+    fixed_contact_falling_pre_hit_s0_reward_max_s: float = 0.0
+    # Optional direct-juggling deadline. A zero value preserves all historical
+    # termination behavior; positive values classify a nonpending zero-hit
+    # timeout as a miss so waiting on the initialized ball is not a solution.
+    fixed_contact_first_hit_deadline_s: float = 0.0
+    # Optional recurrent-cycle deadline measured from the latest counted hit.
+    # A zero value preserves all historical termination behavior.  Positive
+    # values make "one hit, then wait until truncation" an explicit miss.
+    fixed_contact_recurrent_hit_deadline_s: float = 0.0
+    # Fresh direct-juggling courses may use a bounded vertical launch signal
+    # for only the first few control ticks.  Defaults preserve all old runs.
+    fixed_contact_pre_hit_launch_vz_reward_weight: float = 0.0
+    fixed_contact_pre_hit_launch_vz_target_m_s: float = 0.5
+    fixed_contact_pre_hit_launch_vz_window_s: float = 0.0
+    fixed_contact_pre_hit_launch_command_vz_reward_weight: float = 0.0
+    fixed_contact_pre_hit_launch_reward_stops_on_pending_hit: bool = False
+    # Causal collision-on counterpart: after the first confirmed hit, reward
+    # upward racket motion only inside the predicted pre-contact window.
+    fixed_contact_recurrent_launch_vz_reward_weight: float = 0.0
+    fixed_contact_recurrent_launch_vz_target_m_s: float = 0.5
+    fixed_contact_recurrent_launch_vz_window_s: float = 0.0
+    fixed_contact_recurrent_launch_min_hit_count: int = 1
+    # Opt-in plant-aware curriculum signal: a smooth vertical stroke that is
+    # already back at zero before the collision-time stability window.
+    fixed_contact_smooth_stroke_vz_penalty_weight: float = 0.0
+    fixed_contact_smooth_stroke_peak_m_s: float = 0.8
+    fixed_contact_smooth_stroke_lead_s: float = 0.18
+    fixed_contact_smooth_stroke_brake_lead_s: float = 0.06
+    fixed_contact_smooth_stroke_error_scale_m_s: float = 0.20
+    fixed_contact_smooth_stroke_min_hit_count: int = 0
+    # Positive-only successor to the smooth stroke cost.  Keeping this
+    # separate preserves every serialized historical reward exactly.
+    fixed_contact_smooth_stroke_vz_reward_weight: float = 0.0
+    # A bounded, once-per-episode bridge credit for accepting the post-second
+    # hit tail instead of learning to avoid the handoff state entirely.
+    fixed_contact_post_second_hit_handoff_reward_weight: float = 0.0
+    fixed_contact_post_second_hit_handoff_count: int = 2
+    # Outcome-aligned alternative to a dense TTC-indexed stroke trajectory.
+    # It scores actual racket vertical speed only at a physical contact edge.
+    fixed_contact_edge_racket_vz_target_reward_weight: float = 0.0
+    fixed_contact_edge_racket_vz_target_m_s: float = 0.15
+    fixed_contact_edge_racket_vz_sigma_m_s: float = 0.08
+    fixed_contact_edge_racket_vz_min_hit_count: int = 2
+    fixed_contact_edge_racket_vz_qz_gate_mix: float = 0.0
+    fixed_contact_phase_stroke_z_penalty_weight: float = 0.0
+    fixed_contact_phase_stroke_target_vz_m_s: float = 0.15
+    fixed_contact_phase_stroke_lead_s: float = 0.12
+    fixed_contact_phase_stroke_prepare_s: float = 0.12
+    fixed_contact_phase_stroke_error_scale_m: float = 0.015
+    fixed_contact_phase_stroke_min_hit_count: int = 2
+    fixed_contact_phase_stroke_replace_dense_z_target: bool = False
+    fixed_contact_phase_stroke_command_vz_penalty_weight: float = 0.0
+    fixed_contact_phase_stroke_command_vz_error_scale_m_s: float = 0.10
+    # Opt-in impact-consistent recurrent boundary.  The required racket speed
+    # is solved jointly from the registered plane, incoming ball velocity and
+    # target apex, then credited in the dynamic five-dimensional surface-twist
+    # space that survives the Cartesian hard projection.  Historical profiles
+    # keep this disabled and retain their scalar warm-Jacobian semantics.
+    fixed_contact_impact_consistent_stroke_enabled: bool = False
+    fixed_contact_impact_effective_restitution: float = 0.775
+    fixed_contact_impact_min_racket_vz_m_s: float = 0.20
+    fixed_contact_impact_max_racket_vz_m_s: float = 0.50
+    fixed_contact_impact_task_twist_penalty_weight: float = 0.0
+    fixed_contact_impact_task_twist_xy_position_gain_s: float = 8.0
+    fixed_contact_impact_task_twist_z_position_gain_s: float = 12.0
+    fixed_contact_impact_task_twist_max_vxy_m_s: float = 0.30
+    fixed_contact_impact_task_twist_max_vz_m_s: float = 0.80
+    fixed_contact_impact_task_twist_xy_error_scale_m_s: float = 0.10
+    fixed_contact_impact_task_twist_z_error_scale_m_s: float = 0.10
+    fixed_contact_impact_task_twist_omega_error_scale_rad_s: float = 0.50
+    fixed_contact_impact_task_twist_aggregation: str = "mean"
+    fixed_contact_impact_edge_vz_reward_weight: float = 0.0
+    fixed_contact_impact_edge_vz_sigma_m_s: float = 0.08
+    # Bound post-hit S0 state reward to the useful pre-contact approach and
+    # remove the vertical stationary target during the commanded up-stroke.
+    fixed_contact_post_hit_s0_window_s: float = float("inf")
+    fixed_contact_s0_suppress_z_during_launch: bool = False
+    # A direct-juggling bridge may teach the downward half of the stroke
+    # after a physical contact edge, so the ball separates from the racket
+    # and reaches the existing confirmation gate.  Defaults are inert.
+    fixed_contact_pending_hit_retract_vz_reward_weight: float = 0.0
+    fixed_contact_pending_hit_retract_vz_target_m_s: float = 0.5
+    fixed_contact_pending_hit_retract_vz_window_s: float = 0.0
+    fixed_contact_pending_hit_retract_command_vz_reward_weight: float = 0.0
+    fixed_contact_pending_hit_retract_all_hits: bool = False
+    # The general reward logs a sticky-contact penalty, but historical
+    # fixed-contact reward reconstruction omitted it.  Keep that behavior by
+    # default and enable the repair only in a new versioned course.
+    fixed_contact_include_stick_penalty: bool = False
+    # V65/V66 root-cause repair.  Historical fixed-contact profiles computed
+    # and logged the general recovery/cadence terms below but discarded them
+    # when replacing the general reward with ``fixed_contact_reward_sum``.
+    # Keep the observed V1--V64 reward exact unless a new course opts in.
+    fixed_contact_include_task_aligned_auxiliary_reward: bool = False
+    # Historical fixed-contact reward replacement discarded the declared
+    # quality-independent hit credits computed inside ``_reward``.  Keep the
+    # family default-off so every prior profile/checkpoint is exact; versioned
+    # successors may restore it without double-counting fixed hit quality.
+    fixed_contact_include_recurrent_event_reward: bool = False
+    fixed_contact_s0_xy_reward_weight: float = 0.0
+    fixed_contact_s0_z_reward_weight: float = 0.0
+    fixed_contact_s0_pose_reward_weight: float = 0.0
+    fixed_contact_s0_vxy_reward_weight: float = 0.0
+    fixed_contact_s0_omega_reward_weight: float = 0.0
+    fixed_contact_s0_xy_reward_sigma_m: float = 0.120
+    fixed_contact_s0_z_reward_sigma_m: float = 0.040
+    fixed_contact_s0_pose_reward_sigma_rad: float = float(np.deg2rad(10.0))
+    fixed_contact_s0_vxy_reward_sigma_m_s: float = 0.250
+    fixed_contact_s0_omega_reward_sigma_rad_s: float = 1.50
+    fixed_contact_s0_xy_gate_sigma_m: float = 0.040
+    fixed_contact_s0_z_gate_sigma_m: float = 0.020
+    fixed_contact_s0_pose_gate_sigma_rad: float = float(np.deg2rad(5.0))
+    fixed_contact_s0_vxy_gate_sigma_m_s: float = 0.120
+    fixed_contact_s0_omega_gate_sigma_rad_s: float = 1.00
+    # V3 timed-intercept reward.  Broad terms above retain approach gradient;
+    # these tighter terms activate only near the planned contact deadline.
+    fixed_contact_s0_final_xy_reward_weight: float = 0.0
+    fixed_contact_s0_final_z_reward_weight: float = 0.0
+    fixed_contact_s0_final_pose_reward_weight: float = 0.0
+    fixed_contact_s0_final_xy_reward_sigma_m: float = 0.020
+    fixed_contact_s0_final_z_reward_sigma_m: float = 0.010
+    fixed_contact_s0_final_pose_reward_sigma_rad: float = float(
+        np.deg2rad(3.0)
+    )
+    # This is an additional bounded bonus, never the sole gradient.  It is
+    # paid only when every physical contact-readiness condition holds at once.
+    fixed_contact_s0_readiness_bonus_weight: float = 0.0
+    fixed_contact_s0_ready_max_xy_error_m: float = 0.020
+    fixed_contact_s0_ready_max_z_error_m: float = 0.010
+    fixed_contact_s0_ready_max_pose_error_rad: float = float(np.deg2rad(3.0))
+    fixed_contact_s0_ready_max_vxy_m_s: float = 0.080
+    fixed_contact_s0_ready_max_omega_rad_s: float = 0.75
+    # V20 collision-off shaping. Position/orientation costs remain active
+    # throughout the valid approach; motion costs activate only in the final
+    # deadline window so the racket can move quickly before it must settle.
+    fixed_contact_s0_gate_aligned_position_weight: float = 0.0
+    fixed_contact_s0_gate_aligned_motion_weight: float = 0.0
+    # V138 opt-in repair. Penalize the weakest normalized readiness
+    # violation only in the exact registered arrival window. Zero preserves
+    # every historical course and checkpoint.
+    fixed_contact_s0_arrival_worst_constraint_penalty_weight: float = 0.0
+    # V57 opt-in lexicographic settling cost.  Five zeros preserve the
+    # historical always-active generic action penalty.
+    fixed_contact_s0_action_penalty_min_gate_scores: tuple[
+        float, float, float, float, float
+    ] = (0.0, 0.0, 0.0, 0.0, 0.0)
+    # V59 replaces V57's negative boundary discontinuity with a bounded
+    # nonnegative low-action score.  Zero preserves every earlier profile.
+    fixed_contact_s0_qualified_low_action_reward_weight: float = 0.0
+    # V22 opt-in target/reward alignment.  The explicit current-ball actor
+    # slots remain the latest 90 Hz sample; only the generated ContactTarget
+    # is advanced to the current 200 Hz query time.
+    fixed_contact_propagate_held_ball_state_to_query_time: bool = False
+    fixed_contact_reward_uses_policy_target: bool = False
+    # V22 opt-in hard-component event shaping.  Historical fixed-contact
+    # profiles retain their weighted-average-only event reward.
+    fixed_contact_outcome_constraint_penalty_weight: float = 0.0
+    fixed_contact_outcome_constraint_bonus_weight: float = 0.0
+    fixed_contact_outcome_constraint_aggregation: str = "sum"
+    # Zero preserves the original all-hit penalty; V128 shapes hit four onward.
+    fixed_contact_outcome_constraint_min_hit_count: int = 0
+    # V128 opt-in launch/early-hit lateral motion cost; zero preserves legacy.
+    fixed_plane_v128_early_xy_motion_weight: float = 0.0
+    fixed_plane_v132_early_ball_xy_motion_weight: float = 0.0
+    fixed_plane_v138_early_ball_xy_deadband_m_s: float = 0.03
+    fixed_plane_v138_early_ball_xy_scale_m_s: float = 0.05
+    fixed_plane_v134_late_xy_anchor_penalty_weight: float = 0.0
+    fixed_plane_v146_ball_anchor_xy_penalty_weight: float = 0.0
+    # V140 opt-in lexicographic event contract.  A positive value below one
+    # prevents confirmed-hit quality penalties from outweighing all positive
+    # hit credit.  The companion flag restores the adaptive reflected-
+    # velocity and next-anchor event terms that historical fixed-contact
+    # reward replacement computed but omitted.  Defaults preserve old runs.
+    fixed_contact_hit_event_penalty_budget_fraction: float = 0.0
+    fixed_contact_include_adaptive_event_penalties: bool = False
+    fixed_contact_return_apex_sigma_m: float = 0.020
+    # V37 opt-in placed-ball repair.  The legacy Gaussian return reward is
+    # gated by a valid next crossing and becomes flat for gross launch errors.
+    # This event cost is independent of that crossing-validity gate; a zero
+    # default keeps every historical profile numerically unchanged.
+    fixed_contact_apex_error_penalty_weight: float = 0.0
+    fixed_contact_apex_error_penalty_scale_m: float = 0.100
+    # Diagnostic/gate band for proving that contact readiness was reached at
+    # the start of the requested 80--100 ms settle interval.
+    fixed_contact_s0_arrival_window_s: tuple[float, float] = (0.080, 0.100)
+    # Historical hold diagnostics cover 60--100 ms before impact. Opt-in
+    # full-history stages move this interval ahead of the strike reference.
+    fixed_contact_ready_hold_window_s: tuple[float, float] = (0.060, 0.100)
+    fixed_contact_outcome_max_surface_z_error_m: float = 0.010
+    fixed_contact_outcome_max_pose_error_rad: float = float(np.deg2rad(3.0))
+    fixed_contact_outcome_max_racket_vxy_m_s: float = 0.050
+    fixed_contact_outcome_max_racket_omega_rad_s: float = 0.50
+    fixed_contact_outcome_max_contact_offset_m: float = 0.020
+    fixed_contact_outcome_max_horizontal_step_m: float = 0.050
+    fixed_contact_outcome_max_outward_progress_m: float = 0.002
+    fixed_contact_actor_obs_dim: int = FIXED_CONTACT_ACTOR_OBS_DIM
+
+
+@dataclass(frozen=True)
+class MjxFixedContactCartesianPoseConstraintConfig(
+    MjxFixedContactPlaneVisionConfig
+):
+    """Opt-in hard policy-reference pose set for V85/V86 and successors.
+
+    The outer XYZ and relative-roll/pitch limits are fixed deployment
+    constants.  A small inner margin absorbs float32 FK linearization error;
+    an exact candidate FK check still falls back to the previously safe
+    reference before the target reaches recovered RMP.  Yaw is deliberately
+    excluded from the constraint mask.
+    """
+
+    cartesian_pose_projection_enabled: bool = True
+    cartesian_pose_position_lower_m: tuple[float, float, float] = (
+        -0.348,
+        -0.700,
+        1.002,
+    )
+    cartesian_pose_position_upper_m: tuple[float, float, float] = (
+        0.348,
+        -0.280,
+        1.120,
+    )
+    cartesian_pose_rpy_axis_enabled: tuple[bool, bool, bool] = (
+        True,
+        True,
+        False,
+    )
+    cartesian_pose_roll_limit_deg: float = 2.0
+    cartesian_pose_pitch_limit_deg: float = 2.0
+    cartesian_pose_position_margin_m: float = 0.0005
+    cartesian_pose_orientation_margin_deg: float = 0.10
+    cartesian_pose_position_cbf_gain_s: float = 20.0
+    cartesian_pose_orientation_cbf_gain_s: float = 20.0
+    cartesian_pose_projection_sweeps: int = 24
+    cartesian_pose_projection_tolerance: float = 2.0e-5
+    cartesian_pose_projection_penalty_weight: float = 0.05
+    # Fail closed during environment construction if any XY reset lookup
+    # reference lies outside the same outer XYZ/roll/pitch set enforced at
+    # every policy step.  Default-off preserves V85--V94 lookup tables.
+    cartesian_pose_require_reset_reference_safe: bool = False
+
+
+@dataclass(frozen=True)
+class MjxPredictiveContactCurriculumConfig(
+    MjxFixedContactCartesianPoseConstraintConfig
+):
+    """Default-off V146/V147 skill decomposition and instrumentation.
+
+    Keeping the fields in a new subclass preserves every historical fixed-
+    contact config serialization.  ``legacy`` plus the false/zero defaults is
+    numerically inert even when this class is constructed explicitly.
+    """
+
+    fixed_contact_skill_mode: str = "legacy"
+    fixed_contact_ttc_phase_schedule_enabled: bool = False
+    fixed_contact_ttc_arrival_start_s: float = 0.100
+    fixed_contact_ttc_settle_start_s: float = 0.080
+    fixed_contact_ttc_strike_start_s: float = 0.060
+    fixed_contact_arrival_terminate_ttc_s: float = 0.020
+    fixed_contact_reset_mixture_arrival_only: float = 0.0
+    fixed_contact_reset_mixture_arrived_hit: float = 0.0
+    fixed_contact_reset_mixture_recurrent: float = 1.0
+    fixed_contact_arrived_hit_ttc_range_s: tuple[float, float] = (0.080, 0.100)
+    scripted_airborne_handoff_enabled: bool = False
+    scripted_airborne_handoff_ttc_range_s: tuple[float, float] = (0.16, 0.21)
+    scripted_airborne_handoff_surface_gap_m: float = 0.001
+    scripted_airborne_handoff_target_apex_abs_m: float = 0.0
+    fixed_contact_actual_event_alignment_enabled: bool = False
+    fixed_contact_contact_duration_metrics_enabled: bool = False
+    # Historical conversion divides counted hits by every physical contact
+    # edge, including contacts right-censored by the finite episode horizon.
+    # Versioned successors can instead use only counted/explicit-failed
+    # outcomes while logging terminal pending contacts separately.
+    fixed_contact_contact_conversion_resolved_only: bool = False
+    # V149: exact TTC deadline credit.  Both weights default to zero so the
+    # V146/V148 transition and reward paths remain numerically unchanged.
+    fixed_contact_ready_deadline_s: float = 0.100
+    fixed_contact_ready_deadline_success_weight: float = 0.0
+    fixed_contact_ready_deadline_miss_weight: float = 0.0
+    # V163: the reset distance and available movement/braking time form one
+    # closed-loop feasibility contract.  The row-major table covers the
+    # registered evaluation XY grid at blend=0.8; blend=1.0 keeps the
+    # zero-distance floor.  Raw TTC choices are used only to make frozen
+    # validation cover the same conditioned strata deterministically.
+    fixed_contact_feasibility_conditioned_reset_enabled: bool = False
+    fixed_contact_blend080_ttc_floor_grid_s: tuple[float, ...] = ()
+    fixed_contact_zero_distance_ttc_floor_s: float = 0.22
+    fixed_contact_feasibility_reference_blend: float = 0.80
+    fixed_contact_factorized_reset_validation_ttc_choices_s: (
+        tuple[float, ...] | None
+    ) = None
+    # V150: explicit post-hit interfaces.  These are lesson termination
+    # conditions, never generic success conditions for historical profiles.
+    fixed_contact_post_hit_recovery_lesson_enabled: bool = False
+    fixed_contact_post_hit_recovery_min_elapsed_s: float = 0.050
+    fixed_contact_post_hit_recovery_min_surface_gap_m: float = 0.010
+    fixed_contact_post_hit_recovery_max_racket_z_error_m: float = 0.025
+    fixed_contact_post_hit_recovery_max_pose_error_rad: float = float(
+        np.deg2rad(3.0)
+    )
+    # V153 opt-in: recovery means the complete contact-ready racket state,
+    # not only Z and pose.  Reuse the registered S0 XY/VXY/omega limits.
+    fixed_contact_post_hit_recovery_require_full_readiness: bool = False
+    # V161 opt-in: a recovered racket must be vertically stationary enough to
+    # remain inside the target set under the next control tick.  Earlier
+    # profiles deliberately preserve their five-component readiness contract.
+    fixed_contact_post_hit_recovery_require_vertical_stability: bool = False
+    fixed_contact_post_hit_recovery_max_vz_m_s: float = 0.080
+    # V164: a normal juggling success may be defined by a real Nth hit and
+    # clean separation, without incorrectly demanding a static racket state.
+    fixed_contact_post_hit_recovery_min_confirmed_hits: int = 1
+    fixed_contact_post_hit_recovery_require_reference_readiness: bool = True
+    # V156 opt-in: evaluate recovery against the actor-visible predicted
+    # contact target and racket surface, instead of the privileged episode
+    # reset anchor and site-center velocity used by V150/V153.
+    fixed_contact_post_hit_recovery_use_policy_target: bool = False
+    # V158 opt-in: the one-hit lesson ends before the next final-TTC window,
+    # so expose VXY/omega/readiness shaping throughout actor-visible post-hit
+    # recovery.  False preserves every historical reward and metric mask.
+    fixed_contact_post_hit_recovery_dense_motion_enabled: bool = False
+    fixed_contact_post_hit_recovery_success_weight: float = 0.0
+    # V160 opt-in: align the one-hit lesson's scalar objective with its
+    # conjunctive success gate, make full-horizon non-recovery (including a
+    # zero-hit escape) worse than early success. Zero preserves prior profiles.
+    fixed_contact_post_hit_recovery_worst_constraint_penalty_weight: float = 0.0
+    fixed_contact_post_hit_recovery_joint_constraint_penalty_weight: float = 0.0
+    fixed_contact_post_hit_recovery_timeout_penalty_weight: float = 0.0
+    fixed_contact_post_hit_recovery_failure_penalty_weight: float = 0.0
+    fixed_contact_return_basin_lesson_enabled: bool = False
+    fixed_contact_return_basin_ttc_s: float = 0.100
+    fixed_contact_return_basin_success_weight: float = 0.0
+    fixed_contact_post_first_hit_alive_requires_free_flight: bool = False
+    fixed_contact_include_failed_hit_penalty: bool = False
+    # Opt-in from-scratch limit-cycle method.  One goal-conditioned apex
+    # schedule replaces simultaneous launch/steady reward targets: hit-count
+    # 0 is launch, intermediate confirmed hits interpolate, and the registered
+    # count and above use the steady orbit.  Defaults preserve every existing
+    # profile and checkpoint.
+    fixed_plane_limit_cycle_v1_enabled: bool = False
+    fixed_plane_limit_cycle_launch_apex_z_m: float = 1.10
+    fixed_plane_limit_cycle_steady_apex_z_m: float = 1.45
+    fixed_plane_limit_cycle_transition_confirmed_hits: int = 2
+    # Empty preserves every V1--V21 linear schedule exactly.
+    fixed_plane_limit_cycle_apex_schedule_z_m: tuple[float, ...] = ()
+    # Experimental only: insert goal-conditioned outcome credit in the actual fixed-contact return.
+    fixed_plane_rapid_steady_apex_event_reward_enabled: bool = False
+    # V24 only: reward recurrent subfloor launch height before confirmation.
+    fixed_plane_rapid_steady_subfloor_bridge_enabled: bool = False
+    # V25 opt-in: shape failed recurrent lift and confirmed low-motion impact.
+    fixed_plane_rapid_steady_subfloor_bridge_weight: float = 1.0
+    fixed_plane_rapid_steady_late_motion_vxy_weight: float = 0.0
+    fixed_plane_rapid_steady_late_motion_omega_weight: float = 0.0
+    # V26 opt-in: align before the 200 ms recurrent pre-stroke, then brake.
+    fixed_plane_rapid_steady_preimpact_motion_lead_s: float = 0.0
+    # V27 opt-in: make a held ball inherit near-zero lateral/rotational speed.
+    fixed_plane_rapid_steady_launch_hold_vxy_weight: float = 0.0
+    fixed_plane_rapid_steady_launch_hold_omega_weight: float = 0.0
+    # V32 reward-only contrast at confirmed impacts; raw contact metrics and
+    # all older profiles remain on their unchanged 0.05 m/s quality kernel.
+    fixed_plane_limit_cycle_contact_vxy_event_reward_weight: float = 0.0
+    fixed_plane_limit_cycle_contact_vxy_event_sigma_m_s: float = 0.25
+    fixed_plane_limit_cycle_contact_vxy_event_reference_m_s: float = 0.30
+    # V34 opt-in; historical profiles retain zero reward and old endings.
+    fixed_plane_v34_quiet_motion_weight: float = 0.0
+    fixed_plane_v34_quiet_motion_lead_s: float = 0.18
+    fixed_plane_v34_weak_launch_weight: float = 0.0
+    fixed_plane_v34_resolve_weak_launch: bool = False
+    fixed_plane_v36_weak_floor_penalty_weight: float = 0.0
+    fixed_plane_v36_weak_floor_margin_m: float = 0.025
+    fixed_plane_v36_weak_floor_gap_scale_m: float = 0.15
+    fixed_plane_v41_outcome_credit_weight: float = 0.0
+    fixed_plane_v51_late_weak_floor_multiplier: float = 1.0
+    # V53 opt-in: actual Vz deficit on fast fourth-plus arrivals only.
+    fixed_plane_v53_fast_arrival_vz_penalty_weight: float = 0.0
+    # V54 opt-in: score every fourth-plus physical rebound, including weak ones.
+    fixed_plane_v54_late_apex_score_weight: float = 0.0
+    fixed_plane_v54_recovery_arrival_enabled: bool = False
+    fixed_plane_v54_late_weak_credit_disabled: bool = False
+    # V58 opt-in: charge only increased apex error on consecutive late launches.
+    fixed_plane_v58_apex_error_expansion_weight: float = 0.0
+    # V80 opt-in: all late physical rebounds and adjacent height changes.
+    fixed_plane_v80_steady_height_weight: float = 0.0
+    fixed_plane_v80_high_start_z_m: float = 1.450
+    fixed_plane_v80_high_cost_weight: float = 3.0
+    fixed_plane_v80_pair_cost_weight: float = 4.0
+    fixed_plane_v88_positive_height_weight: float = 0.0
+    fixed_plane_v90_smooth_height_enabled: bool = False
+    fixed_plane_v92_signed_height_enabled: bool = False
+    fixed_plane_v92_signed_height_reward_scale: float = 1.0
+    fixed_plane_v92_history_obs_enabled: bool = False
+    fixed_plane_v93_contact_context_enabled: bool = False
+    fixed_plane_v99_contiguous_history_obs_enabled: bool = False
+    fixed_plane_v149_simple_obs_enabled: bool = False
+    fixed_plane_v94_pending_recontact_as_miss: bool = False
+    fixed_plane_v94_first_hit_apex_reward_weight: float = 0.0
+    fixed_plane_v94_first_hit_apex_sigma_m: float = 0.05
+    fixed_plane_v94_first_hit_early_failure_weight: float = 0.0
+    fixed_plane_v94_first_hit_early_failure_window_s: float = 0.5
+    # V95: true second/third confirmed rebounds, default off elsewhere.
+    fixed_plane_v95_second_hit_apex_reward_weight: float = 0.0
+    fixed_plane_v95_third_hit_apex_reward_weight: float = 0.0
+    fixed_plane_v95_early_hit_apex_sigma_m: float = 0.07
+    fixed_plane_v95_early_hit_low_margin_m: float = 0.06
+    fixed_plane_v95_early_hit_low_penalty_weight: float = 4.0
+    # V96 opt-in: reward only the second rebound's future contact viability.
+    fixed_plane_v96_second_hit_viability_weight: float = 0.0
+    fixed_plane_v96_second_hit_viability_center: float = 0.35
+    fixed_plane_v96_second_hit_viability_reference_quality: float = 0.65
+    # V106 opt-in: ball-to-racket clearance progress after first real contact.
+    fixed_plane_v106_first_launch_progress_weight: float = 0.0
+    fixed_plane_v106_post_hit_quiet_weight: float = 0.0
+    fixed_plane_v106_first_hit_promptness_weight: float = 0.0
+    # V107 opt-in: longer first carry/release, later hits retain legacy gates.
+    fixed_plane_v107_first_confirm_rel_height_m: float = 0.0
+    fixed_plane_v107_first_confirm_max_steps: int = 0
+    fixed_plane_v107_first_stick_grace_steps: int = 0
+    fixed_plane_v107_first_height_progress_weight: float = 0.0
+    fixed_plane_v107_first_height_progress_target_lift_m: float = 0.090
+    fixed_plane_v108_first_contact_lift_weight: float = 0.0
+    fixed_plane_v108_first_contact_lift_target_m: float = 0.090
+    fixed_plane_v109_include_acceleration_usage_penalty: bool = False
+    fixed_plane_v110_include_hit_flatness_penalty: bool = False
+    fixed_plane_v110_qacc_soft_penalty_weight: float = 0.0
+    fixed_plane_v110_qacc_soft_margin_ratio: float = 0.90
+    # V69 opt-in: one actual-ball-speed credit at failed first contact.
+    fixed_plane_v69_failed_first_peak_vz_reward_weight: float = 0.0
+    fixed_plane_v72_atomic_pending_recontact_enabled: bool = False
+    fixed_plane_v75_post_hit_target_progress_weight: float = 0.0
+    fixed_plane_v75_post_hit_target_progress_lead_s: float = 0.08
+    fixed_plane_v75_post_hit_target_progress_max_step_m: float = 0.03
+    fixed_plane_v75_post_hit_target_progress_min_hit_count: int = 1
+    fixed_plane_v115_third_hit_bonus_weight: float = 0.0
+    fixed_plane_v116_post_second_intercept_weight_per_s: float = 0.0
+    fixed_plane_v116_post_second_intercept_sigma_m: float = 0.06
+    fixed_plane_v116_post_second_intercept_window_s: float = 0.40
+    fixed_plane_v118_post_second_clearance_weight: float = 0.0
+    fixed_plane_v118_post_second_retract_weight_per_s: float = 0.0
+    fixed_plane_v118_post_second_retract_target_m_s: float = 0.3
+    fixed_plane_v118_post_second_retract_window_s: float = 0.12
+    fixed_plane_v119_terminal_pending_refund_enabled: bool = False
+    fixed_plane_v120_third_edge_outgoing_vz_weight: float = 0.0
+    fixed_plane_v120_third_edge_outgoing_vz_target_m_s: float = 1.6
+    fixed_plane_v121_third_edge_outgoing_vz_floor_m_s: float = 0.0
+    fixed_plane_v122_third_release_vz_weight: float = 0.0
+    fixed_plane_v122_third_release_vz_target_m_s: float = 2.5
+    fixed_plane_v123_schedule_low_hit_penalty_enabled: bool = False
+    fixed_plane_v124_edge_z_penalty_weight: float = 0.0
+    fixed_plane_v124_edge_z_target_m: float = 1.06
+    fixed_plane_v124_edge_vz_reward_weight: float = 0.0
+    fixed_plane_v124_edge_vz_floor_m_s: float = -0.2
+    fixed_plane_v124_edge_vz_target_m_s: float = 0.8
+    fixed_plane_v77_first_peak_vz_weight: float = 0.0
+    fixed_plane_v77_first_peak_vz_target_m_s: float = 2.2
+    fixed_plane_v78_first_resolved_peak_vz_weight: float = 0.0
+    fixed_plane_v78_first_resolved_peak_vz_target_m_s: float = 2.2
+    # V59 opt-in: charge fourth-plus resolved physical apex above view margin.
+    fixed_plane_v59_high_apex_penalty_weight: float = 0.0
+    # V60 opt-in: curriculum tightens repeated late weak failure.
+    fixed_plane_v60_late_weak_streak_limit: int = 0
+    fixed_plane_v63_previous_apex_error_obs_enabled: bool = False
+    fixed_contact_substep_diagnostic_enabled: bool = False
+    # V46 opt-in: charge achieved lateral/angular motion once per rebound.
+    fixed_plane_v46_resolved_motion_vxy_weight: float = 0.0
+    fixed_plane_v46_resolved_motion_omega_weight: float = 0.0
+    fixed_plane_v47_nonsaturating_motion_tail: bool = False
+    fixed_plane_limit_cycle_effective_restitution: float = 0.665
+    fixed_plane_limit_cycle_hit_quality_apex_margin_m: float = 0.025
+    fixed_plane_limit_cycle_hit_survival_apex_margin_m: float = 0.050
+    # V14 opt-in: use the same live collision inverse in observation and
+    # reward, and pair it with a Z-workspace-bounded pre-contact reference.
+    # Defaults preserve V1--V13 byte-for-byte behavior.
+    fixed_plane_limit_cycle_dynamic_stroke_enabled: bool = False
+    fixed_plane_limit_cycle_min_contact_vz_m_s: float = 0.0
+    fixed_plane_limit_cycle_max_contact_vz_m_s: float = 0.90
+    fixed_plane_limit_cycle_prestroke_depth_m: float = 0.015
+    fixed_plane_limit_cycle_stroke_prepare_s: float = 0.20
+
+
+@dataclass(frozen=True)
+class MjxFixedPlaneV97CalibratedConfig(MjxPredictiveContactCurriculumConfig):
+    """Opt-in 62.5 us calibrated contact for fixed-plane V97 only."""
+
+    fixed_plane_v97_calibrated_contact: bool = True
+
+
+@dataclass(frozen=True)
+class MjxFixedPlaneV98CoarseContactConfig(MjxPredictiveContactCurriculumConfig):
+    """Opt-in 1 ms, position-calibrated static first-bounce contact."""
+
+    fixed_plane_v98_coarse_contact: bool = True
+
+
+@dataclass(frozen=True)
+class MjxFixedPlaneV153ContactConfig(MjxFixedPlaneV98CoarseContactConfig):
+    """Versioned reward scale; keep every legacy serialized config unchanged."""
+
+    fixed_contact_quality_surface_z_sigma_m: float = 0.010
+
+
+@dataclass(frozen=True)
+class MjxFixedPlaneV154ContactConfig(MjxFixedPlaneV153ContactConfig):
+    """Opt-in horizontal-normal quality; preserve full angular-speed costs."""
+
+    fixed_contact_quality_pose_uses_normal_tilt: bool = False
+
+
+@dataclass(frozen=True)
+class MjxFixedPlaneV156RewardConfig(MjxFixedPlaneV154ContactConfig):
+    """Reweight adjacent apex error while preserving the absolute height score."""
+
+    fixed_plane_v156_adjacent_height_penalty_multiplier: float = 1.0
+
+
+@dataclass(frozen=True)
+class MjxFixedPlaneV158RewardConfig(MjxFixedPlaneV156RewardConfig):
+    """Opt-in squared late-impact costs aligned with measured RMS gates."""
+
+    fixed_plane_v158_late_squared_vxy_weight: float = 0.0
+    fixed_plane_v158_late_squared_omega_weight: float = 0.0
+
+
+@dataclass(frozen=True)
+class MjxFixedPlaneV159RewardConfig(MjxFixedPlaneV158RewardConfig):
+    """Direct mean-center and mean-adjacent-height objectives, default off."""
+
+    fixed_plane_v159_adjacent_height_linear: bool = False
+    fixed_plane_v159_mean_center_penalty_weight: float = 0.0
+
+
+@dataclass(frozen=True)
+class MjxFixedPlaneV164RewardConfig(MjxFixedPlaneV159RewardConfig):
+    """Default-off continuous true-XY anchoring without the old deadband."""
+
+    fixed_plane_v164_dense_ball_xy_anchor_weight: float = 0.0
+    fixed_plane_v164_dense_racket_xy_anchor_weight: float = 0.0
+
+
+@dataclass(frozen=True)
+class MjxFixedPlaneV165RewardConfig(MjxFixedPlaneV164RewardConfig):
+    """Default-off late physical band cost; existing eligibility is unchanged."""
+
+    fixed_plane_v165_steady_band_violation_weight: float = 0.0
+
+
+@dataclass(frozen=True)
+class MjxFixedPlaneV166RewardConfig(MjxFixedPlaneV165RewardConfig):
+    """Default-off subthreshold physical ball XY drift loss on confirmed hits."""
+
+    fixed_plane_v166_physical_ball_xy_weight: float = 0.0
+
+
+@dataclass(frozen=True)
+class MjxFixedPlaneV167RewardConfig(MjxFixedPlaneV166RewardConfig):
+    """Default identity reward scale; geometry, dynamics and metrics are unchanged."""
+
+    fixed_plane_v167_global_reward_multiplier: float = 1.0
+
+
+@dataclass(frozen=True)
+class MjxFixedPlaneV168RewardConfig(MjxFixedPlaneV167RewardConfig):
+    """Default-off fixed-reference shaping of existing physical quality statistics."""
+
+    fixed_plane_v168_quality_weights: tuple[float, ...] = (0., 0., 0., 0., 0.)
+    fixed_plane_v168_quality_references: tuple[float, ...] = (.003, .002809, .0625, .007, .000625)
+
+
+@dataclass(frozen=True)
+class MjxPlantAwareFixedPlaneV1Config(MjxPredictiveContactCurriculumConfig):
+    """Independent analytic-nominal plus bounded-residual fixed-plane V1."""
+
+    fixed_contact_actor_observation_schema: str = (
+        PLANT_AWARE_FIXED_PLANE_ACTOR_OBSERVATION_SCHEMA_V1
+    )
+    fixed_contact_actor_obs_dim: int = PLANT_AWARE_FIXED_PLANE_ACTOR_OBS_DIM
+    plant_aware_fixed_plane_v1_enabled: bool = True
+    plant_aware_residual_action_scale: float = 0.15
+    plant_aware_effective_restitution: float = 0.775
+    plant_aware_stroke_lead_s: float = 0.19
+    plant_aware_brake_window_s: float = 0.10
+    plant_aware_prestroke_depth_m: float = 0.035
+    plant_aware_retract_window_s: float = 0.10
+    plant_aware_retract_velocity_m_s: float = -0.29
+    plant_aware_max_contact_vxy_m_s: float = 0.15
+    plant_aware_min_contact_vz_m_s: float = 0.20
+    plant_aware_max_contact_vz_m_s: float = 0.80
+    # The collision inverse is a physical surface-speed intent.  This
+    # separate upstream gain accounts for attenuation through the bounded
+    # qref -> recovered-RMP -> XML-PD path; 1.4 is initialized from the
+    # successful frozen no-learning witness pulse/physical-intent ratio.
+    plant_aware_contact_velocity_command_gain: float = 1.4
+    plant_aware_xy_position_gain_s: float = 5.0
+    plant_aware_xy_velocity_gain: float = 0.60
+    plant_aware_brake_xy_velocity_gain: float = 3.0
+    plant_aware_z_position_gain_s: float = 6.0
+    plant_aware_z_velocity_gain: float = 0.60
+    plant_aware_brake_z_velocity_gain: float = 1.40
+    plant_aware_orientation_gain_s: float = 7.0
+    plant_aware_orientation_velocity_gain: float = 0.60
+    plant_aware_brake_orientation_gain_s: float = 4.0
+    plant_aware_brake_orientation_velocity_gain: float = 2.50
+    # Identified by the no-learning fixed-plane witness as the per-joint
+    # upstream QVEL pre-emphasis needed for the recovered-RMP/XML-PD stack to
+    # realize a short vertical stroke.  It is applied only during the
+    # accelerate phase; it is neither an actuator filter nor a second planner.
+    plant_aware_vertical_transient_precomp_scale: tuple[float, ...] = (
+        0.57,
+        0.63,
+        0.43,
+        2.04,
+        0.45,
+        1.36,
+        0.73,
+    )
+    plant_aware_measured_velocity_correction_gain: float = 0.35
+    plant_aware_tracking_quality_window_s: float = 0.28
+    plant_aware_reference_unwind_gain: float = 0.35
+    plant_aware_command_slew_fraction: float = 0.35
+
+
+@dataclass(frozen=True)
+class MjxBallRacketContactProxyConfig(MjxBallRacketContactPairConfig):
+    """Explicit V33 high-impedance contact-only boundary configuration."""
+
+    ball_racket_collision_geometry: str = "finite_mesh16"
+    ball_racket_pair_override_enabled: bool = True
+    ball_racket_pair_solref: tuple[float, float] = V33_CONTACT_PAIR_SOLREF
+    ball_racket_pair_solreffriction: tuple[float, float] = (
+        V33_CONTACT_PAIR_SOLREFFRICTION
+    )
+    ball_racket_pair_solimp: tuple[float, float, float, float, float] = (
+        V33_CONTACT_PAIR_SOLIMP
+    )
+    ball_racket_pair_friction: tuple[float, float, float, float, float] = (
+        V33_CONTACT_PAIR_FRICTION
+    )
+    ball_racket_pair_margin_m: float = 0.0
+    ball_racket_pair_gap_m: float = 0.0
+    ball_racket_pair_condim: int = 3
+    ball_racket_contact_boundary_mode: str = "fk_heavy_proxy_v1"
+    ball_racket_contact_proxy_mass_kg: float = (
+        IDENTIFIED_RACKET_CONTACT_PROXY_MASS_KG
+    )
+    dr_ball_mass_range: tuple[float, float] = (0.004, 0.004)
+    dr_ball_normalized_inertia_range: tuple[float, float] = (0.4, 0.4)
+    dr_randomize_contact: bool = False
+
+
+@dataclass(frozen=True)
+class MjxCollisionOutcomeResidualV1Config(MjxBaseModeConfig):
+    """Opt-in Phase-1 collision outcome configuration.
+
+    A subclass keeps every historical ``MjxJuggleConfig`` and
+    ``MjxBaseModeConfig`` serialization unchanged.  The nested model defaults
+    to ``off`` and an enabled instance remains diagnostic-only until the
+    architecture's held-out and frozen-policy promotion gates pass.
+    """
+
+    collision_outcome_residual: CollisionOutcomeResidualV1Config = (
+        CollisionOutcomeResidualV1Config()
+    )
+    collision_outcome_ball_identity_index: int = 0
+    collision_outcome_session_identity_index: int = 0
 
 
 def alpha_beta_joint_observer_xy(
@@ -2557,6 +3884,9 @@ class EnvState(NamedTuple):
     reset_ball_surface_gap: jax.Array
     reset_ball_racket_center_offset: jax.Array
     racket_launch_hold_steps: jax.Array
+    reset_falling_contact_active: jax.Array
+    reset_target_follow_blend: jax.Array
+    fixed_contact_skill_mode_id: jax.Array
     arm_cmd_q: jax.Array
     arm_cmd_qvel: jax.Array
     rmp_state: JointRMPState
@@ -2613,7 +3943,14 @@ class EnvState(NamedTuple):
     contact_hold_steps: jax.Array
     pending_hit: jax.Array
     pending_hit_steps: jax.Array
+    fixed_plane_v122_third_release_claimed: jax.Array
+    pending_first_hit_peak_ball_vz_m_s: jax.Array
+    first_failed_launch_credit_paid: jax.Array
     hit_count: jax.Array
+    late_physical_prev_apex_error_m: jax.Array
+    late_physical_prev_signed_apex_error_m: jax.Array
+    late_physical_prev_apex_valid: jax.Array
+    late_physical_weak_streak: jax.Array
     rewardable_hit_apex_abs_sum: jax.Array
     rewardable_hit_apex_lift_sum: jax.Array
     rewardable_hit_height_count: jax.Array
@@ -2648,6 +3985,7 @@ class EnvState(NamedTuple):
     pending_hit_racket_full_angular_speed: jax.Array
     pending_hit_racket_local_y_angular_speed: jax.Array
     pending_hit_racket_local_xz_angular_speed: jax.Array
+    pending_hit_racket_pose_error: jax.Array
     pending_hit_contact_center_dist: jax.Array
     pending_hit_ball_z: jax.Array
     pending_hit_racket_z: jax.Array
@@ -2659,6 +3997,9 @@ class EnvState(NamedTuple):
     action_history: jax.Array
     cached_ball_obs_pos: jax.Array
     cached_ball_obs_vel: jax.Array
+    actor_ball_position_history: jax.Array
+    actor_racket_pose_history: jax.Array
+    actor_ball_age_history: jax.Array
     # Causal lateral velocity observer state.  It advances only when a valid
     # new camera sample is accepted, exactly like the real deployment helper.
     ball_obs_velocity_observer_xy: jax.Array
@@ -2681,6 +4022,12 @@ class EnvState(NamedTuple):
     ball_obs_valid_pos: jax.Array
     ball_obs_valid_vel: jax.Array
     ball_obs_age_seconds: jax.Array
+    fixed_contact_high_ball_predictor_state: HighBallPredictorState
+    fixed_contact_ball_observed: jax.Array
+    fixed_contact_ball_predicted: jax.Array
+    fixed_contact_prediction_horizon_s: jax.Array
+    fixed_contact_ball_state_valid: jax.Array
+    fixed_contact_reacquisition_rejected: jax.Array
     ball_obs_missing_since_sample: jax.Array
     ball_obs_dropout_remaining: jax.Array
     ball_obs_dropout_steps_total: jax.Array
@@ -2721,6 +4068,19 @@ class EnvState(NamedTuple):
     ball_obs_vel_bias_base: jax.Array
     ball_obs_scale: jax.Array
     ball_obs_view_z_high_m: jax.Array
+    # Phase-1 collision-outcome state is always present but remains all-zero on
+    # every historical config.  It is not actor/critic input and cannot change
+    # a transition unless the versioned opt-in config is enabled.
+    collision_outcome_episode_restitution_latent: jax.Array
+    collision_outcome_pending_valid: jax.Array
+    collision_outcome_pending_pre_ball_position_m: jax.Array
+    collision_outcome_pending_pre_ball_velocity_m_s: jax.Array
+    collision_outcome_pending_racket_position_m: jax.Array
+    collision_outcome_pending_racket_rotation_world: jax.Array
+    collision_outcome_pending_racket_linear_velocity_m_s: jax.Array
+    collision_outcome_pending_racket_angular_velocity_rad_s: jax.Array
+    collision_outcome_pending_impact_offset_m: jax.Array
+    collision_outcome_pending_contact_time_s: jax.Array
 
 
 # Actual sampled/random-event fields which can change an environment's
@@ -2875,6 +4235,181 @@ def _quat_wxyz_to_mat_np(q: tuple[float, float, float, float]) -> np.ndarray:
     )
 
 
+def _rotation_matrix_to_quat_wxyz_jax(rotation: jax.Array) -> jax.Array:
+    """Convert one or more proper rotation matrices to normalized wxyz."""
+
+    matrix = jnp.asarray(rotation)
+    if matrix.shape[-2:] != (3, 3):
+        raise ValueError("rotation matrix must end in shape (3, 3)")
+    m00 = matrix[..., 0, 0]
+    m01 = matrix[..., 0, 1]
+    m02 = matrix[..., 0, 2]
+    m10 = matrix[..., 1, 0]
+    m11 = matrix[..., 1, 1]
+    m12 = matrix[..., 1, 2]
+    m20 = matrix[..., 2, 0]
+    m21 = matrix[..., 2, 1]
+    m22 = matrix[..., 2, 2]
+    eps = jnp.asarray(1.0e-12, dtype=matrix.dtype)
+
+    def safe_denominator(value: jax.Array) -> jax.Array:
+        return jnp.maximum(4.0 * value, eps)
+
+    qw0 = 0.5 * jnp.sqrt(jnp.maximum(1.0 + m00 + m11 + m22, eps))
+    q0 = jnp.stack((
+        qw0,
+        (m21 - m12) / safe_denominator(qw0),
+        (m02 - m20) / safe_denominator(qw0),
+        (m10 - m01) / safe_denominator(qw0),
+    ), axis=-1)
+
+    qx1 = 0.5 * jnp.sqrt(jnp.maximum(1.0 + m00 - m11 - m22, eps))
+    q1 = jnp.stack((
+        (m21 - m12) / safe_denominator(qx1),
+        qx1,
+        (m01 + m10) / safe_denominator(qx1),
+        (m02 + m20) / safe_denominator(qx1),
+    ), axis=-1)
+
+    qy2 = 0.5 * jnp.sqrt(jnp.maximum(1.0 - m00 + m11 - m22, eps))
+    q2 = jnp.stack((
+        (m02 - m20) / safe_denominator(qy2),
+        (m01 + m10) / safe_denominator(qy2),
+        qy2,
+        (m12 + m21) / safe_denominator(qy2),
+    ), axis=-1)
+
+    qz3 = 0.5 * jnp.sqrt(jnp.maximum(1.0 - m00 - m11 + m22, eps))
+    q3 = jnp.stack((
+        (m10 - m01) / safe_denominator(qz3),
+        (m02 + m20) / safe_denominator(qz3),
+        (m12 + m21) / safe_denominator(qz3),
+        qz3,
+    ), axis=-1)
+    trace_positive = (m00 + m11 + m22) > 0.0
+    diagonal_case = 1 + jnp.argmax(
+        jnp.stack((m00, m11, m22), axis=-1), axis=-1
+    )
+    case = jnp.where(trace_positive, 0, diagonal_case)
+    quaternion = jnp.where(
+        (case == 0)[..., None],
+        q0,
+        jnp.where(
+            (case == 1)[..., None],
+            q1,
+            jnp.where((case == 2)[..., None], q2, q3),
+        ),
+    )
+    quaternion = quaternion / jnp.maximum(
+        jnp.linalg.norm(quaternion, axis=-1, keepdims=True), eps
+    )
+    return quaternion * jnp.where(
+        quaternion[..., :1] < 0.0, -1.0, 1.0
+    )
+
+
+def _quat_multiply_wxyz_jax(
+    left: jax.Array, right: jax.Array
+) -> jax.Array:
+    """Multiply broadcast-compatible wxyz quaternions."""
+
+    left = jnp.asarray(left)
+    right = jnp.asarray(right)
+    w1, x1, y1, z1 = [left[..., index] for index in range(4)]
+    w2, x2, y2, z2 = [right[..., index] for index in range(4)]
+    product = jnp.stack((
+        w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+        w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+        w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+        w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+    ), axis=-1)
+    eps = jnp.asarray(1.0e-12, dtype=product.dtype)
+    return product / jnp.maximum(
+        jnp.linalg.norm(product, axis=-1, keepdims=True), eps
+    )
+
+
+def racket_contact_proxy_state_jax(
+    racket_geom_position_world_m: jax.Array,
+    racket_geom_rotation_world: jax.Array,
+    racket_body_cvel: jax.Array,
+    racket_root_subtree_com_world_m: jax.Array,
+    proxy_geom_position_body_m: jax.Array | None = None,
+    proxy_geom_rotation_body: jax.Array | None = None,
+    racket_geom_quaternion_world: jax.Array | None = None,
+    proxy_geom_quaternion_body: jax.Array | None = None,
+) -> tuple[jax.Array, jax.Array]:
+    """Return proxy free-joint qpos/qvel matching the actual racket geom.
+
+    MJX ``cvel`` stores world angular velocity first and linear velocity at the
+    root subtree center of mass second. Free-joint linear qvel is world-frame,
+    while rotational qvel is body-local.
+    """
+
+    position = jnp.asarray(racket_geom_position_world_m)
+    rotation = jnp.asarray(racket_geom_rotation_world)
+    cvel = jnp.asarray(racket_body_cvel)
+    subtree_com = jnp.asarray(racket_root_subtree_com_world_m)
+    local_position = (
+        jnp.zeros_like(position)
+        if proxy_geom_position_body_m is None
+        else jnp.asarray(proxy_geom_position_body_m)
+    )
+    local_rotation = (
+        jnp.broadcast_to(
+            jnp.eye(3, dtype=rotation.dtype), rotation.shape
+        )
+        if proxy_geom_rotation_body is None
+        else jnp.asarray(proxy_geom_rotation_body)
+    )
+    angular_world = cvel[..., :3]
+    offset = position - subtree_com
+    geom_linear_world = cvel[..., 3:] - jnp.cross(
+        offset, angular_world
+    )
+    body_rotation = jnp.einsum(
+        "...ij,...kj->...ik", rotation, local_rotation
+    )
+    geom_offset_world = jnp.einsum(
+        "...ij,...j->...i", body_rotation, local_position
+    )
+    body_position = position - geom_offset_world
+    body_linear_world = geom_linear_world - jnp.cross(
+        angular_world, geom_offset_world
+    )
+    angular_local = jnp.einsum(
+        "...ji,...j->...i", body_rotation, angular_world
+    )
+    if (
+        (racket_geom_quaternion_world is None)
+        != (proxy_geom_quaternion_body is None)
+    ):
+        raise ValueError(
+            "racket/proxy geom quaternions must be provided together"
+        )
+    if racket_geom_quaternion_world is None:
+        quaternion = _rotation_matrix_to_quat_wxyz_jax(body_rotation)
+    else:
+        target_geom_quaternion = jnp.asarray(
+            racket_geom_quaternion_world
+        )
+        local_geom_quaternion = jnp.asarray(proxy_geom_quaternion_body)
+        local_geom_inverse = jnp.concatenate((
+            local_geom_quaternion[..., :1],
+            -local_geom_quaternion[..., 1:],
+        ), axis=-1)
+        quaternion = _quat_multiply_wxyz_jax(
+            target_geom_quaternion, local_geom_inverse
+        )
+        quaternion = quaternion * jnp.where(
+            quaternion[..., :1] < 0.0, -1.0, 1.0
+        )
+    return (
+        jnp.concatenate((body_position, quaternion), axis=-1),
+        jnp.concatenate((body_linear_world, angular_local), axis=-1),
+    )
+
+
 def _quat_mul_wxyz_jax(q1: jax.Array, q2: jax.Array) -> jax.Array:
     w1, x1, y1, z1 = q1
     w2, x2, y2, z2 = q2
@@ -2976,7 +4511,387 @@ class MjxJuggleEnv:
         self.xml_path = Path(xml_path).resolve()
         self.n_envs = int(n_envs)
         self.cfg = cfg
+        if (
+            not math.isfinite(float(cfg.hit_racket_contact_edge_distance_m))
+            or not 0.0 <= float(cfg.hit_racket_contact_edge_distance_m) <= 0.002
+        ):
+            raise ValueError(
+                "hit_racket_contact_edge_distance_m must be in [0, 0.002] m"
+            )
+        if (
+            not math.isfinite(float(cfg.hit_rearm_min_vertical_clearance_m))
+            or not 0.0 <= float(cfg.hit_rearm_min_vertical_clearance_m) <= 0.10
+        ):
+            raise ValueError("rearm vertical clearance must be in [0, 0.10] m")
+        if (
+            not math.isfinite(float(cfg.fixed_plane_v51_late_weak_floor_multiplier))
+            or cfg.fixed_plane_v51_late_weak_floor_multiplier < 1.0
+        ):
+            raise ValueError(
+                "fixed_plane_v51_late_weak_floor_multiplier must be finite and >= 1"
+            )
         cfg_values = getattr(cfg, "__dict__", {})
+        self.fixed_plane_v97_calibrated_contact = bool(getattr(
+            cfg, "fixed_plane_v97_calibrated_contact", False
+        ))
+        self.fixed_plane_v98_coarse_contact = bool(getattr(
+            cfg, "fixed_plane_v98_coarse_contact", False
+        ))
+        if self.fixed_plane_v97_calibrated_contact and self.fixed_plane_v98_coarse_contact:
+            raise ValueError("V97 and V98 contact modes are mutually exclusive")
+        self.ball_racket_collision_geometry = str(
+            getattr(cfg, "ball_racket_collision_geometry", "legacy_cylinder")
+        )
+        self.ball_racket_contact_boundary_mode = str(getattr(
+            cfg, "ball_racket_contact_boundary_mode", "robot_dynamic"
+        ))
+        self.ball_racket_contact_proxy_mass_kg = float(getattr(
+            cfg,
+            "ball_racket_contact_proxy_mass_kg",
+            IDENTIFIED_RACKET_CONTACT_PROXY_MASS_KG,
+        ))
+        if (
+            self.ball_racket_contact_boundary_mode
+            not in BALL_RACKET_CONTACT_BOUNDARY_MODES
+        ):
+            raise ValueError(
+                "ball_racket_contact_boundary_mode must be one of "
+                f"{BALL_RACKET_CONTACT_BOUNDARY_MODES}"
+            )
+        self.racket_contact_proxy_enabled = (
+            self.ball_racket_contact_boundary_mode == "fk_heavy_proxy_v1"
+        )
+        if self.fixed_plane_v97_calibrated_contact and (
+            self.ball_racket_contact_boundary_mode != "robot_dynamic"
+            or self.ball_racket_collision_geometry != "finite_mesh16"
+            or not bool(getattr(
+                cfg, "ball_racket_pair_override_enabled", False
+            ))
+            or not str(getattr(
+                cfg, "fixed_contact_training_phase", ""
+            )).startswith("fplc_v97_")
+            or tuple(cfg.ball_racket_pair_solref)
+            != V97_STATIC_CONTACT_PAIR_SOLREF
+            or tuple(cfg.ball_racket_pair_solreffriction)
+            != V33_CONTACT_PAIR_SOLREFFRICTION
+            or tuple(cfg.ball_racket_pair_solimp) != V33_CONTACT_PAIR_SOLIMP
+            or tuple(cfg.ball_racket_pair_friction) != V33_CONTACT_PAIR_FRICTION
+            or float(cfg.ball_racket_pair_margin_m) != 0.0
+            or float(cfg.ball_racket_pair_gap_m) != 0.0
+            or int(cfg.ball_racket_pair_condim) != 3
+        ):
+            raise ValueError(
+                "V97 calibrated contact requires its exact dynamic racket "
+                "geometry, pair fields and versioned fixed-plane phase"
+            )
+        if self.fixed_plane_v98_coarse_contact and (
+            self.ball_racket_contact_boundary_mode != "robot_dynamic"
+            or self.ball_racket_collision_geometry != "finite_mesh16"
+            or not bool(getattr(cfg, "ball_racket_pair_override_enabled", False))
+            or not str(getattr(cfg, "fixed_contact_training_phase", "")).startswith(
+                ("fplc_v99_", "fplc_v100_", "fplc_v101_", "fplc_v102_", "fplc_v103_", "fplc_v104_", "fplc_v105_", "fplc_v106_", "fplc_v107_", "fplc_v108_", "fplc_v109_", "fplc_v110_", "fplc_v111_", "fplc_v112_", "fplc_v113_", "fplc_v114_", "fplc_v115_", "fplc_v116_", "fplc_v117_", "fplc_v118_", "fplc_v119_", "fplc_v120_", "fplc_v121_", "fplc_v122_", "fplc_v123_", "fplc_v124_", "fplc_v125_", "fplc_v126_", "fplc_v127_", "fplc_v128_", "fplc_v129_", "fplc_v130_", "fplc_v131_", "fplc_v132_", "fplc_v133_", "fplc_v134_", "fplc_v135_", "fplc_v136_", "fplc_v137_", "fplc_v138_", "fplc_v139_", "fplc_v140_", "fplc_v141_", "fplc_v142_", "fplc_v143_", "fplc_v144_", "fplc_v145_", "fplc_v146_", "fplc_v147_", "fplc_v148_", "fplc_v149_", "fplc_v150_gpu1_", "fplc_v151_gpu1_", "fplc_v152_gpu0_", "fplc_v153_gpu0_", "fplc_v153_gpu1_", "fplc_v154_gpu0_", "fplc_v154_gpu1_", "fplc_v155_gpu1_", "fplc_v156_gpu1_", "fplc_v157_gpu1_", "fplc_v158_gpu1_", "fplc_v159_gpu1_", "fplc_v160_gpu0_", "fplc_v161_gpu0_", "fplc_v162_gpu0_", "fplc_v163_gpu0_", "fplc_v164_gpu0_", "fplc_v165_gpu0_", "fplc_v166_gpu0_", "fplc_v167_gpu0_", "fplc_v168_gpu0_", "fplc_v169_gpu0_", "fplc_v170_gpu0_") if bool(getattr(
+                    cfg, "fixed_plane_v99_contiguous_history_obs_enabled", False
+                )) else "fplc_v98_"
+            )
+            or tuple(cfg.ball_racket_pair_solref) != V98_STATIC_CONTACT_PAIR_SOLREF
+            or tuple(cfg.ball_racket_pair_solreffriction)
+            != V33_CONTACT_PAIR_SOLREFFRICTION
+            or tuple(cfg.ball_racket_pair_solimp) != V98_STATIC_CONTACT_PAIR_SOLIMP
+            or tuple(cfg.ball_racket_pair_friction) != V33_CONTACT_PAIR_FRICTION
+            or float(cfg.ball_racket_pair_margin_m) != 0.0
+            or float(cfg.ball_racket_pair_gap_m) != 0.0
+            or int(cfg.ball_racket_pair_condim) != 3
+        ):
+            raise ValueError(
+                "V98 requires its exact dynamic racket geometry, pair fields "
+                "and versioned fixed-plane phase"
+            )
+        if self.racket_contact_proxy_enabled:
+            if self.ball_racket_collision_geometry != "finite_mesh16":
+                raise ValueError("fk_heavy_proxy_v1 requires finite_mesh16")
+            if not bool(getattr(
+                cfg, "ball_racket_pair_override_enabled", False
+            )):
+                raise ValueError(
+                    "fk_heavy_proxy_v1 requires the complete pair override"
+                )
+            if self.ball_racket_contact_proxy_mass_kg != (
+                IDENTIFIED_RACKET_CONTACT_PROXY_MASS_KG
+            ):
+                raise ValueError(
+                    "fk_heavy_proxy_v1 requires the validated exact 1000 kg mass"
+                )
+        if (
+            self.ball_racket_collision_geometry
+            not in BALL_RACKET_COLLISION_GEOMETRIES
+        ):
+            raise ValueError(
+                "ball_racket_collision_geometry must be one of "
+                f"{BALL_RACKET_COLLISION_GEOMETRIES}"
+            )
+        if (
+            self.ball_racket_collision_geometry != "legacy_cylinder"
+            and not bool(
+                getattr(cfg, "ball_racket_pair_override_enabled", False)
+            )
+        ):
+            raise ValueError(
+                "non-legacy racket collision geometry requires the complete "
+                "compiled pair override"
+            )
+        if (
+            self.ball_racket_collision_geometry == "finite_mesh16"
+            and float(getattr(cfg, "dr_racket_radius_offset_m", 0.0)) != 0.0
+        ):
+            raise ValueError(
+                "finite_mesh16 has a fixed identified radius; mesh-radius "
+                "DR requires a separately compiled mesh family"
+            )
+        self.simulation_base_mode = str(
+            getattr(cfg, "simulation_base_mode", "legacy_floating")
+        )
+        if self.simulation_base_mode not in {
+            "legacy_floating",
+            "aligned_floating",
+            "aligned_fixed",
+        }:
+            raise ValueError(
+                "simulation_base_mode must be 'legacy_floating', "
+                "'aligned_floating', or 'aligned_fixed', got "
+                f"{self.simulation_base_mode!r}"
+            )
+        if self.racket_contact_proxy_enabled:
+            if self.simulation_base_mode != "aligned_fixed":
+                raise ValueError(
+                    "fk_heavy_proxy_v1 requires aligned_fixed base mode"
+                )
+
+            def exact_proxy_vector(
+                field_name: str,
+                expected: tuple[float, ...],
+            ) -> bool:
+                value = np.asarray(
+                    tuple(getattr(cfg, field_name)), dtype=np.float64
+                )
+                return value.shape == (len(expected),) and np.allclose(
+                    value,
+                    np.asarray(expected, dtype=np.float64),
+                    atol=1.0e-12,
+                    rtol=0.0,
+                )
+
+            expected_solref = (
+                V97_STATIC_CONTACT_PAIR_SOLREF
+                if self.fixed_plane_v97_calibrated_contact
+                else V33_CONTACT_PAIR_SOLREF
+            )
+            if not (
+                exact_proxy_vector(
+                    "ball_racket_pair_solref", expected_solref
+                )
+                and exact_proxy_vector(
+                    "ball_racket_pair_solreffriction",
+                    V33_CONTACT_PAIR_SOLREFFRICTION,
+                )
+                and exact_proxy_vector(
+                    "ball_racket_pair_solimp", V33_CONTACT_PAIR_SOLIMP
+                )
+                and exact_proxy_vector(
+                    "ball_racket_pair_friction", V33_CONTACT_PAIR_FRICTION
+                )
+                and float(getattr(
+                    cfg, "ball_racket_pair_margin_m", float("nan")
+                )) == 0.0
+                and float(getattr(
+                    cfg, "ball_racket_pair_gap_m", float("nan")
+                )) == 0.0
+                and int(getattr(cfg, "ball_racket_pair_condim", -1)) == 3
+            ):
+                pair_contract = (
+                    "calibrated V97" if self.fixed_plane_v97_calibrated_contact
+                    else "frozen V33"
+                )
+                raise ValueError(
+                    f"fk_heavy_proxy_v1 requires the {pair_contract} pair fields"
+                )
+            ball_mass_range = tuple(
+                float(value) for value in cfg.dr_ball_mass_range
+            )
+            inertia_range = tuple(
+                float(value)
+                for value in cfg.dr_ball_normalized_inertia_range
+            )
+            spin_ranges = (
+                tuple(float(value) for value in cfg.dr_ball_spin_x_range_rad_s),
+                tuple(float(value) for value in cfg.dr_ball_spin_y_range_rad_s),
+                tuple(float(value) for value in cfg.dr_ball_spin_z_range_rad_s),
+            )
+            if not (
+                bool(cfg.domain_randomization)
+                and bool(cfg.dr_randomize_ball)
+                and np.allclose(
+                    ball_mass_range,
+                    (0.004, 0.004),
+                    atol=1.0e-12,
+                    rtol=0.0,
+                )
+                and np.allclose(
+                    inertia_range,
+                    (0.4, 0.4),
+                    atol=1.0e-12,
+                    rtol=0.0,
+                )
+                and all(np.allclose(
+                    value,
+                    (0.0, 0.0),
+                    atol=1.0e-12,
+                    rtol=0.0,
+                ) for value in spin_ranges)
+            ):
+                raise ValueError(
+                    "fk_heavy_proxy_v1 requires exact 4 g spherical ball "
+                    "mass/inertia and zero unmeasured initial spin"
+                )
+            if bool(cfg.dr_randomize_contact):
+                raise ValueError(
+                    "fk_heavy_proxy_v1 forbids unvalidated contact DR"
+                )
+        self.collision_outcome_residual = getattr(
+            cfg,
+            "collision_outcome_residual",
+            CollisionOutcomeResidualV1Config(),
+        )
+        if not isinstance(
+            self.collision_outcome_residual,
+            CollisionOutcomeResidualV1Config,
+        ):
+            raise ValueError(
+                "collision_outcome_residual must be a validated "
+                "CollisionOutcomeResidualV1Config"
+            )
+        self.collision_outcome_residual_enabled = (
+            self.collision_outcome_residual.mode
+            != COLLISION_OUTCOME_MODE_OFF
+        )
+        if (
+            self.racket_contact_proxy_enabled
+            and self.collision_outcome_residual_enabled
+        ):
+            raise ValueError(
+                "fk_heavy_proxy_v1 cannot stack a collision outcome residual"
+            )
+        self.collision_outcome_ball_identity_index = int(
+            getattr(cfg, "collision_outcome_ball_identity_index", 0)
+        )
+        self.collision_outcome_session_identity_index = int(
+            getattr(cfg, "collision_outcome_session_identity_index", 0)
+        )
+        if self.collision_outcome_residual_enabled:
+            if self.simulation_base_mode != "aligned_fixed":
+                raise ValueError(
+                    "collision outcome residual v1 requires "
+                    "simulation_base_mode='aligned_fixed'"
+                )
+            ball_mass_range = tuple(
+                float(value) for value in cfg.dr_ball_mass_range
+            )
+            if (
+                not bool(cfg.domain_randomization)
+                or not bool(cfg.dr_randomize_ball)
+                or len(ball_mass_range) != 2
+                or not np.allclose(
+                    ball_mass_range,
+                    (0.004, 0.004),
+                    atol=1.0e-12,
+                    rtol=0.0,
+                )
+            ):
+                raise ValueError(
+                    "collision outcome residual v1 requires exact 0.004 kg "
+                    "episode ball mass via domain_randomization and "
+                    "dr_ball_mass_range=(0.004, 0.004)"
+                )
+            inertia_range = tuple(
+                float(value)
+                for value in cfg.dr_ball_normalized_inertia_range
+            )
+            if len(inertia_range) != 2 or not np.allclose(
+                inertia_range,
+                (0.4, 0.4),
+                atol=1.0e-12,
+                rtol=0.0,
+            ):
+                raise ValueError(
+                    "collision outcome residual v1 requires geometrically "
+                    "consistent 0.4 normalized ball inertia"
+                )
+            spin_ranges = (
+                cfg.dr_ball_spin_x_range_rad_s,
+                cfg.dr_ball_spin_y_range_rad_s,
+                cfg.dr_ball_spin_z_range_rad_s,
+            )
+            if any(
+                len(tuple(values)) != 2
+                or not np.allclose(
+                    tuple(float(value) for value in values),
+                    (0.0, 0.0),
+                    atol=1.0e-12,
+                    rtol=0.0,
+                )
+                for values in spin_ranges
+            ):
+                raise ValueError(
+                    "collision outcome residual v1 requires zero spin; the "
+                    "current 90 Hz static-drop data do not identify spin"
+                )
+            expected_solref = tuple(
+                float(value)
+                for value in self.collision_outcome_residual.nominal_solver_solref
+            )
+            exact_contact_contracts = (
+                (
+                    tuple(float(value) for value in cfg.dr_ball_solref_time_range),
+                    (expected_solref[0], expected_solref[0]),
+                ),
+                (
+                    tuple(
+                        float(value)
+                        for value in cfg.dr_ball_solref_damping_range
+                    ),
+                    (expected_solref[1], expected_solref[1]),
+                ),
+                (
+                    tuple(float(value) for value in cfg.dr_ball_friction_range),
+                    (
+                        self.collision_outcome_residual.nominal_ball_friction,
+                        self.collision_outcome_residual.nominal_ball_friction,
+                    ),
+                ),
+                (
+                    tuple(
+                        float(value) for value in cfg.dr_racket_friction_range
+                    ),
+                    (
+                        self.collision_outcome_residual.nominal_racket_friction,
+                        self.collision_outcome_residual.nominal_racket_friction,
+                    ),
+                ),
+            )
+            if (
+                not bool(cfg.dr_randomize_contact)
+                or any(
+                    len(actual) != 2
+                    or not np.allclose(
+                        actual, expected, atol=1.0e-12, rtol=0.0
+                    )
+                    for actual, expected in exact_contact_contracts
+                )
+            ):
+                raise ValueError(
+                    "collision outcome residual v1 requires its exact frozen "
+                    "nominal solver solref/friction contract; contact DR is "
+                    "not identified by the supplied static-drop population"
+                )
         self.action_command_mode = str(cfg.action_command_mode).lower()
         if self.action_command_mode not in {"acceleration", "velocity"}:
             raise ValueError(
@@ -3067,11 +4982,233 @@ class MjxJuggleEnv:
                 f"{self.vc_pose_mode!r}"
             )
         self.ball_reset_mode = str(cfg.ball_reset_mode)
-        valid_ball_reset_modes = {"anchor_drop", "falling_contact", "racket_launch"}
+        valid_ball_reset_modes = {
+            "anchor_drop",
+            "falling_contact",
+            "racket_launch",
+            "racket_launch_falling_contact_mix",
+            "scripted_airborne_handoff",
+        }
         if self.ball_reset_mode not in valid_ball_reset_modes:
             raise ValueError(
                 f"unknown ball_reset_mode={self.ball_reset_mode!r}; "
                 f"expected one of {sorted(valid_ball_reset_modes)}"
+            )
+        self.falling_reset_mixed = (
+            self.ball_reset_mode == "racket_launch_falling_contact_mix"
+        )
+        self.falling_reset_capable = (
+            self.ball_reset_mode in {
+                "falling_contact",
+                "scripted_airborne_handoff",
+            }
+            or self.falling_reset_mixed
+        )
+        self.racket_launch_reset_capable = (
+            self.ball_reset_mode == "racket_launch" or self.falling_reset_mixed
+        )
+        self.scripted_airborne_handoff = (
+            self.ball_reset_mode == "scripted_airborne_handoff"
+        )
+        if self.scripted_airborne_handoff and not bool(
+            getattr(cfg, "scripted_airborne_handoff_enabled", False)
+        ):
+            raise ValueError(
+                "scripted_airborne_handoff reset requires its explicit opt-in"
+            )
+        fixed_contact_skill_mode = str(
+            getattr(cfg, "fixed_contact_skill_mode", "legacy")
+        )
+        if fixed_contact_skill_mode not in {
+            "legacy",
+            "arrival_only",
+            "arrival_conditioned_single_hit",
+            "recurrent",
+            "mixture",
+            "scripted_airborne_handoff",
+        }:
+            raise ValueError(
+                "unknown fixed_contact_skill_mode="
+                f"{fixed_contact_skill_mode!r}"
+            )
+        self.fixed_contact_skill_mode = fixed_contact_skill_mode
+        fixed_contact_next_contact_target_mode = str(
+            getattr(
+                cfg,
+                "fixed_contact_next_contact_target_mode",
+                "episode_anchor",
+            )
+        )
+        if fixed_contact_next_contact_target_mode not in {
+            "episode_anchor",
+            "bounded_workspace_center_step",
+        }:
+            raise ValueError(
+                "unknown fixed_contact_next_contact_target_mode="
+                f"{fixed_contact_next_contact_target_mode!r}"
+            )
+        phase_values = (
+            float(getattr(cfg, "fixed_contact_ttc_arrival_start_s", 0.100)),
+            float(getattr(cfg, "fixed_contact_ttc_settle_start_s", 0.080)),
+            float(getattr(cfg, "fixed_contact_ttc_strike_start_s", 0.060)),
+        )
+        if not (
+            all(np.isfinite(value) for value in phase_values)
+            and phase_values[0] > phase_values[1] > phase_values[2] >= 0.0
+        ):
+            raise ValueError(
+                "fixed-contact TTC phase boundaries must be finite and "
+                "strictly descending"
+            )
+        arrival_terminate_ttc_s = float(
+            getattr(cfg, "fixed_contact_arrival_terminate_ttc_s", 0.020)
+        )
+        if not (
+            np.isfinite(arrival_terminate_ttc_s)
+            and 0.0 <= arrival_terminate_ttc_s <= phase_values[2]
+        ):
+            raise ValueError(
+                "fixed_contact_arrival_terminate_ttc_s must be finite and "
+                "inside the strike window"
+            )
+        arrived_hit_ttc = tuple(
+            float(value)
+            for value in getattr(
+                cfg,
+                "fixed_contact_arrived_hit_ttc_range_s",
+                (0.080, 0.100),
+            )
+        )
+        if not (
+            len(arrived_hit_ttc) == 2
+            and all(np.isfinite(value) and value > 0.0 for value in arrived_hit_ttc)
+            and arrived_hit_ttc[0] <= arrived_hit_ttc[1]
+            and arrived_hit_ttc[1] <= phase_values[0] + 1.0e-9
+        ):
+            raise ValueError(
+                "fixed_contact_arrived_hit_ttc_range_s must be a positive, "
+                "ordered range no later than the arrival boundary"
+            )
+        handoff_ttc = tuple(
+            float(value)
+            for value in getattr(
+                cfg,
+                "scripted_airborne_handoff_ttc_range_s",
+                (0.16, 0.21),
+            )
+        )
+        handoff_gap_m = float(
+            getattr(cfg, "scripted_airborne_handoff_surface_gap_m", 0.001)
+        )
+        handoff_apex_m = float(
+            getattr(cfg, "scripted_airborne_handoff_target_apex_abs_m", 0.0)
+        )
+        if self.scripted_airborne_handoff and not (
+            len(handoff_ttc) == 2
+            and all(np.isfinite(value) and value > 0.0 for value in handoff_ttc)
+            and handoff_ttc[0] <= handoff_ttc[1]
+            and np.isfinite(handoff_gap_m)
+            and handoff_gap_m >= 0.0
+            and np.isfinite(handoff_apex_m)
+        ):
+            raise ValueError(
+                "scripted-airborne handoff TTC/gap/apex parameters are invalid"
+            )
+        mixture_values = (
+            float(
+                getattr(cfg, "fixed_contact_reset_mixture_arrival_only", 0.0)
+            ),
+            float(
+                getattr(cfg, "fixed_contact_reset_mixture_arrived_hit", 0.0)
+            ),
+            float(
+                getattr(cfg, "fixed_contact_reset_mixture_recurrent", 1.0)
+            ),
+        )
+        if (
+            any(not np.isfinite(value) or value < 0.0 for value in mixture_values)
+            or not np.isclose(sum(mixture_values), 1.0, rtol=0.0, atol=1e-9)
+        ):
+            raise ValueError(
+                "fixed-contact reset-mixture probabilities must be "
+                "non-negative and sum to one"
+            )
+        self.falling_reset_mixture_probability = float(
+            cfg.falling_reset_mixture_probability
+        )
+        if not np.isfinite(self.falling_reset_mixture_probability) or not (
+            0.0 <= self.falling_reset_mixture_probability <= 1.0
+        ):
+            raise ValueError(
+                "falling_reset_mixture_probability must be finite and in [0, 1]"
+            )
+        falling_target_ranges = (
+            (
+                "falling_reset_episode_target_x_range_m",
+                cfg.falling_reset_episode_target_x_range_m,
+            ),
+            (
+                "falling_reset_episode_target_y_range_m",
+                cfg.falling_reset_episode_target_y_range_m,
+            ),
+            (
+                "falling_reset_episode_racket_anchor_z_range_m",
+                cfg.falling_reset_episode_racket_anchor_z_range_m,
+            ),
+        )
+        if self.falling_reset_mixed:
+            for name, value_range in falling_target_ranges:
+                if value_range is None:
+                    raise ValueError(
+                        f"{name} is required for mixed racket/falling reset"
+                    )
+                values = tuple(float(value) for value in value_range)
+                if (
+                    len(values) != 2
+                    or not all(np.isfinite(value) for value in values)
+                    or values[0] > values[1]
+                ):
+                    raise ValueError(
+                        f"{name} must contain two finite ordered values"
+                    )
+        elif (
+            abs(self.falling_reset_mixture_probability) > 1.0e-12
+            or any(value_range is not None for _name, value_range in falling_target_ranges)
+        ):
+            raise ValueError(
+                "falling reset mixture configuration requires ball_reset_mode="
+                "'racket_launch_falling_contact_mix'"
+            )
+        falling_xy_mode = str(cfg.falling_reset_contact_xy_sampling_mode)
+        falling_xy_min_radius = float(
+            cfg.falling_reset_contact_xy_min_radius_m
+        )
+        falling_xy_maximum = float(cfg.falling_reset_contact_xy_jitter)
+        if falling_xy_mode not in {"square_uniform", "annulus_uniform"}:
+            raise ValueError(
+                "falling_reset_contact_xy_sampling_mode must be "
+                "square_uniform or annulus_uniform"
+            )
+        if (
+            not np.isfinite(falling_xy_min_radius)
+            or not np.isfinite(falling_xy_maximum)
+            or falling_xy_min_radius < 0.0
+            or falling_xy_maximum < 0.0
+            or falling_xy_min_radius > falling_xy_maximum
+        ):
+            raise ValueError(
+                "falling reset contact XY radii must be finite, non-negative, "
+                "and ordered"
+            )
+        if falling_xy_mode == "square_uniform" and falling_xy_min_radius != 0.0:
+            raise ValueError(
+                "square_uniform falling reset contact XY sampling requires "
+                "zero minimum radius"
+            )
+        if falling_xy_mode == "annulus_uniform" and falling_xy_min_radius <= 0.0:
+            raise ValueError(
+                "annulus_uniform falling reset contact XY sampling requires "
+                "a positive minimum radius"
             )
         inertia_bounds = tuple(
             float(value) for value in cfg.dr_ball_normalized_inertia_range
@@ -3144,7 +5281,7 @@ class MjxJuggleEnv:
             raise ValueError(
                 "dr_second_order_delay_nominal_probability must be in [0, 1]"
             )
-        if self.ball_reset_mode == "racket_launch":
+        if self.racket_launch_reset_capable:
             gap_lo, gap_hi = [float(v) for v in cfg.racket_launch_surface_gap_range_m]
             if min(gap_lo, gap_hi) < 0.0:
                 raise ValueError("racket_launch_surface_gap_range_m must be non-negative")
@@ -3238,10 +5375,1557 @@ class MjxJuggleEnv:
         self.include_qvel_reference_error_obs = bool(
             cfg.include_qvel_reference_error_obs
         )
+        self.fixed_contact_plane_training_enabled = bool(
+            getattr(cfg, "fixed_contact_plane_training_enabled", False)
+        )
+        self.cartesian_pose_projection_enabled = bool(
+            getattr(cfg, "cartesian_pose_projection_enabled", False)
+        )
+        if self.cartesian_pose_projection_enabled:
+            if not self.fixed_contact_plane_training_enabled:
+                raise ValueError(
+                    "Cartesian pose projection requires fixed-contact-plane "
+                    "training"
+                )
+            if self.simulation_base_mode != "aligned_fixed":
+                raise ValueError(
+                    "Cartesian pose projection requires the aligned fixed base"
+                )
+            if not (
+                self.action_command_mode == "velocity"
+                and self.policy_integration_feedback_source == "measured"
+                and self.recovered_rmp_bounded_qvel_reference
+                and bool(cfg.recovered_rmp_motion_mode)
+            ):
+                raise ValueError(
+                    "Cartesian pose projection requires measured bounded-QVEL "
+                    "feeding recovered RMP"
+                )
+            lower = np.asarray(
+                cfg.cartesian_pose_position_lower_m, dtype=np.float64
+            )
+            upper = np.asarray(
+                cfg.cartesian_pose_position_upper_m, dtype=np.float64
+            )
+            margin_m = float(cfg.cartesian_pose_position_margin_m)
+            if (
+                lower.shape != (3,)
+                or upper.shape != (3,)
+                or not np.all(np.isfinite(lower))
+                or not np.all(np.isfinite(upper))
+                or not np.isfinite(margin_m)
+                or margin_m < 0.0
+                or np.any(lower + margin_m >= upper - margin_m)
+            ):
+                raise ValueError(
+                    "Cartesian position bounds/margin must define a finite "
+                    "non-empty XYZ box"
+                )
+            if tuple(cfg.cartesian_pose_rpy_axis_enabled) != (
+                True,
+                True,
+                False,
+            ):
+                raise ValueError(
+                    "V85/V86 Cartesian pose projection constrains roll/pitch "
+                    "and must leave yaw free"
+                )
+            roll_limit_deg = float(cfg.cartesian_pose_roll_limit_deg)
+            pitch_limit_deg = float(cfg.cartesian_pose_pitch_limit_deg)
+            orientation_margin_deg = float(
+                cfg.cartesian_pose_orientation_margin_deg
+            )
+            if (
+                not all(
+                    np.isfinite(value) and value > 0.0
+                    for value in (roll_limit_deg, pitch_limit_deg)
+                )
+                or not np.isfinite(orientation_margin_deg)
+                or orientation_margin_deg < 0.0
+                or orientation_margin_deg >= min(
+                    roll_limit_deg, pitch_limit_deg
+                )
+            ):
+                raise ValueError(
+                    "Cartesian roll/pitch limits must exceed their finite "
+                    "non-negative margin"
+                )
+            for name in (
+                "cartesian_pose_position_cbf_gain_s",
+                "cartesian_pose_orientation_cbf_gain_s",
+                "cartesian_pose_projection_tolerance",
+            ):
+                value = float(getattr(cfg, name))
+                if not np.isfinite(value) or value <= 0.0:
+                    raise ValueError(f"{name} must be positive and finite")
+            if int(cfg.cartesian_pose_projection_sweeps) <= 0:
+                raise ValueError(
+                    "cartesian_pose_projection_sweeps must be positive"
+                )
+            penalty_weight = float(
+                cfg.cartesian_pose_projection_penalty_weight
+            )
+            if not np.isfinite(penalty_weight) or penalty_weight < 0.0:
+                raise ValueError(
+                    "cartesian_pose_projection_penalty_weight must be finite "
+                    "and non-negative"
+                )
+            self.cartesian_pose_position_lower = jnp.asarray(
+                lower + margin_m, dtype=jnp.float32
+            )
+            self.cartesian_pose_position_upper = jnp.asarray(
+                upper - margin_m, dtype=jnp.float32
+            )
+            self.cartesian_pose_outer_position_lower = jnp.asarray(
+                lower, dtype=jnp.float32
+            )
+            self.cartesian_pose_outer_position_upper = jnp.asarray(
+                upper, dtype=jnp.float32
+            )
+            self.cartesian_pose_roll_pitch_limit = jnp.deg2rad(
+                jnp.asarray(
+                    (
+                        roll_limit_deg - orientation_margin_deg,
+                        pitch_limit_deg - orientation_margin_deg,
+                    ),
+                    dtype=jnp.float32,
+                )
+            )
+            self.cartesian_pose_outer_roll_pitch_limit = jnp.deg2rad(
+                jnp.asarray(
+                    (roll_limit_deg, pitch_limit_deg), dtype=jnp.float32
+                )
+            )
+        self.fixed_contact_high_ball_predictor_enabled = bool(
+            getattr(cfg, "fixed_contact_high_ball_predictor_enabled", False)
+        )
+        self.fixed_contact_high_ball_predictor_cfg = getattr(
+            cfg,
+            "fixed_contact_high_ball_predictor",
+            HighBallPredictorConfig(),
+        )
+        self.fixed_contact_target_cfg = getattr(
+            cfg,
+            "fixed_contact_target",
+            ContactTargetConfig(),
+        )
+        fixed_contact_actor_schema = getattr(
+            cfg,
+            "fixed_contact_actor_observation_schema",
+            "",
+        )
+        self.plant_aware_fixed_plane_v1_enabled = bool(
+            getattr(cfg, "plant_aware_fixed_plane_v1_enabled", False)
+        )
+        self.fixed_plane_limit_cycle_v1_enabled = bool(
+            getattr(cfg, "fixed_plane_limit_cycle_v1_enabled", False)
+        )
+        if (
+            not math.isfinite(float(cfg.fixed_plane_v92_signed_height_reward_scale))
+            or float(cfg.fixed_plane_v92_signed_height_reward_scale) <= 0.0
+        ):
+            raise ValueError("signed-height reward scale must be finite and positive")
+        self.fixed_plane_v92_history_obs_enabled = bool(
+            getattr(cfg, "fixed_plane_v92_history_obs_enabled", False)
+        )
+        self.fixed_plane_v93_contact_context_enabled = bool(
+            getattr(cfg, "fixed_plane_v93_contact_context_enabled", False)
+        )
+        self.fixed_plane_v99_contiguous_history_obs_enabled = bool(
+            getattr(cfg, "fixed_plane_v99_contiguous_history_obs_enabled", False)
+        )
+        self.fixed_plane_v149_simple_obs_enabled = bool(
+            getattr(cfg, "fixed_plane_v149_simple_obs_enabled", False)
+        )
+        if self.fixed_plane_v149_simple_obs_enabled:
+            from fixed_plane_v149 import validate_simple_observation_contract
+            validate_simple_observation_contract(
+                schema=fixed_contact_actor_schema,
+                dim=int(cfg.fixed_contact_actor_obs_dim),
+                history_enabled=self.fixed_plane_v92_history_obs_enabled,
+                contiguous_enabled=self.fixed_plane_v99_contiguous_history_obs_enabled,
+                high_latency_obs=bool(cfg.high_latency_obs),
+                delay_conditioning=bool(cfg.enable_delay_conditioning),
+            )
+        if self.fixed_plane_v99_contiguous_history_obs_enabled and not (
+            self.fixed_plane_v98_coarse_contact
+            and self.fixed_plane_v92_history_obs_enabled
+            and self.fixed_plane_v93_contact_context_enabled
+        ):
+            raise ValueError("V99 requires V98 contact and V93 actor context")
+        if (
+            bool(cfg.fixed_plane_v94_pending_recontact_as_miss)
+            or float(cfg.fixed_plane_v94_first_hit_apex_reward_weight) > 0.0
+            or float(cfg.fixed_plane_v94_first_hit_early_failure_weight) > 0.0
+        ) and not self.fixed_plane_v93_contact_context_enabled:
+            raise ValueError("V94 reward requires V93 contact-context actor")
+        if (
+            not math.isfinite(float(cfg.fixed_plane_v94_first_hit_apex_reward_weight))
+            or float(cfg.fixed_plane_v94_first_hit_apex_reward_weight) < 0.0
+            or not math.isfinite(float(cfg.fixed_plane_v94_first_hit_apex_sigma_m))
+            or float(cfg.fixed_plane_v94_first_hit_apex_sigma_m) <= 0.0
+            or not math.isfinite(float(cfg.fixed_plane_v94_first_hit_early_failure_weight))
+            or float(cfg.fixed_plane_v94_first_hit_early_failure_weight) < 0.0
+            or not math.isfinite(float(cfg.fixed_plane_v94_first_hit_early_failure_window_s))
+            or float(cfg.fixed_plane_v94_first_hit_early_failure_window_s) <= 0.0
+        ):
+            raise ValueError("V94 first-hit reward weight/sigma invalid")
+        if (
+            any(
+                not math.isfinite(float(value)) or float(value) < 0.0
+                for value in (
+                    cfg.fixed_plane_v95_second_hit_apex_reward_weight,
+                    cfg.fixed_plane_v95_third_hit_apex_reward_weight,
+                    cfg.fixed_plane_v95_early_hit_low_margin_m,
+                    cfg.fixed_plane_v95_early_hit_low_penalty_weight,
+                )
+            )
+            or not math.isfinite(float(cfg.fixed_plane_v95_early_hit_apex_sigma_m))
+            or float(cfg.fixed_plane_v95_early_hit_apex_sigma_m) <= 0.0
+        ):
+            raise ValueError("V95 early true-hit apex reward parameters invalid")
+        if (
+            float(cfg.fixed_plane_v95_second_hit_apex_reward_weight) > 0.0
+            or float(cfg.fixed_plane_v95_third_hit_apex_reward_weight) > 0.0
+        ) and not self.fixed_plane_v93_contact_context_enabled:
+            raise ValueError("V95 reward requires V93 contact-context actor")
+        if (
+            not math.isfinite(float(cfg.fixed_plane_v96_second_hit_viability_weight))
+            or float(cfg.fixed_plane_v96_second_hit_viability_weight) < 0.0
+            or not math.isfinite(float(cfg.fixed_plane_v96_second_hit_viability_center))
+            or not 0.0 <= float(cfg.fixed_plane_v96_second_hit_viability_center) <= 1.0
+            or not math.isfinite(float(cfg.fixed_plane_v96_second_hit_viability_reference_quality))
+            or float(cfg.fixed_plane_v96_second_hit_viability_reference_quality) <= 0.0
+        ):
+            raise ValueError("V96 second-impact viability reward parameters invalid")
+        if float(cfg.fixed_plane_v96_second_hit_viability_weight) > 0.0 and (
+            not bool(cfg.fixed_plane_v34_resolve_weak_launch)
+            or float(cfg.fixed_plane_v95_second_hit_apex_reward_weight) <= 0.0
+            or not self.fixed_plane_v93_contact_context_enabled
+        ):
+            raise ValueError("V96 viability reward requires V95 and physical impact vectors")
+        if (
+            self.plant_aware_fixed_plane_v1_enabled
+            and self.fixed_plane_limit_cycle_v1_enabled
+        ):
+            raise ValueError(
+                "plant-aware and fixed-plane limit-cycle V1 are mutually exclusive"
+            )
+        self.fixed_contact_target_conditioning_observation_scale = (
+            10.0
+            if fixed_contact_actor_schema
+            in (
+                FIXED_CONTACT_ACTOR_OBSERVATION_SCHEMA_V15,
+                FIXED_CONTACT_ACTOR_OBSERVATION_SCHEMA_V16,
+            )
+            else 1.0
+        )
+        if self.fixed_contact_plane_training_enabled:
+            if not isinstance(
+                self.fixed_contact_high_ball_predictor_cfg,
+                HighBallPredictorConfig,
+            ):
+                raise ValueError(
+                    "fixed_contact_high_ball_predictor must be a "
+                    "HighBallPredictorConfig"
+                )
+            if not isinstance(
+                self.fixed_contact_target_cfg,
+                ContactTargetConfig,
+            ):
+                raise ValueError(
+                    "fixed_contact_target must be a ContactTargetConfig"
+                )
+            legacy_actor_contract = (
+                fixed_contact_actor_schema in (
+                    "fixed_contact_plane_v1_separate_current_future_80d",
+                    FIXED_CONTACT_ACTOR_OBSERVATION_SCHEMA_V15,
+                    FIXED_CONTACT_ACTOR_OBSERVATION_SCHEMA_V16,
+                )
+                and int(getattr(cfg, "fixed_contact_actor_obs_dim", -1))
+                == FIXED_CONTACT_ACTOR_OBS_DIM
+                and not self.plant_aware_fixed_plane_v1_enabled
+            )
+            plant_aware_actor_contract = (
+                fixed_contact_actor_schema
+                == PLANT_AWARE_FIXED_PLANE_ACTOR_OBSERVATION_SCHEMA_V1
+                and int(getattr(cfg, "fixed_contact_actor_obs_dim", -1))
+                == PLANT_AWARE_FIXED_PLANE_ACTOR_OBS_DIM
+                and self.plant_aware_fixed_plane_v1_enabled
+            )
+            limit_cycle_actor_contract = (
+                (
+                    fixed_contact_actor_schema
+                    == FIXED_PLANE_LIMIT_CYCLE_ACTOR_OBSERVATION_SCHEMA_V1
+                    and int(getattr(cfg, "fixed_contact_actor_obs_dim", -1))
+                    == FIXED_PLANE_LIMIT_CYCLE_ACTOR_OBS_DIM
+                    and not cfg.fixed_plane_v63_previous_apex_error_obs_enabled
+                )
+                or (
+                    fixed_contact_actor_schema
+                    == FIXED_PLANE_LIMIT_CYCLE_ACTOR_OBSERVATION_SCHEMA_V63
+                    and int(getattr(cfg, "fixed_contact_actor_obs_dim", -1))
+                    == FIXED_PLANE_LIMIT_CYCLE_ACTOR_OBS_DIM_V63
+                    and cfg.fixed_plane_v63_previous_apex_error_obs_enabled
+                )
+                or (
+                    fixed_contact_actor_schema == V92_ACTOR_OBSERVATION_SCHEMA
+                    and int(getattr(cfg, "fixed_contact_actor_obs_dim", -1))
+                    == V92_ACTOR_OBS_DIM
+                    and self.fixed_plane_v92_history_obs_enabled
+                    and not self.fixed_plane_v93_contact_context_enabled
+                    and not cfg.fixed_plane_v63_previous_apex_error_obs_enabled
+                )
+                or (
+                    fixed_contact_actor_schema == V93_ACTOR_OBSERVATION_SCHEMA
+                    and int(getattr(cfg, "fixed_contact_actor_obs_dim", -1))
+                    == V93_ACTOR_OBS_DIM
+                    and self.fixed_plane_v92_history_obs_enabled
+                    and self.fixed_plane_v93_contact_context_enabled
+                    and not self.fixed_plane_v99_contiguous_history_obs_enabled
+                    and not cfg.fixed_plane_v63_previous_apex_error_obs_enabled
+                )
+                or (
+                    fixed_contact_actor_schema == V99_ACTOR_OBSERVATION_SCHEMA
+                    and int(getattr(cfg, "fixed_contact_actor_obs_dim", -1))
+                    == V99_ACTOR_OBS_DIM
+                    and self.fixed_plane_v99_contiguous_history_obs_enabled
+                    and not cfg.fixed_plane_v63_previous_apex_error_obs_enabled
+                )
+                or (
+                    self.fixed_plane_v149_simple_obs_enabled
+                    and fixed_contact_actor_schema
+                    == "fixed_plane_v149_position_only_contiguous_72d"
+                    and int(cfg.fixed_contact_actor_obs_dim) == 72
+                )
+            ) and self.fixed_plane_limit_cycle_v1_enabled and not self.plant_aware_fixed_plane_v1_enabled
+            no_stack_contract = (
+                (
+                    legacy_actor_contract
+                    or plant_aware_actor_contract
+                    or limit_cycle_actor_contract
+                )
+                and self.simulation_base_mode == "aligned_fixed"
+                and self.action_command_mode == "velocity"
+                and self.policy_integration_feedback_source == "measured"
+                and self.recovered_rmp_bounded_qvel_reference
+                and bool(cfg.recovered_rmp_motion_mode)
+                and not self.include_qvel_reference_error_obs
+                and not bool(cfg.actuator_cmd_filter)
+                and str(cfg.actuator_compensation_mode) == "none"
+                and not bool(cfg.arm_servo_target_tracking_planner)
+            )
+            if not no_stack_contract:
+                raise ValueError(
+                    "fixed-contact-plane training requires a registered "
+                    "actor schema and measured "
+                    "bounded-QVEL -> recovered-RMP no-stack contract"
+                )
+            if self.fixed_plane_limit_cycle_v1_enabled:
+                launch_apex = float(
+                    cfg.fixed_plane_limit_cycle_launch_apex_z_m
+                )
+                steady_apex = float(
+                    cfg.fixed_plane_limit_cycle_steady_apex_z_m
+                )
+                if not (
+                    math.isfinite(launch_apex)
+                    and math.isfinite(steady_apex)
+                    and float(cfg.fixed_contact_surface_z_m)
+                    < launch_apex
+                    < steady_apex
+                ):
+                    raise ValueError(
+                        "limit-cycle apex targets must be finite and ordered "
+                        "above the contact plane"
+                    )
+                if int(
+                    cfg.fixed_plane_limit_cycle_transition_confirmed_hits
+                ) <= 0:
+                    raise ValueError(
+                        "limit-cycle transition confirmed hits must be positive"
+                    )
+                explicit_schedule = tuple(
+                    float(value)
+                    for value in cfg.fixed_plane_limit_cycle_apex_schedule_z_m
+                )
+                if explicit_schedule:
+                    if (
+                        len(explicit_schedule) < 2
+                        or any(not math.isfinite(value) for value in explicit_schedule)
+                        or any(right <= left for left, right in zip(explicit_schedule, explicit_schedule[1:]))
+                        or not math.isclose(explicit_schedule[0], launch_apex, abs_tol=1e-6)
+                        or not math.isclose(explicit_schedule[-1], steady_apex, abs_tol=1e-6)
+                    ):
+                        raise ValueError("explicit limit-cycle apex schedule must be strictly rising and endpoint-aligned")
+                if (
+                    cfg.fixed_plane_rapid_steady_apex_event_reward_enabled
+                    and not explicit_schedule
+                ):
+                    raise ValueError("rapid-steady apex event reward requires an explicit schedule")
+                if (
+                    cfg.fixed_plane_rapid_steady_subfloor_bridge_enabled
+                    and not cfg.fixed_plane_rapid_steady_apex_event_reward_enabled
+                ):
+                    raise ValueError("subfloor apex bridge requires rapid-steady event reward")
+                motion_weights = (
+                    cfg.fixed_plane_rapid_steady_late_motion_vxy_weight,
+                    cfg.fixed_plane_rapid_steady_late_motion_omega_weight,
+                    cfg.fixed_plane_rapid_steady_subfloor_bridge_weight,
+                )
+                if not all(
+                    math.isfinite(float(weight)) and float(weight) >= 0.0
+                    for weight in motion_weights
+                ):
+                    raise ValueError(
+                        "rapid-steady V25 weights must be finite and nonnegative"
+                    )
+                if (
+                    motion_weights[0] > 0.0 or motion_weights[1] > 0.0
+                ) and not cfg.fixed_plane_rapid_steady_apex_event_reward_enabled:
+                    raise ValueError(
+                        "rapid-steady late motion bonus requires apex event reward"
+                    )
+                event_weight = float(
+                    cfg.fixed_plane_limit_cycle_contact_vxy_event_reward_weight
+                )
+                event_sigma = float(
+                    cfg.fixed_plane_limit_cycle_contact_vxy_event_sigma_m_s
+                )
+                event_reference = float(
+                    cfg.fixed_plane_limit_cycle_contact_vxy_event_reference_m_s
+                )
+                if (
+                    not math.isfinite(event_weight) or event_weight < 0.0
+                    or not math.isfinite(event_sigma) or event_sigma <= 0.0
+                    or not math.isfinite(event_reference)
+                    or event_reference < 0.0
+                ):
+                    raise ValueError("V32 contact VXY event parameters invalid")
+                if event_weight > 0.0 and not explicit_schedule:
+                    raise ValueError(
+                        "V32 contact VXY event bonus requires apex schedule"
+                    )
+                motion_lead_s = float(
+                    cfg.fixed_plane_rapid_steady_preimpact_motion_lead_s
+                )
+                if (
+                    not math.isfinite(motion_lead_s)
+                    or motion_lead_s < 0.0
+                    or motion_lead_s > 0.25
+                ):
+                    raise ValueError(
+                        "rapid-steady pre-impact motion lead must be in [0, 0.25] s"
+                    )
+                if motion_lead_s > 0.0 and not explicit_schedule:
+                    raise ValueError(
+                        "pre-impact motion lead requires an explicit apex schedule"
+                    )
+                hold_weights = (
+                    cfg.fixed_plane_rapid_steady_launch_hold_vxy_weight,
+                    cfg.fixed_plane_rapid_steady_launch_hold_omega_weight,
+                )
+                if not all(
+                    math.isfinite(float(weight)) and float(weight) >= 0.0
+                    for weight in hold_weights
+                ):
+                    raise ValueError(
+                        "rapid-steady launch-hold weights must be finite and nonnegative"
+                    )
+
+                restitution = float(
+                    cfg.fixed_plane_limit_cycle_effective_restitution
+                )
+                if not 0.0 <= restitution <= 1.0:
+                    raise ValueError(
+                        "limit-cycle effective restitution must be in [0, 1]"
+                    )
+                quality_margin = float(
+                    cfg.fixed_plane_limit_cycle_hit_quality_apex_margin_m
+                )
+                survival_margin = float(
+                    cfg.fixed_plane_limit_cycle_hit_survival_apex_margin_m
+                )
+                if not (
+                    math.isfinite(quality_margin)
+                    and quality_margin > 0.0
+                    and math.isfinite(survival_margin)
+                    and survival_margin >= quality_margin
+                ):
+                    raise ValueError(
+                        "limit-cycle hit-apex margins must be positive and "
+                        "survival margin must be >= quality margin"
+                    )
+                if bool(
+                    cfg.fixed_plane_limit_cycle_dynamic_stroke_enabled
+                ):
+                    dynamic_values = (
+                        float(
+                            cfg.fixed_plane_limit_cycle_min_contact_vz_m_s
+                        ),
+                        float(
+                            cfg.fixed_plane_limit_cycle_max_contact_vz_m_s
+                        ),
+                        float(
+                            cfg.fixed_plane_limit_cycle_prestroke_depth_m
+                        ),
+                        float(
+                            cfg.fixed_plane_limit_cycle_stroke_prepare_s
+                        ),
+                    )
+                    if not all(
+                        math.isfinite(value) for value in dynamic_values
+                    ):
+                        raise ValueError(
+                            "limit-cycle dynamic stroke values must be finite"
+                        )
+                    if (
+                        dynamic_values[0] < 0.0
+                        or dynamic_values[1] <= dynamic_values[0]
+                        or dynamic_values[2] <= 0.0
+                        or dynamic_values[3] <= 0.0
+                    ):
+                        raise ValueError(
+                            "limit-cycle dynamic stroke requires ordered "
+                            "speed bounds and positive depth/prepare time"
+                        )
+                    lower_surface_z = float(
+                        cfg.cartesian_pose_position_lower_m[2]
+                    )
+                    if (
+                        float(cfg.fixed_contact_surface_z_m)
+                        - dynamic_values[2]
+                        < lower_surface_z
+                    ):
+                        raise ValueError(
+                            "limit-cycle prestroke depth crosses the Cartesian "
+                            "surface-Z lower bound"
+                        )
+            if self.plant_aware_fixed_plane_v1_enabled:
+                plant_values = (
+                    float(cfg.plant_aware_residual_action_scale),
+                    float(cfg.plant_aware_effective_restitution),
+                    float(cfg.plant_aware_stroke_lead_s),
+                    float(cfg.plant_aware_brake_window_s),
+                    float(cfg.plant_aware_prestroke_depth_m),
+                    float(cfg.plant_aware_retract_window_s),
+                    float(cfg.plant_aware_max_contact_vxy_m_s),
+                    float(cfg.plant_aware_min_contact_vz_m_s),
+                    float(cfg.plant_aware_max_contact_vz_m_s),
+                    float(cfg.plant_aware_contact_velocity_command_gain),
+                    float(cfg.plant_aware_reference_unwind_gain),
+                    float(cfg.plant_aware_command_slew_fraction),
+                    float(cfg.plant_aware_measured_velocity_correction_gain),
+                    float(cfg.plant_aware_tracking_quality_window_s),
+                )
+                if not all(math.isfinite(value) for value in plant_values):
+                    raise ValueError("plant-aware V1 values must be finite")
+                if not 0.0 <= plant_values[0] <= 1.0:
+                    raise ValueError("plant-aware residual scale must be in [0, 1]")
+                if not 0.0 < plant_values[1] <= 1.0:
+                    raise ValueError("plant-aware restitution must be in (0, 1]")
+                if not 0.0 < plant_values[3] < plant_values[2]:
+                    raise ValueError("plant-aware brake window must be inside stroke lead")
+                if any(value <= 0.0 for value in plant_values[2:9]):
+                    raise ValueError("plant-aware timing/depth/speed values must be positive")
+                if plant_values[8] < plant_values[7]:
+                    raise ValueError("plant-aware contact-vz limits must be ordered")
+                if not 0.0 < plant_values[9] <= 4.0:
+                    raise ValueError(
+                        "plant-aware contact command gain must be in (0, 4]"
+                    )
+                if not 0.0 <= plant_values[10] <= 1.0:
+                    raise ValueError("plant-aware reference unwind gain must be in [0, 1]")
+                if not 0.0 < plant_values[11] <= 1.0:
+                    raise ValueError("plant-aware command slew fraction must be in (0, 1]")
+                if not 0.0 <= plant_values[12] <= 1.0:
+                    raise ValueError(
+                        "plant-aware measured-velocity correction gain must be in [0, 1]"
+                    )
+                if not 0.0 < plant_values[13] <= 1.0:
+                    raise ValueError(
+                        "plant-aware tracking quality window must be in (0, 1] s"
+                    )
+                transient_scale = tuple(
+                    float(value)
+                    for value in cfg.plant_aware_vertical_transient_precomp_scale
+                )
+                if len(transient_scale) != self.act_dim or any(
+                    not math.isfinite(value) or value <= 0.0
+                    for value in transient_scale
+                ):
+                    raise ValueError(
+                        "plant-aware transient precomp scale must contain seven "
+                        "positive finite values"
+                    )
+                if float(cfg.plant_aware_retract_velocity_m_s) >= 0.0:
+                    raise ValueError("plant-aware retract velocity must be negative")
+            if (
+                bool(cfg.high_latency_obs)
+                or bool(cfg.enable_delay_conditioning)
+                or bool(cfg.dr_post_hit_ball_obs_latency)
+                or bool(
+                    cfg.dr_post_hit_ball_obs_latency_timestamp_consistent_age
+                )
+            ):
+                raise ValueError(
+                    "fixed-contact-plane v1 forbids legacy observation/delay "
+                    "augmentation"
+                )
+            center_probability = float(
+                cfg.fixed_contact_xy_center_probability
+            )
+            if not 0.0 <= center_probability <= 1.0:
+                raise ValueError(
+                    "fixed_contact_xy_center_probability must be in [0, 1]"
+                )
+            if (
+                cfg.fixed_contact_xy_bin_sampling_enabled
+                and (
+                    not cfg.fixed_contact_eval_grid_x_m
+                    or not cfg.fixed_contact_eval_grid_y_m
+                )
+            ):
+                raise ValueError(
+                    "fixed-contact XY bin sampling requires non-empty grids"
+                )
+            reward_weights = (
+                cfg.fixed_contact_s0_xy_reward_weight,
+                cfg.fixed_contact_s0_z_reward_weight,
+                cfg.fixed_contact_s0_pose_reward_weight,
+                cfg.fixed_contact_s0_vxy_reward_weight,
+                cfg.fixed_contact_s0_omega_reward_weight,
+                cfg.fixed_contact_s0_final_xy_reward_weight,
+                cfg.fixed_contact_s0_final_z_reward_weight,
+                cfg.fixed_contact_s0_final_pose_reward_weight,
+                cfg.fixed_contact_s0_readiness_bonus_weight,
+                cfg.fixed_contact_s0_gate_aligned_position_weight,
+                cfg.fixed_contact_s0_gate_aligned_motion_weight,
+                cfg.fixed_contact_s0_arrival_worst_constraint_penalty_weight,
+                getattr(
+                    cfg,
+                    "fixed_contact_post_hit_recovery_worst_constraint_penalty_weight",
+                    0.0,
+                ),
+                getattr(
+                    cfg,
+                    "fixed_contact_post_hit_recovery_joint_constraint_penalty_weight",
+                    0.0,
+                ),
+                getattr(
+                    cfg,
+                    "fixed_contact_post_hit_recovery_timeout_penalty_weight",
+                    0.0,
+                ),
+                getattr(
+                    cfg,
+                    "fixed_contact_post_hit_recovery_failure_penalty_weight",
+                    0.0,
+                ),
+                cfg.fixed_contact_s0_qualified_low_action_reward_weight,
+                cfg.fixed_contact_outcome_constraint_penalty_weight,
+                cfg.fixed_contact_outcome_constraint_bonus_weight,
+                cfg.fixed_contact_apex_error_penalty_weight,
+                cfg.fixed_plane_v134_late_xy_anchor_penalty_weight,
+            )
+            if any(float(value) < 0.0 for value in reward_weights):
+                raise ValueError(
+                    "fixed-contact S0 component reward weights must be "
+                    "non-negative"
+                )
+            if (
+                not math.isfinite(float(cfg.fixed_plane_v146_ball_anchor_xy_penalty_weight))
+                or float(cfg.fixed_plane_v146_ball_anchor_xy_penalty_weight) < 0.0
+            ):
+                raise ValueError("ball-anchor XY reward weight must be finite and nonnegative")
+            event_gate_mix = float(
+                cfg.fixed_contact_event_joint_quality_gate_mix
+            )
+            if (
+                not math.isfinite(event_gate_mix)
+                or not 0.0 <= event_gate_mix <= 1.0
+            ):
+                raise ValueError(
+                    "fixed_contact_event_joint_quality_gate_mix must be "
+                    "finite and in [0, 1]"
+                )
+            if cfg.fixed_contact_outcome_constraint_aggregation not in (
+                "sum",
+                "mean",
+                "max",
+            ):
+                raise ValueError(
+                    "fixed_contact_outcome_constraint_aggregation must be "
+                    "'sum', 'mean', or 'max'"
+                )
+            if (
+                not math.isfinite(cfg.fixed_contact_return_apex_sigma_m)
+                or cfg.fixed_contact_return_apex_sigma_m <= 0.0
+            ):
+                raise ValueError(
+                    "fixed_contact_return_apex_sigma_m must be positive and "
+                    "finite"
+                )
+            if (
+                not math.isfinite(
+                    cfg.fixed_contact_apex_error_penalty_scale_m
+                )
+                or cfg.fixed_contact_apex_error_penalty_scale_m <= 0.0
+            ):
+                raise ValueError(
+                    "fixed_contact_apex_error_penalty_scale_m must be "
+                    "positive and finite"
+                )
+            arrival_lo_s, arrival_hi_s = sorted(
+                float(value)
+                for value in cfg.fixed_contact_s0_arrival_window_s
+            )
+            if not (
+                math.isfinite(arrival_lo_s)
+                and math.isfinite(arrival_hi_s)
+                and 0.0 <= arrival_lo_s < arrival_hi_s
+            ):
+                raise ValueError(
+                    "fixed_contact_s0_arrival_window_s must contain two "
+                    "finite non-negative increasing times"
+                )
+            hold_lo_s, hold_hi_s = sorted(
+                float(value)
+                for value in cfg.fixed_contact_ready_hold_window_s
+            )
+            if not (
+                math.isfinite(hold_lo_s)
+                and math.isfinite(hold_hi_s)
+                and 0.0 <= hold_lo_s < hold_hi_s
+            ):
+                raise ValueError(
+                    "fixed_contact_ready_hold_window_s must contain two "
+                    "finite non-negative increasing times"
+                )
+            score_sigmas = (
+                cfg.fixed_contact_s0_xy_reward_sigma_m,
+                cfg.fixed_contact_s0_z_reward_sigma_m,
+                cfg.fixed_contact_s0_pose_reward_sigma_rad,
+                cfg.fixed_contact_s0_vxy_reward_sigma_m_s,
+                cfg.fixed_contact_s0_omega_reward_sigma_rad_s,
+                cfg.fixed_contact_s0_xy_gate_sigma_m,
+                cfg.fixed_contact_s0_z_gate_sigma_m,
+                cfg.fixed_contact_s0_pose_gate_sigma_rad,
+                cfg.fixed_contact_s0_vxy_gate_sigma_m_s,
+                cfg.fixed_contact_s0_omega_gate_sigma_rad_s,
+                cfg.fixed_contact_s0_final_xy_reward_sigma_m,
+                cfg.fixed_contact_s0_final_z_reward_sigma_m,
+                cfg.fixed_contact_s0_final_pose_reward_sigma_rad,
+            )
+            if any(float(value) <= 0.0 for value in score_sigmas):
+                raise ValueError(
+                    "fixed-contact S0 component score sigmas must be positive"
+                )
+            readiness_limits = (
+                cfg.fixed_contact_s0_ready_max_xy_error_m,
+                cfg.fixed_contact_s0_ready_max_z_error_m,
+                cfg.fixed_contact_s0_ready_max_pose_error_rad,
+                cfg.fixed_contact_s0_ready_max_vxy_m_s,
+                cfg.fixed_contact_s0_ready_max_omega_rad_s,
+            )
+            if any(float(value) <= 0.0 for value in readiness_limits):
+                raise ValueError(
+                    "fixed-contact S0 readiness limits must be positive"
+                )
+            if (
+                bool(getattr(
+                    cfg,
+                    "fixed_contact_post_hit_recovery_require_full_readiness",
+                    False,
+                ))
+                and not bool(getattr(
+                    cfg,
+                    "fixed_contact_post_hit_recovery_lesson_enabled",
+                    False,
+                ))
+            ):
+                raise ValueError(
+                    "full post-hit recovery readiness requires the explicit "
+                    "post-hit recovery lesson"
+                )
+            if (
+                bool(getattr(
+                    cfg,
+                    "fixed_contact_post_hit_recovery_use_policy_target",
+                    False,
+                ))
+                and not bool(getattr(
+                    cfg,
+                    "fixed_contact_post_hit_recovery_lesson_enabled",
+                    False,
+                ))
+            ):
+                raise ValueError(
+                    "policy-target post-hit recovery requires the explicit "
+                    "post-hit recovery lesson"
+                )
+            if bool(getattr(
+                cfg,
+                "fixed_contact_post_hit_recovery_dense_motion_enabled",
+                False,
+            )) and not (
+                bool(getattr(
+                    cfg,
+                    "fixed_contact_post_hit_recovery_lesson_enabled",
+                    False,
+                ))
+                and bool(getattr(
+                    cfg,
+                    "fixed_contact_post_hit_recovery_use_policy_target",
+                    False,
+                ))
+            ):
+                raise ValueError(
+                    "dense post-hit motion shaping requires the explicit "
+                    "actor-visible post-hit recovery lesson"
+                )
+            if bool(getattr(
+                cfg,
+                "fixed_contact_post_hit_recovery_require_vertical_stability",
+                False,
+            )):
+                if not bool(getattr(
+                    cfg,
+                    "fixed_contact_post_hit_recovery_lesson_enabled",
+                    False,
+                )):
+                    raise ValueError(
+                        "vertical post-hit stability requires the explicit "
+                        "post-hit recovery lesson"
+                    )
+                max_vz = float(getattr(
+                    cfg,
+                    "fixed_contact_post_hit_recovery_max_vz_m_s",
+                    0.0,
+                ))
+                if not math.isfinite(max_vz) or max_vz <= 0.0:
+                    raise ValueError(
+                        "vertical post-hit stability requires a finite "
+                        "positive Vz limit"
+                    )
+            if float(getattr(
+                cfg,
+                "fixed_contact_post_hit_recovery_joint_constraint_penalty_weight",
+                0.0,
+            )) > 0.0 and not (
+                bool(getattr(
+                    cfg,
+                    "fixed_contact_post_hit_recovery_lesson_enabled",
+                    False,
+                ))
+                and bool(getattr(
+                    cfg,
+                    "fixed_contact_post_hit_recovery_use_policy_target",
+                    False,
+                ))
+            ):
+                raise ValueError(
+                    "post-hit joint constraint shaping requires the explicit "
+                    "actor-visible recovery lesson"
+                )
+            if float(getattr(
+                cfg,
+                "fixed_contact_post_hit_recovery_failure_penalty_weight",
+                0.0,
+            )) > 0.0 and not bool(getattr(
+                cfg,
+                "fixed_contact_post_hit_recovery_lesson_enabled",
+                False,
+            )):
+                raise ValueError(
+                    "post-hit terminal failure cost requires the explicit "
+                    "recovery lesson"
+                )
+            if (
+                float(getattr(
+                    cfg,
+                    "fixed_contact_post_hit_recovery_worst_constraint_penalty_weight",
+                    0.0,
+                )) > 0.0
+                or float(getattr(
+                    cfg,
+                    "fixed_contact_post_hit_recovery_timeout_penalty_weight",
+                    0.0,
+                )) > 0.0
+            ) and not (
+                bool(getattr(
+                    cfg,
+                    "fixed_contact_post_hit_recovery_lesson_enabled",
+                    False,
+                ))
+                and bool(getattr(
+                    cfg,
+                    "fixed_contact_post_hit_recovery_require_full_readiness",
+                    False,
+                ))
+                and bool(getattr(
+                    cfg,
+                    "fixed_contact_post_hit_recovery_use_policy_target",
+                    False,
+                ))
+            ):
+                raise ValueError(
+                    "post-hit recovery joint penalties require the explicit "
+                    "actor-visible full-readiness lesson"
+                )
+            action_penalty_gate = tuple(
+                float(value)
+                for value in cfg.fixed_contact_s0_action_penalty_min_gate_scores
+            )
+            if len(action_penalty_gate) != 5 or any(
+                not math.isfinite(value) or not 0.0 <= value <= 1.0
+                for value in action_penalty_gate
+            ):
+                raise ValueError(
+                    "fixed-contact action-penalty gate requires five finite "
+                    "scores in [0, 1]"
+                )
+            outcome_limits = (
+                cfg.fixed_contact_outcome_max_surface_z_error_m,
+                cfg.fixed_contact_outcome_max_pose_error_rad,
+                cfg.fixed_contact_outcome_max_racket_vxy_m_s,
+                cfg.fixed_contact_outcome_max_racket_omega_rad_s,
+                cfg.fixed_contact_outcome_max_contact_offset_m,
+                cfg.fixed_contact_outcome_max_horizontal_step_m,
+                cfg.fixed_contact_outcome_max_outward_progress_m,
+            )
+            if any(float(value) <= 0.0 for value in outcome_limits):
+                raise ValueError(
+                    "fixed-contact outcome constraint limits must be positive"
+                )
+            if cfg.fixed_contact_surface_frame_mode not in {"legacy", "mesh_axes_v1"}:
+                raise ValueError("unknown fixed_contact_surface_frame_mode")
+            conversion_edge_mode = getattr(
+                cfg, "fixed_contact_conversion_edge_mode", "logical"
+            )
+            if conversion_edge_mode not in {
+                "logical",
+                "raw_physical",
+            }:
+                raise ValueError(
+                    "fixed_contact_conversion_edge_mode must be logical or "
+                    "raw_physical"
+                )
+            if (
+                bool(getattr(
+                    cfg,
+                    "hit_pending_recontact_termination_enabled",
+                    False,
+                ))
+                and conversion_edge_mode != "raw_physical"
+            ):
+                raise ValueError(
+                    "pending-hit recontact termination requires raw physical "
+                    "conversion accounting"
+                )
+            if cfg.fixed_contact_surface_frame_mode == "mesh_axes_v1" and (
+                cfg.ball_racket_collision_geometry != "finite_mesh16"
+                or int(cfg.fixed_contact_racket_surface_size_axis) != 0
+                or float(cfg.dr_racket_radius_offset_m) != 0.0
+            ):
+                raise ValueError("mesh_axes_v1 requires mesh16 axis 0 and zero radius DR; changing mesh bounds does not scale vertices")
+            if (
+                not np.isfinite(cfg.fixed_contact_s0_settle_lead_s)
+                or cfg.fixed_contact_s0_settle_lead_s < 0.0
+            ):
+                raise ValueError(
+                    "S0 settle lead requires a finite nonnegative time"
+                )
+            if (
+                math.isnan(float(cfg.fixed_contact_pre_hit_s0_reward_max_s))
+                or float(cfg.fixed_contact_pre_hit_s0_reward_max_s) < 0.0
+            ):
+                raise ValueError(
+                    "fixed-contact pre-hit S0 reward budget must be nonnegative"
+                )
+            if (
+                math.isnan(
+                    float(
+                        cfg.fixed_contact_falling_pre_hit_s0_reward_max_s
+                    )
+                )
+                or float(
+                    cfg.fixed_contact_falling_pre_hit_s0_reward_max_s
+                ) < 0.0
+            ):
+                raise ValueError(
+                    "fixed-contact falling pre-hit S0 reward budget must be "
+                    "nonnegative"
+                )
+            if (
+                not math.isfinite(float(cfg.fixed_contact_first_hit_deadline_s))
+                or float(cfg.fixed_contact_first_hit_deadline_s) < 0.0
+            ):
+                raise ValueError(
+                    "fixed-contact first-hit deadline must be finite and nonnegative"
+                )
+            if (
+                not math.isfinite(
+                    float(cfg.fixed_contact_recurrent_hit_deadline_s)
+                )
+                or float(cfg.fixed_contact_recurrent_hit_deadline_s) < 0.0
+            ):
+                raise ValueError(
+                    "fixed-contact recurrent-hit deadline must be finite and "
+                    "nonnegative"
+                )
+            flatness_angle_values = (
+                float(cfg.racket_flatness_angle_deadband_rad),
+                float(cfg.racket_flatness_angle_scale_rad),
+            )
+            if (not all(math.isfinite(value) for value in flatness_angle_values)
+                    or flatness_angle_values[0] < 0.0
+                    or flatness_angle_values[1] <= 0.0):
+                raise ValueError("angle flatness reward requires a finite "
+                                 "nonnegative deadband and positive scale")
+            early_ball_xy_values = (
+                float(cfg.fixed_plane_v138_early_ball_xy_deadband_m_s),
+                float(cfg.fixed_plane_v138_early_ball_xy_scale_m_s),
+            )
+            if (not all(math.isfinite(value) for value in early_ball_xy_values)
+                    or early_ball_xy_values[0] < 0.0
+                    or early_ball_xy_values[1] <= 0.0):
+                raise ValueError("early ball XY reward requires a finite "
+                                 "nonnegative deadband and positive scale")
+            workspace_z_barrier_values = (
+                float(cfg.fixed_contact_workspace_z_barrier_weight),
+                float(cfg.fixed_contact_workspace_z_barrier_margin_m),
+                float(cfg.fixed_contact_workspace_z_barrier_downward_lookahead_s),
+            )
+            if (
+                not all(
+                    math.isfinite(value)
+                    for value in workspace_z_barrier_values
+                )
+                or workspace_z_barrier_values[0] < 0.0
+                or workspace_z_barrier_values[1] <= 0.0
+                or workspace_z_barrier_values[2] < 0.0
+            ):
+                raise ValueError(
+                    "fixed-contact workspace Z barrier requires a finite "
+                    "nonnegative weight and positive margin"
+                )
+            racket_z_lower, racket_z_upper = tuple(
+                float(value)
+                for value in cfg.fixed_contact_racket_z_bounds_m
+            )
+            if (
+                2.0 * workspace_z_barrier_values[1]
+                >= racket_z_upper - racket_z_lower
+            ):
+                raise ValueError(
+                    "fixed-contact workspace Z barrier margin leaves no "
+                    "interior"
+                )
+            launch_values = (
+                float(cfg.fixed_contact_pre_hit_launch_vz_reward_weight),
+                float(cfg.fixed_contact_pre_hit_launch_vz_target_m_s),
+                float(cfg.fixed_contact_pre_hit_launch_vz_window_s),
+                float(
+                    cfg.fixed_contact_pre_hit_launch_command_vz_reward_weight
+                ),
+            )
+            if (
+                not all(math.isfinite(value) for value in launch_values)
+                or launch_values[0] < 0.0
+                or launch_values[1] <= 0.0
+                or launch_values[2] < 0.0
+                or launch_values[3] < 0.0
+            ):
+                raise ValueError(
+                    "fixed-contact pre-hit launch reward requires finite "
+                    "nonnegative weight/window and positive target vz"
+                )
+            retract_values = (
+                float(
+                    cfg.fixed_contact_pending_hit_retract_vz_reward_weight
+                ),
+                float(cfg.fixed_contact_pending_hit_retract_vz_target_m_s),
+                float(cfg.fixed_contact_pending_hit_retract_vz_window_s),
+                float(
+                    cfg.fixed_contact_pending_hit_retract_command_vz_reward_weight
+                ),
+            )
+            if (
+                not all(math.isfinite(value) for value in retract_values)
+                or retract_values[0] < 0.0
+                or retract_values[1] <= 0.0
+                or retract_values[2] < 0.0
+                or retract_values[3] < 0.0
+            ):
+                raise ValueError(
+                    "fixed-contact pending-hit retract reward requires finite "
+                    "nonnegative weight/window and positive target vz"
+                )
+            if int(cfg.fixed_contact_racket_surface_size_axis) not in (0, 1, 2):
+                raise ValueError(
+                    "fixed_contact_racket_surface_size_axis must be 0, 1, or 2"
+                )
+            if (
+                cfg.fixed_contact_xy_equal_bin_evaluation
+                and not cfg.fixed_contact_xy_bin_sampling_enabled
+            ):
+                raise ValueError(
+                    "fixed-contact equal-bin evaluation requires XY bin "
+                    "sampling"
+                )
+            if (
+                cfg.fixed_contact_xy_equal_bin_evaluation
+                and cfg.fixed_contact_xy_equal_bin_seed_permutation
+                and cfg.fixed_contact_factorized_reset_evaluation
+            ):
+                raise ValueError(
+                    "seed-permuted XY evaluation does not reinterpret the "
+                    "historical factorized XY-by-blend lane contract"
+                )
+            if (
+                not math.isfinite(float(cfg.fixed_plane_v53_fast_arrival_vz_penalty_weight))
+                or cfg.fixed_plane_v53_fast_arrival_vz_penalty_weight < 0.0
+            ):
+                raise ValueError("V53 fast-arrival weight must be finite and nonnegative")
+            if (
+                not math.isfinite(float(cfg.fixed_plane_v54_late_apex_score_weight))
+                or cfg.fixed_plane_v54_late_apex_score_weight < 0.0
+            ):
+                raise ValueError("V54 apex score weight must be finite and nonnegative")
+            if (
+                not math.isfinite(float(cfg.fixed_plane_v58_apex_error_expansion_weight))
+                or cfg.fixed_plane_v58_apex_error_expansion_weight < 0.0
+            ):
+                raise ValueError("V58 apex expansion weight must be finite and nonnegative")
+            if (
+                not math.isfinite(float(cfg.fixed_plane_v80_steady_height_weight))
+                or cfg.fixed_plane_v80_steady_height_weight < 0.0
+            ):
+                raise ValueError("V80 steady height weight must be finite and nonnegative")
+            if (
+                not 1.400 < cfg.fixed_plane_v80_high_start_z_m <= 1.464
+                or not math.isfinite(float(cfg.fixed_plane_v80_high_cost_weight))
+                or cfg.fixed_plane_v80_high_cost_weight < 0.0
+                or not math.isfinite(float(cfg.fixed_plane_v80_pair_cost_weight))
+                or cfg.fixed_plane_v80_pair_cost_weight < 0.0
+            ):
+                raise ValueError("V80/V82 upper and adjacent score settings must be valid")
+            if (
+                not math.isfinite(float(cfg.fixed_plane_v88_positive_height_weight))
+                or cfg.fixed_plane_v88_positive_height_weight < 0.0
+                or (
+                    cfg.fixed_plane_v88_positive_height_weight > 0.0
+                    and cfg.fixed_plane_v80_steady_height_weight <= 0.0
+                )
+            ):
+                raise ValueError("V88 positive height reward requires valid V80 telemetry")
+            if (
+                cfg.fixed_plane_v90_smooth_height_enabled
+                and cfg.fixed_plane_v88_positive_height_weight <= 0.0
+            ):
+                raise ValueError("V90 smooth height requires V88 reward reversal")
+            if cfg.fixed_plane_v92_signed_height_enabled and not (
+                self.fixed_plane_v92_history_obs_enabled
+                and cfg.fixed_plane_v90_smooth_height_enabled
+                and cfg.fixed_plane_v80_steady_height_weight > 0.0
+            ):
+                raise ValueError("V92 signed height requires history actor and V90 replacement telemetry")
+            if (
+                not math.isfinite(float(cfg.fixed_plane_v69_failed_first_peak_vz_reward_weight))
+                or cfg.fixed_plane_v69_failed_first_peak_vz_reward_weight < 0.0
+            ):
+                raise ValueError("V69 failed first launch weight must be finite and nonnegative")
+            if (
+                not math.isfinite(float(cfg.fixed_plane_v75_post_hit_target_progress_weight))
+                or cfg.fixed_plane_v75_post_hit_target_progress_weight < 0.0
+                or not math.isfinite(float(cfg.fixed_plane_v75_post_hit_target_progress_lead_s))
+                or cfg.fixed_plane_v75_post_hit_target_progress_lead_s < 0.0
+                or not math.isfinite(float(cfg.fixed_plane_v75_post_hit_target_progress_max_step_m))
+                or cfg.fixed_plane_v75_post_hit_target_progress_max_step_m <= 0.0
+                or cfg.fixed_plane_v75_post_hit_target_progress_min_hit_count < 1
+            ):
+                raise ValueError("V75 same-target progress parameters must be finite and valid")
+            if (
+                not math.isfinite(float(cfg.fixed_plane_v115_third_hit_bonus_weight))
+                or cfg.fixed_plane_v115_third_hit_bonus_weight < 0.0
+            ):
+                raise ValueError("V115 third-hit bonus must be finite and nonnegative")
+            if (
+                not math.isfinite(float(cfg.fixed_plane_v116_post_second_intercept_weight_per_s))
+                or cfg.fixed_plane_v116_post_second_intercept_weight_per_s < 0.0
+                or not math.isfinite(float(cfg.fixed_plane_v116_post_second_intercept_sigma_m))
+                or cfg.fixed_plane_v116_post_second_intercept_sigma_m <= 0.0
+                or not math.isfinite(float(cfg.fixed_plane_v116_post_second_intercept_window_s))
+                or cfg.fixed_plane_v116_post_second_intercept_window_s <= 0.0
+            ):
+                raise ValueError("V116 intercept penalty parameters must be finite and valid")
+            if (
+                not math.isfinite(float(cfg.fixed_plane_v118_post_second_clearance_weight))
+                or cfg.fixed_plane_v118_post_second_clearance_weight < 0.0
+                or not math.isfinite(float(cfg.fixed_plane_v118_post_second_retract_weight_per_s))
+                or cfg.fixed_plane_v118_post_second_retract_weight_per_s < 0.0
+                or not math.isfinite(float(cfg.fixed_plane_v118_post_second_retract_target_m_s))
+                or cfg.fixed_plane_v118_post_second_retract_target_m_s <= 0.0
+                or not math.isfinite(float(cfg.fixed_plane_v118_post_second_retract_window_s))
+                or cfg.fixed_plane_v118_post_second_retract_window_s <= 0.0
+            ):
+                raise ValueError("V118 pending-separation parameters must be finite and valid")
+            if (
+                not math.isfinite(float(cfg.fixed_plane_v120_third_edge_outgoing_vz_weight))
+                or cfg.fixed_plane_v120_third_edge_outgoing_vz_weight < 0.0
+                or not math.isfinite(float(cfg.fixed_plane_v120_third_edge_outgoing_vz_target_m_s))
+                or cfg.fixed_plane_v120_third_edge_outgoing_vz_target_m_s <= 0.0
+            ):
+                raise ValueError("V120 third-edge outcome reward parameters must be finite and valid")
+            if (
+                not math.isfinite(float(cfg.fixed_plane_v121_third_edge_outgoing_vz_floor_m_s))
+                or cfg.fixed_plane_v121_third_edge_outgoing_vz_floor_m_s
+                >= cfg.fixed_plane_v120_third_edge_outgoing_vz_target_m_s
+            ):
+                raise ValueError("V121 outgoing-VZ score floor must be finite and below target")
+            if (
+                not math.isfinite(float(cfg.fixed_plane_v122_third_release_vz_weight))
+                or cfg.fixed_plane_v122_third_release_vz_weight < 0.0
+                or not math.isfinite(float(cfg.fixed_plane_v122_third_release_vz_target_m_s))
+                or cfg.fixed_plane_v122_third_release_vz_target_m_s <= 0.0
+            ):
+                raise ValueError("V122 third-release reward parameters must be finite and valid")
+            if (
+                not math.isfinite(float(cfg.fixed_plane_v124_edge_z_penalty_weight))
+                or cfg.fixed_plane_v124_edge_z_penalty_weight < 0.0
+                or not math.isfinite(float(cfg.fixed_plane_v124_edge_vz_reward_weight))
+                or cfg.fixed_plane_v124_edge_vz_reward_weight < 0.0
+                or not math.isfinite(float(cfg.fixed_plane_v124_edge_z_target_m))
+                or cfg.fixed_plane_v124_edge_z_target_m
+                >= cfg.fixed_contact_racket_z_bounds_m[1]
+                or not math.isfinite(float(cfg.fixed_plane_v124_edge_vz_floor_m_s))
+                or not math.isfinite(float(cfg.fixed_plane_v124_edge_vz_target_m_s))
+                or cfg.fixed_plane_v124_edge_vz_target_m_s
+                <= cfg.fixed_plane_v124_edge_vz_floor_m_s
+            ):
+                raise ValueError("V124 third-edge preparation parameters must be finite and valid")
+            if (
+                not math.isfinite(float(cfg.fixed_plane_v77_first_peak_vz_weight))
+                or cfg.fixed_plane_v77_first_peak_vz_weight < 0.0
+                or not math.isfinite(float(cfg.fixed_plane_v77_first_peak_vz_target_m_s))
+                or cfg.fixed_plane_v77_first_peak_vz_target_m_s <= 0.0
+            ):
+                raise ValueError("V77 first outgoing-speed parameters must be valid")
+            if (
+                not math.isfinite(float(cfg.fixed_plane_v78_first_resolved_peak_vz_weight))
+                or cfg.fixed_plane_v78_first_resolved_peak_vz_weight < 0.0
+                or not math.isfinite(float(cfg.fixed_plane_v78_first_resolved_peak_vz_target_m_s))
+                or cfg.fixed_plane_v78_first_resolved_peak_vz_target_m_s <= 0.0
+            ):
+                raise ValueError("V78 first resolved outgoing-speed parameters must be valid")
+            if (
+                not math.isfinite(float(cfg.fixed_plane_v59_high_apex_penalty_weight))
+                or cfg.fixed_plane_v59_high_apex_penalty_weight < 0.0
+            ):
+                raise ValueError("V59 high-apex weight must be finite and nonnegative")
+            if cfg.fixed_plane_v60_late_weak_streak_limit not in (0, 2, 3, 4):
+                raise ValueError("V60 late weak streak limit must be 0, 2, 3 or 4")
+            recurrent_launch_values = (
+                float(cfg.fixed_contact_recurrent_launch_vz_reward_weight),
+                float(cfg.fixed_contact_recurrent_launch_vz_target_m_s),
+                float(cfg.fixed_contact_recurrent_launch_vz_window_s),
+            )
+            if (
+                not all(math.isfinite(value) for value in recurrent_launch_values)
+                or recurrent_launch_values[0] < 0.0
+                or recurrent_launch_values[1] <= 0.0
+                or recurrent_launch_values[2] < 0.0
+            ):
+                raise ValueError(
+                    "fixed-contact recurrent launch reward requires finite "
+                    "nonnegative weight/window and positive target vz"
+                )
+            if int(getattr(
+                cfg, 'fixed_contact_recurrent_launch_min_hit_count', 1
+            )) < 0:
+                raise ValueError(
+                    "fixed_contact_recurrent_launch_min_hit_count must be >= 0"
+                )
+            smooth_stroke_values = (
+                float(cfg.fixed_contact_smooth_stroke_vz_penalty_weight),
+                float(cfg.fixed_contact_smooth_stroke_peak_m_s),
+                float(cfg.fixed_contact_smooth_stroke_lead_s),
+                float(cfg.fixed_contact_smooth_stroke_brake_lead_s),
+                float(cfg.fixed_contact_smooth_stroke_error_scale_m_s),
+            )
+            if (
+                not all(math.isfinite(value) for value in smooth_stroke_values)
+                or smooth_stroke_values[0] < 0.0
+                or smooth_stroke_values[1] <= 0.0
+                or smooth_stroke_values[2] <= 0.0
+                or smooth_stroke_values[3] < 0.0
+                or smooth_stroke_values[3] >= smooth_stroke_values[2]
+                or smooth_stroke_values[4] <= 0.0
+            ):
+                raise ValueError(
+                    "fixed-contact smooth stroke requires a nonnegative "
+                    "weight, positive peak/lead/scale and 0 <= brake < lead"
+                )
+            if int(cfg.fixed_contact_smooth_stroke_min_hit_count) < 0:
+                raise ValueError(
+                    "fixed_contact_smooth_stroke_min_hit_count must be >= 0"
+                )
+            smooth_stroke_reward_weight = float(
+                cfg.fixed_contact_smooth_stroke_vz_reward_weight
+            )
+            if (
+                not math.isfinite(smooth_stroke_reward_weight)
+                or smooth_stroke_reward_weight < 0.0
+            ):
+                raise ValueError(
+                    "fixed-contact smooth stroke reward weight must be finite "
+                    "and nonnegative"
+                )
+            handoff_reward_weight = float(
+                cfg.fixed_contact_post_second_hit_handoff_reward_weight
+            )
+            if (
+                not math.isfinite(handoff_reward_weight)
+                or handoff_reward_weight < 0.0
+                or int(cfg.fixed_contact_post_second_hit_handoff_count) <= 0
+            ):
+                raise ValueError(
+                    "fixed-contact handoff reward requires a finite "
+                    "nonnegative weight and positive hit count"
+                )
+            edge_vz_values = (
+                float(cfg.fixed_contact_edge_racket_vz_target_reward_weight),
+                float(cfg.fixed_contact_edge_racket_vz_target_m_s),
+                float(cfg.fixed_contact_edge_racket_vz_sigma_m_s),
+            )
+            if (
+                not all(math.isfinite(value) for value in edge_vz_values)
+                or edge_vz_values[0] < 0.0
+                or edge_vz_values[2] <= 0.0
+                or int(cfg.fixed_contact_edge_racket_vz_min_hit_count) < 0
+            ):
+                raise ValueError(
+                    "fixed-contact edge racket-vz reward requires a "
+                    "nonnegative weight/min-hit count, finite target and "
+                    "positive finite sigma"
+                )
+            edge_vz_qz_gate_mix = float(
+                cfg.fixed_contact_edge_racket_vz_qz_gate_mix
+            )
+            if (
+                not math.isfinite(edge_vz_qz_gate_mix)
+                or not 0.0 <= edge_vz_qz_gate_mix <= 1.0
+            ):
+                raise ValueError(
+                    "fixed-contact edge racket-vz q_z gate mix must be in [0, 1]"
+                )
+            phase_stroke_values = (
+                float(cfg.fixed_contact_phase_stroke_z_penalty_weight),
+                float(cfg.fixed_contact_phase_stroke_target_vz_m_s),
+                float(cfg.fixed_contact_phase_stroke_lead_s),
+                float(cfg.fixed_contact_phase_stroke_prepare_s),
+                float(cfg.fixed_contact_phase_stroke_error_scale_m),
+            )
+            if (
+                not all(math.isfinite(value) for value in phase_stroke_values)
+                or phase_stroke_values[0] < 0.0
+                or phase_stroke_values[1] < 0.0
+                or phase_stroke_values[2] <= 0.0
+                or phase_stroke_values[3] < phase_stroke_values[2]
+                or phase_stroke_values[4] <= 0.0
+                or int(cfg.fixed_contact_phase_stroke_min_hit_count) < 0
+            ):
+                raise ValueError(
+                    "fixed-contact phase stroke requires nonnegative weight/"
+                    "target/min-hit count, positive lead/scale, and "
+                    "prepare >= lead"
+                )
+            phase_command_values = (
+                float(cfg.fixed_contact_phase_stroke_command_vz_penalty_weight),
+                float(cfg.fixed_contact_phase_stroke_command_vz_error_scale_m_s),
+            )
+            if (
+                not all(math.isfinite(value) for value in phase_command_values)
+                or phase_command_values[0] < 0.0
+                or phase_command_values[1] <= 0.0
+            ):
+                raise ValueError(
+                    "fixed-contact phase command-vz requires nonnegative "
+                    "weight and positive finite scale"
+                )
+            impact_values = (
+                float(cfg.fixed_contact_impact_effective_restitution),
+                float(cfg.fixed_contact_impact_min_racket_vz_m_s),
+                float(cfg.fixed_contact_impact_max_racket_vz_m_s),
+                float(cfg.fixed_contact_impact_task_twist_penalty_weight),
+                float(cfg.fixed_contact_impact_task_twist_xy_position_gain_s),
+                float(cfg.fixed_contact_impact_task_twist_z_position_gain_s),
+                float(cfg.fixed_contact_impact_task_twist_max_vxy_m_s),
+                float(cfg.fixed_contact_impact_task_twist_max_vz_m_s),
+                float(cfg.fixed_contact_impact_task_twist_xy_error_scale_m_s),
+                float(cfg.fixed_contact_impact_task_twist_z_error_scale_m_s),
+                float(
+                    cfg.fixed_contact_impact_task_twist_omega_error_scale_rad_s
+                ),
+                float(cfg.fixed_contact_impact_edge_vz_reward_weight),
+                float(cfg.fixed_contact_impact_edge_vz_sigma_m_s),
+            )
+            if (
+                not all(math.isfinite(value) for value in impact_values)
+                or not 0.0 < impact_values[0] <= 1.0
+                or impact_values[1] < 0.0
+                or impact_values[2] < impact_values[1]
+                or any(value < 0.0 for value in impact_values[3:6])
+                or any(value <= 0.0 for value in impact_values[6:11])
+                or impact_values[11] < 0.0
+                or impact_values[12] <= 0.0
+            ):
+                raise ValueError(
+                    "impact-consistent stroke requires restitution in (0,1], "
+                    "ordered nonnegative speed bounds/weights/gains, and "
+                    "positive twist limits/scales"
+                )
+            if str(
+                cfg.fixed_contact_impact_task_twist_aggregation
+            ).strip().lower() not in {"mean", "max"}:
+                raise ValueError(
+                    "fixed-contact impact task-twist aggregation must be "
+                    "'mean' or 'max'"
+                )
+            if bool(cfg.fixed_contact_impact_consistent_stroke_enabled):
+                if (
+                    float(
+                        cfg.fixed_contact_phase_stroke_command_vz_penalty_weight
+                    ) > 0.0
+                    or float(
+                        cfg.fixed_contact_edge_racket_vz_target_reward_weight
+                    ) > 0.0
+                ):
+                    raise ValueError(
+                        "impact-consistent stroke cannot stack the legacy "
+                        "warm-Jacobian command or scalar edge-vz objectives"
+                    )
+                if not bool(
+                    cfg.fixed_contact_phase_stroke_replace_dense_z_target
+                ):
+                    raise ValueError(
+                        "impact-consistent stroke requires its dynamic Z "
+                        "reference to replace the legacy dense target"
+                    )
+            post_hit_s0_window_s = float(getattr(
+                cfg, 'fixed_contact_post_hit_s0_window_s', float('inf')
+            ))
+            if (
+                math.isnan(post_hit_s0_window_s)
+                or post_hit_s0_window_s <= 0.0
+            ):
+                raise ValueError(
+                    "fixed_contact_post_hit_s0_window_s must be positive"
+                )
+            validation_blends = (
+                getattr(
+                    cfg,
+                    'fixed_contact_factorized_reset_validation_blend_choices',
+                    None,
+                )
+            )
+            if bool(getattr(
+                cfg,
+                'fixed_contact_factorized_reset_validation_enabled',
+                False,
+            )):
+                if not validation_blends:
+                    raise ValueError(
+                        "factorized reset validation requires blend choices"
+                    )
+                values = tuple(float(value) for value in validation_blends)
+                if (
+                    len(set(values)) != len(values)
+                    or not all(math.isfinite(value) for value in values)
+                    or not all(0.0 <= value <= 1.0 for value in values)
+                ):
+                    raise ValueError(
+                        "factorized validation blends must be unique finite "
+                        "values in [0, 1]"
+                    )
+                ttc_choices = getattr(
+                    cfg,
+                    "fixed_contact_factorized_reset_validation_ttc_choices_s",
+                    None,
+                )
+                if ttc_choices is not None:
+                    ttc_values = tuple(float(value) for value in ttc_choices)
+                    if (
+                        not ttc_values
+                        or len(set(ttc_values)) != len(ttc_values)
+                        or not all(
+                            math.isfinite(value) and value > 0.0
+                            for value in ttc_values
+                        )
+                    ):
+                        raise ValueError(
+                            "factorized validation TTC choices must be "
+                            "unique finite positive values"
+                        )
+            if bool(getattr(
+                cfg,
+                "fixed_contact_feasibility_conditioned_reset_enabled",
+                False,
+            )):
+                floor_values = tuple(float(value) for value in getattr(
+                    cfg, "fixed_contact_blend080_ttc_floor_grid_s", ()
+                ))
+                expected_floors = len(cfg.fixed_contact_eval_grid_x_m) * len(
+                    cfg.fixed_contact_eval_grid_y_m
+                )
+                if (
+                    len(floor_values) != expected_floors
+                    or not all(
+                        math.isfinite(value) and value > 0.0
+                        for value in floor_values
+                    )
+                ):
+                    raise ValueError(
+                        "feasibility-conditioned TTC floors must be a "
+                        "finite positive row-major XY-grid product"
+                    )
+                reference_blend = float(
+                    cfg.fixed_contact_feasibility_reference_blend
+                )
+                if not 0.0 <= reference_blend < 1.0:
+                    raise ValueError(
+                        "feasibility reference blend must be in [0, 1)"
+                    )
+            if int(getattr(
+                cfg, "fixed_contact_post_hit_recovery_min_confirmed_hits", 1
+            )) <= 0:
+                raise ValueError(
+                    "post-hit recovery minimum confirmed hits must be positive"
+                )
+            if cfg.fixed_contact_factorized_reset_evaluation:
+                if not cfg.fixed_contact_xy_equal_bin_evaluation:
+                    raise ValueError(
+                        "factorized reset evaluation requires equal-bin evaluation"
+                    )
+                if (
+                    cfg.falling_reset_racket_follow_episode_target_xy_blend_choices
+                    is None
+                ):
+                    raise ValueError(
+                        "factorized reset evaluation requires discrete blend choices"
+                    )
+                if not cfg.falling_reset_apply_target_follow_blend_choices:
+                    raise ValueError(
+                        "factorized reset evaluation requires applied blend choices"
+                    )
         # Preserve the first 50 values exactly for every historical profile.
         # The V14 opt-in block is appended, never inserted into that prefix.
-        self.base_obs_dim = 50 + (
-            self.act_dim if self.include_qvel_reference_error_obs else 0
+        self.base_obs_dim = (
+            int(getattr(cfg, "fixed_contact_actor_obs_dim", -1))
+            if self.fixed_contact_plane_training_enabled
+            else 50
+            + (self.act_dim if self.include_qvel_reference_error_obs else 0)
         )
         self.high_latency_obs = bool(cfg.high_latency_obs)
         self.delay_conditioning = bool(cfg.enable_delay_conditioning)
@@ -3302,8 +6986,77 @@ class MjxJuggleEnv:
             _build_temp_xml_with_ball(self.xml_path),
             str(cfg.right_arm_pd_profile),
         )
-        self.mjx_xml = _write_mjx_contact_only_xml(patched_xml)
+        self.mjx_xml = _write_mjx_contact_only_xml(
+            patched_xml,
+            simulation_base_mode=self.simulation_base_mode,
+            ball_racket_collision_geometry=(
+                self.ball_racket_collision_geometry
+            ),
+            ball_racket_contact_boundary_mode=(
+                self.ball_racket_contact_boundary_mode
+            ),
+            ball_racket_contact_proxy_mass_kg=(
+                self.ball_racket_contact_proxy_mass_kg
+            ),
+        )
         self.mj_model = mujoco.MjModel.from_xml_path(str(self.mjx_xml))
+        apply_compiled_ball_racket_pair_override(self.mj_model, cfg)
+        if self.fixed_plane_v98_coarse_contact:
+            racket_geom_id = mujoco.mj_name2id(
+                self.mj_model, mujoco.mjtObj.mjOBJ_GEOM, "racket_rubber_fore"
+            )
+            if (
+                racket_geom_id < 0
+                or not np.allclose(
+                    self.mj_model.geom_pos[racket_geom_id],
+                    (0.0, 0.0, 0.0065),
+                    rtol=0.0,
+                    atol=1.0e-10,
+                )
+                or not np.isclose(
+                    self.mj_model.opt.timestep,
+                    V98_STATIC_CONTACT_TIMESTEP_S,
+                    rtol=0.0,
+                    atol=1.0e-12,
+                )
+                or self.mj_model.opt.cone != mujoco.mjtCone.mjCONE_ELLIPTIC
+                or self.mj_model.opt.integrator
+                != mujoco.mjtIntegrator.mjINT_IMPLICITFAST
+                or int(self.mj_model.opt.iterations) != 100
+            ):
+                raise ValueError(
+                    "V98 requires 1 ms, implicitfast/100, elliptic cone "
+                    "and the normalized mesh16 racket position"
+                )
+            # The XML normalizer sets the contact geom to 6.5 mm even when
+            # its source XML differs. Move only the compiled collision geom;
+            # the racket body, inertia and right_ee_site remain unchanged.
+            self.mj_model.geom_pos[racket_geom_id, 2] += (
+                V98_RACKET_CONTACT_GEOM_OFFSET_M
+            )
+        if self.fixed_plane_v97_calibrated_contact and (
+            not np.isclose(
+                self.mj_model.opt.timestep,
+                V97_STATIC_CONTACT_TIMESTEP_S,
+                rtol=0.0,
+                atol=1.0e-12,
+            )
+            or self.mj_model.opt.cone != mujoco.mjtCone.mjCONE_ELLIPTIC
+        ):
+            raise ValueError(
+                "V97 calibrated contact requires 62.5 us physics and "
+                "elliptic friction cone"
+            )
+        if bool(getattr(
+            cfg, "fixed_contact_disable_ball_racket_collision", False
+        )):
+            # S0 is a short free-flight tracking/deadline lesson.  The fixed
+            # base does not need floor support, so disabling contacts globally
+            # is the only model-level way to guarantee that a successful
+            # arrival cannot inject an unrequested collision impulse.
+            self.mj_model.opt.disableflags |= int(
+                mujoco.mjtDisableBit.mjDSBL_CONTACT
+            )
         self.model = mjx.put_model(self.mj_model)
 
         self.timestep = float(self.mj_model.opt.timestep)
@@ -3327,6 +7080,21 @@ class MjxJuggleEnv:
         self.recovered_rmp_period_s = float(cfg.recovered_rmp_period_s)
         if self.recovered_rmp_period_s <= 0.0:
             raise ValueError("recovered_rmp_period_s must be positive")
+        self.recovered_rmp_physics_substeps_per_tick = int(
+            cfg.recovered_rmp_physics_substeps_per_tick
+        )
+        allowed_rmp_substeps = (
+            (16,) if self.fixed_plane_v97_calibrated_contact else (1, 2)
+        )
+        if (
+            self.recovered_rmp_physics_substeps_per_tick not in allowed_rmp_substeps
+            or (self.recovered_rmp_physics_substeps_per_tick > 1
+                and not self.recovered_rmp_motion_mode)
+        ):
+            raise ValueError(
+                "RMP physics substeps per tick do not match the reviewed "
+                "contact profile"
+            )
         rmp_steps_float = self.dt / self.recovered_rmp_period_s
         self.recovered_rmp_servo_steps = max(1, int(round(rmp_steps_float)))
         if self.recovered_rmp_motion_mode and not np.isclose(
@@ -3541,7 +7309,33 @@ class MjxJuggleEnv:
                 and not self.recovered_rmp_command_feedback_ablation
                 and bool(cfg.arm_action_limiter)
                 and configured_qvel_target_lead_s == 0.0
-                and self.include_qvel_reference_error_obs
+                and (
+                    self.include_qvel_reference_error_obs
+                    or (
+                        bool(getattr(
+                            cfg,
+                            "fixed_contact_plane_training_enabled",
+                            False,
+                        ))
+                        and getattr(
+                            cfg,
+                            "fixed_contact_actor_observation_schema",
+                            "",
+                        )
+                        in (
+                            "fixed_contact_plane_v1_separate_current_future_80d",
+                            FIXED_CONTACT_ACTOR_OBSERVATION_SCHEMA_V15,
+                            FIXED_CONTACT_ACTOR_OBSERVATION_SCHEMA_V16,
+                            PLANT_AWARE_FIXED_PLANE_ACTOR_OBSERVATION_SCHEMA_V1,
+                            FIXED_PLANE_LIMIT_CYCLE_ACTOR_OBSERVATION_SCHEMA_V1,
+                            FIXED_PLANE_LIMIT_CYCLE_ACTOR_OBSERVATION_SCHEMA_V63,
+                            V92_ACTOR_OBSERVATION_SCHEMA,
+                            V93_ACTOR_OBSERVATION_SCHEMA,
+                            V99_ACTOR_OBSERVATION_SCHEMA,
+                            "fixed_plane_v149_position_only_contiguous_72d",
+                        )
+                    )
+                )
             )
             if not bounded_reference_contract:
                 raise ValueError(
@@ -3578,13 +7372,18 @@ class MjxJuggleEnv:
                     "ablation is enabled"
                 )
             if not np.isclose(
-                self.timestep,
+                self.timestep * self.recovered_rmp_physics_substeps_per_tick,
                 self.recovered_rmp_period_s,
                 rtol=0.0,
                 atol=1.0e-10,
-            ) or self.recovered_rmp_servo_steps != int(cfg.frame_skip):
+            ) or (
+                self.recovered_rmp_servo_steps
+                * self.recovered_rmp_physics_substeps_per_tick
+                != int(cfg.frame_skip)
+            ):
                 raise ValueError(
-                    "recovered_rmp_motion_mode requires one RMP update per MJX substep"
+                    "recovered RMP period and MJX physics substeps must match "
+                    "the 200 Hz control interval exactly"
                 )
             comp_mode = str(cfg.actuator_compensation_mode or "none").strip().lower()
             conflicts = {
@@ -3838,18 +7637,56 @@ class MjxJuggleEnv:
         self._critic_complete_dr_extra_dim = (
             91 if self.critic_complete_dr_privileged else 0
         )
+        # True next-plane crossing and true dynamic target error complement
+        # the estimated target already present in the 80-D actor contract.
+        self._critic_fixed_contact_extra_dim = (
+            10
+            if self.asymmetric_critic
+            and self.fixed_contact_plane_training_enabled
+            else 0
+        )
         self.critic_extra_dim = (
             80
             + self._critic_sim2real_extra_dim
             + self._critic_rmp_extra_dim
             + self._critic_complete_dr_extra_dim
+            + self._critic_fixed_contact_extra_dim
             + self.critic_command_history_steps * self.act_dim
             if self.asymmetric_critic
             else 0
         )
         self.critic_obs_dim = self.obs_dim + self.critic_extra_dim
+        self.critic_fixed_plane_task_context = bool(
+            getattr(cfg, "critic_fixed_plane_task_context", False)
+        )
+        if self.critic_fixed_plane_task_context:
+            if (
+                not self.asymmetric_critic
+                or not self.fixed_contact_plane_training_enabled
+                or not self.fixed_plane_v149_simple_obs_enabled
+                or not self.fixed_plane_v99_contiguous_history_obs_enabled
+                or self.critic_obs_dim != 393
+            ):
+                raise ValueError(
+                    "V173 critic context requires the unchanged72/393 "
+                    "position-history contract"
+                )
+            self.critic_extra_dim += 84
+            self.critic_obs_dim += 84
 
         self.arm_jids = [mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_JOINT, n) for n in RIGHT_ARM_JOINTS]
+        if self.cartesian_pose_projection_enabled:
+            non_hinge = [
+                RIGHT_ARM_JOINTS[index]
+                for index, joint_id in enumerate(self.arm_jids)
+                if int(self.mj_model.jnt_type[joint_id])
+                != int(mujoco.mjtJoint.mjJNT_HINGE)
+            ]
+            if non_hinge:
+                raise ValueError(
+                    "Cartesian pose projection requires seven hinge joints; "
+                    f"invalid joints: {non_hinge}"
+                )
         self.arm_aids = [mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, n) for n in RIGHT_ARM_JOINTS]
         self.base_aids = [mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, n) for n in BASE_ACTS]
         # Retain host copies for MuJoCo/NumPy initialization.  Converting the
@@ -3875,14 +7712,100 @@ class MjxJuggleEnv:
             [float(-self.mj_model.actuator_biasprm[aid, 2]) for aid in self.arm_aids],
             dtype=jnp.float32,
         )
-        self.arm_lo = jnp.asarray([self.mj_model.jnt_range[j, 0] for j in self.arm_jids], dtype=jnp.float32)
-        self.arm_hi = jnp.asarray([self.mj_model.jnt_range[j, 1] for j in self.arm_jids], dtype=jnp.float32)
+        self.arm_lo_np = np.asarray(
+            [self.mj_model.jnt_range[j, 0] for j in self.arm_jids],
+            dtype=np.float32,
+        )
+        self.arm_hi_np = np.asarray(
+            [self.mj_model.jnt_range[j, 1] for j in self.arm_jids],
+            dtype=np.float32,
+        )
+        self.arm_lo = jnp.asarray(self.arm_lo_np)
+        self.arm_hi = jnp.asarray(self.arm_hi_np)
 
         self.ball_joint_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_JOINT, "ball_free")
         self.ball_body_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_BODY, "pingpong_ball")
         self.ball_geom_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_GEOM, "ball")
         self.racket_geom_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_GEOM, "racket_rubber_fore")
         self.racket_body_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_BODY, "right_racket")
+        self.racket_contact_proxy_body_id = mujoco.mj_name2id(
+            self.mj_model,
+            mujoco.mjtObj.mjOBJ_BODY,
+            RACKET_CONTACT_PROXY_BODY_NAME,
+        )
+        self.racket_contact_proxy_joint_id = mujoco.mj_name2id(
+            self.mj_model,
+            mujoco.mjtObj.mjOBJ_JOINT,
+            RACKET_CONTACT_PROXY_JOINT_NAME,
+        )
+        self.racket_contact_proxy_geom_id = mujoco.mj_name2id(
+            self.mj_model,
+            mujoco.mjtObj.mjOBJ_GEOM,
+            RACKET_CONTACT_PROXY_GEOM_NAME,
+        )
+        if self.racket_contact_proxy_enabled:
+            if min(
+                self.racket_contact_proxy_body_id,
+                self.racket_contact_proxy_joint_id,
+                self.racket_contact_proxy_geom_id,
+            ) < 0:
+                raise ValueError("compiled racket contact proxy is incomplete")
+            self.racket_contact_proxy_qadr = int(
+                self.mj_model.jnt_qposadr[
+                    self.racket_contact_proxy_joint_id
+                ]
+            )
+            self.racket_contact_proxy_vadr = int(
+                self.mj_model.jnt_dofadr[
+                    self.racket_contact_proxy_joint_id
+                ]
+            )
+            self.racket_contact_geom_id = (
+                self.racket_contact_proxy_geom_id
+            )
+            self.racket_contact_proxy_geom_position_body_m = jnp.asarray(
+                self.mj_model.geom_pos[
+                    self.racket_contact_proxy_geom_id
+                ],
+                dtype=jnp.float32,
+            )
+            self.racket_contact_proxy_geom_rotation_body = jnp.asarray(
+                _quat_wxyz_to_mat_np(tuple(
+                    self.mj_model.geom_quat[
+                        self.racket_contact_proxy_geom_id
+                    ]
+                )),
+                dtype=jnp.float32,
+            )
+            self.racket_contact_proxy_geom_quaternion_body = jnp.asarray(
+                self.mj_model.geom_quat[
+                    self.racket_contact_proxy_geom_id
+                ],
+                dtype=jnp.float32,
+            )
+            self.racket_geom_quaternion_body = jnp.asarray(
+                self.mj_model.geom_quat[self.racket_geom_id],
+                dtype=jnp.float32,
+            )
+        else:
+            self.racket_contact_proxy_qadr = -1
+            self.racket_contact_proxy_vadr = -1
+            self.racket_contact_geom_id = self.racket_geom_id
+            self.racket_contact_proxy_geom_position_body_m = jnp.zeros(
+                (3,), dtype=jnp.float32
+            )
+            self.racket_contact_proxy_geom_rotation_body = jnp.eye(
+                3, dtype=jnp.float32
+            )
+            self.racket_contact_proxy_geom_quaternion_body = jnp.asarray(
+                (1.0, 0.0, 0.0, 0.0), dtype=jnp.float32
+            )
+            self.racket_geom_quaternion_body = jnp.asarray(
+                (1.0, 0.0, 0.0, 0.0), dtype=jnp.float32
+            )
+        self.racket_root_body_id = int(
+            self.mj_model.body_rootid[self.racket_body_id]
+        )
         self.racket_wood_geom_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_GEOM, "racket_wood")
         self.racket_rubber_geom_id = self.racket_geom_id
         self.racket_site_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE, "right_ee_site")
@@ -3935,9 +7858,13 @@ class MjxJuggleEnv:
         for pid in range(self.mj_model.npair):
             g1 = int(self.mj_model.pair_geom1[pid])
             g2 = int(self.mj_model.pair_geom2[pid])
-            if {g1, g2} == {self.ball_geom_id, self.racket_geom_id}:
+            if {g1, g2} == {
+                self.ball_geom_id,
+                self.racket_contact_geom_id,
+            }:
                 ball_racket_pair_ids.append(pid)
         self.has_ball_racket_pair = bool(ball_racket_pair_ids)
+        self.ball_racket_pair_ids_tuple = tuple(ball_racket_pair_ids)
         self.ball_racket_pair_ids = jnp.asarray(ball_racket_pair_ids or [-1], dtype=jnp.int32)
         self.ball_qadr = int(self.mj_model.jnt_qposadr[self.ball_joint_id])
         self.ball_vadr = int(self.mj_model.jnt_dofadr[self.ball_joint_id])
@@ -3956,6 +7883,9 @@ class MjxJuggleEnv:
         self.base_yaw_qadr = int(self.mj_model.jnt_qposadr[byaw])
         self.base_x_vadr = int(self.mj_model.jnt_dofadr[bx])
         self.base_y_vadr = int(self.mj_model.jnt_dofadr[by])
+        self.base_z_vadr = int(self.mj_model.jnt_dofadr[bz])
+        self.base_roll_vadr = int(self.mj_model.jnt_dofadr[broll])
+        self.base_pitch_vadr = int(self.mj_model.jnt_dofadr[bpitch])
         self.base_yaw_vadr = int(self.mj_model.jnt_dofadr[byaw])
 
         target_degrees = dict(TARGET_DEGREES)
@@ -3985,15 +7915,28 @@ class MjxJuggleEnv:
 
         warm = mujoco.MjData(self.mj_model)
         warm.ctrl[:] = default_ctrl
-        for _ in range(700):
+        # Warm for the same physical 0.7 s when an opt-in profile refines
+        # the numerical MJX step; the legacy 1 ms model still takes 700 steps.
+        for _ in range(int(round(0.7 / self.timestep))):
             mujoco.mj_step(self.mj_model, warm)
         mujoco.mj_forward(self.mj_model, warm)
 
-        self.warm_qpos = jnp.asarray(warm.qpos, dtype=jnp.float32)
-        self.warm_qvel = jnp.asarray(warm.qvel, dtype=jnp.float32)
-        self.warm_ctrl = jnp.asarray(default_ctrl, dtype=jnp.float32)
-        self.warm_arm_q = self.warm_qpos[self.arm_qadr]
-        self.warm_arm_qvel = self.warm_qvel[self.arm_vadr]
+        # Keep the MuJoCo warm state on the host before creating device arrays.
+        # A later np.asarray(device_array), even for seven values, can make
+        # JAX's CUDA transfer manager reserve a 128 MiB pinned-host slab.  A
+        # second concurrent trainer reproduced CUDA_ERROR_INVALID_VALUE at
+        # that point.  The host copies also avoid asynchronous gather results
+        # crossing back to NumPy during the reset IK table construction.
+        self.warm_qpos_np = np.asarray(warm.qpos, dtype=np.float32).copy()
+        self.warm_qvel_np = np.asarray(warm.qvel, dtype=np.float32).copy()
+        self.warm_ctrl_np = np.asarray(default_ctrl, dtype=np.float32).copy()
+        self.warm_arm_q_np = self.warm_qpos_np[self.arm_qadr_np].copy()
+        self.warm_arm_qvel_np = self.warm_qvel_np[self.arm_vadr_np].copy()
+        self.warm_qpos = jnp.asarray(self.warm_qpos_np)
+        self.warm_qvel = jnp.asarray(self.warm_qvel_np)
+        self.warm_ctrl = jnp.asarray(self.warm_ctrl_np)
+        self.warm_arm_q = jnp.asarray(self.warm_arm_q_np)
+        self.warm_arm_qvel = jnp.asarray(self.warm_arm_qvel_np)
         if len(tuple(cfg.arm_posture_joint_weights)) != self.act_dim:
             raise ValueError(
                 "arm_posture_joint_weights must contain "
@@ -4168,25 +8111,244 @@ class MjxJuggleEnv:
             raise ValueError(
                 "falling_reset_racket_follow_max_error_m must be positive"
             )
+        if float(cfg.falling_reset_racket_follow_xy_ik_spacing_m) <= 0.0:
+            raise ValueError(
+                "falling_reset_racket_follow_xy_ik_spacing_m must be positive"
+            )
+        if (
+            not math.isfinite(
+                float(cfg.falling_reset_racket_follow_ik_orientation_weight)
+            )
+            or float(cfg.falling_reset_racket_follow_ik_orientation_weight)
+            <= 0.0
+        ):
+            raise ValueError(
+                "falling_reset_racket_follow_ik_orientation_weight must be "
+                "positive and finite"
+            )
+        if not 0.0 <= float(
+            cfg.falling_reset_racket_follow_episode_target_xy_blend
+        ) <= 1.0:
+            raise ValueError(
+                "falling_reset_racket_follow_episode_target_xy_blend must be "
+                "in [0, 1]"
+            )
+        target_follow_blend_range = (
+            cfg.falling_reset_racket_follow_episode_target_xy_blend_range
+        )
+        target_follow_blend_choices = (
+            cfg.falling_reset_racket_follow_episode_target_xy_blend_choices
+        )
+        target_follow_blend_choice_probabilities = (
+            cfg.falling_reset_racket_follow_episode_target_xy_blend_choice_probabilities
+        )
+        if (
+            target_follow_blend_range is not None
+            and target_follow_blend_choices is not None
+        ):
+            raise ValueError(
+                "target-follow blend range and choices are mutually exclusive"
+            )
+        if target_follow_blend_range is not None:
+            values = tuple(float(value) for value in target_follow_blend_range)
+            if (
+                len(values) != 2
+                or not all(np.isfinite(value) for value in values)
+                or not 0.0 <= values[0] <= values[1] <= 1.0
+            ):
+                raise ValueError(
+                    "target-follow blend range must contain two finite "
+                    "ordered values in [0, 1]"
+                )
+            if not bool(
+                cfg.falling_reset_racket_follow_episode_target_xy
+            ):
+                raise ValueError(
+                    "target-follow blend range requires falling-reset "
+                    "episode-target XY follow"
+                )
+        if target_follow_blend_choices is not None:
+            values = tuple(float(value) for value in target_follow_blend_choices)
+            if (
+                not values
+                or not all(np.isfinite(value) for value in values)
+                or not all(0.0 <= value <= 1.0 for value in values)
+                or len(set(values)) != len(values)
+            ):
+                raise ValueError(
+                    "target-follow blend choices must be unique finite "
+                    "values in [0, 1]"
+                )
+            if not bool(cfg.falling_reset_racket_follow_episode_target_xy):
+                raise ValueError(
+                    "target-follow blend choices require falling-reset "
+                    "episode-target XY follow"
+                )
+        if target_follow_blend_choice_probabilities is not None:
+            probabilities = tuple(
+                float(value)
+                for value in target_follow_blend_choice_probabilities
+            )
+            choice_count = (
+                0
+                if target_follow_blend_choices is None
+                else len(target_follow_blend_choices)
+            )
+            if (
+                len(probabilities) != choice_count
+                or not all(np.isfinite(value) for value in probabilities)
+                or not all(value > 0.0 for value in probabilities)
+                or not np.isclose(
+                    sum(probabilities), 1.0, rtol=0.0, atol=1.0e-9
+                )
+            ):
+                raise ValueError(
+                    "target-follow blend choice probabilities must be "
+                    "positive finite values matching choices and sum to one"
+                )
+        if (
+            bool(cfg.falling_reset_apply_target_follow_blend_choices)
+            and target_follow_blend_choices is None
+        ):
+            raise ValueError(
+                "applying discrete target-follow blends requires "
+                "target-follow blend choices"
+            )
+        if (
+            bool(cfg.falling_reset_racket_follow_contact_y)
+            and bool(cfg.falling_reset_racket_follow_episode_target_xy)
+        ):
+            raise ValueError(
+                "falling reset Y-contact follow and episode-target XY follow "
+                "are mutually exclusive"
+            )
         if bool(cfg.falling_reset_racket_follow_contact_y):
-            if self.ball_reset_mode != "falling_contact":
+            if not self.falling_reset_capable:
                 raise ValueError(
                     "falling_reset_racket_follow_contact_y requires "
-                    "ball_reset_mode='falling_contact'"
+                    "a falling-contact-capable ball_reset_mode"
                 )
+            follow_target_x_range = (
+                cfg.falling_reset_episode_target_x_range_m
+                if self.falling_reset_mixed
+                else cfg.episode_target_x_range_m
+            )
+            follow_anchor_z_range = (
+                cfg.falling_reset_episode_racket_anchor_z_range_m
+                if self.falling_reset_mixed
+                else cfg.episode_racket_anchor_z_range_m
+            )
             if any(
                 abs(float(value)) > 1.0e-9
                 for value in (
-                    *cfg.episode_target_x_range_m,
-                    *cfg.episode_racket_anchor_z_range_m,
+                    *follow_target_x_range,
+                    *follow_anchor_z_range,
                 )
             ):
                 raise ValueError(
                     "falling reset racket-follow currently supports only Y "
                     "target offsets; target X and anchor Z ranges must be zero"
                 )
+        if bool(cfg.falling_reset_racket_follow_episode_target_xy):
+            if not self.falling_reset_capable:
+                raise ValueError(
+                    "falling_reset_racket_follow_episode_target_xy requires "
+                    "a falling-contact-capable ball_reset_mode"
+                )
+            if not self.fixed_contact_plane_training_enabled:
+                raise ValueError(
+                    "falling_reset_racket_follow_episode_target_xy is only "
+                    "defined for fixed-contact-plane training"
+                )
+            follow_anchor_z_range = (
+                cfg.falling_reset_episode_racket_anchor_z_range_m
+                if self.falling_reset_mixed
+                else cfg.episode_racket_anchor_z_range_m
+            )
+            if any(abs(float(value)) > 1.0e-9 for value in follow_anchor_z_range):
+                raise ValueError(
+                    "falling reset episode-target XY follow requires a zero "
+                    "racket-anchor Z range"
+                )
+        if bool(cfg.racket_launch_racket_follow_episode_target_xy):
+            if not self.racket_launch_reset_capable:
+                raise ValueError(
+                    "racket_launch_racket_follow_episode_target_xy requires "
+                    "a racket-launch-capable ball_reset_mode"
+                )
+            if not self.fixed_contact_plane_training_enabled:
+                raise ValueError(
+                    "racket-launch episode-target XY follow is only defined "
+                    "for fixed-contact-plane training"
+                )
+            if any(
+                abs(float(value)) > 1.0e-9
+                for value in cfg.episode_racket_anchor_z_range_m
+            ):
+                raise ValueError(
+                    "racket-launch episode-target XY follow requires a zero "
+                    "racket-anchor Z range"
+                )
+            if (
+                bool(cfg.falling_reset_racket_follow_episode_target_xy)
+                and not self.falling_reset_mixed
+            ):
+                raise ValueError(
+                    "falling and racket-launch episode-target XY follow "
+                    "modes are mutually exclusive outside a mixed reset"
+                )
+        if bool(cfg.falling_reset_racket_follow_fixed_contact_surface_z):
+            if not (
+                self.fixed_contact_plane_training_enabled
+                and bool(cfg.falling_reset_racket_follow_episode_target_xy)
+            ):
+                raise ValueError(
+                    "falling_reset_racket_follow_fixed_contact_surface_z "
+                    "requires fixed-contact training and episode-target XY "
+                    "follow"
+                )
+            z_lo, z_hi = sorted(
+                float(value)
+                for value in cfg.fixed_contact_racket_z_bounds_m
+            )
+            if not z_lo <= float(cfg.fixed_contact_surface_z_m) <= z_hi:
+                raise ValueError(
+                    "fixed contact surface z is outside the registered "
+                    "racket workspace"
+                )
+        if bool(cfg.racket_launch_racket_follow_fixed_contact_surface_z):
+            if not (
+                self.fixed_contact_plane_training_enabled
+                and bool(cfg.racket_launch_racket_follow_episode_target_xy)
+            ):
+                raise ValueError(
+                    "racket-launch fixed-contact surface z requires fixed-"
+                    "contact training and racket-launch episode-target XY "
+                    "follow"
+                )
+            z_lo, z_hi = sorted(
+                float(value)
+                for value in cfg.fixed_contact_racket_z_bounds_m
+            )
+            if not z_lo <= float(cfg.fixed_contact_surface_z_m) <= z_hi:
+                raise ValueError(
+                    "fixed contact surface z is outside the registered "
+                    "racket workspace"
+                )
+        if (
+            bool(cfg.falling_reset_contact_clip_to_fixed_workspace)
+            and not self.fixed_contact_plane_training_enabled
+        ):
+            raise ValueError(
+                "falling_reset_contact_clip_to_fixed_workspace is only "
+                "defined for fixed-contact-plane training"
+            )
         if int(cfg.hit_racket_vxy_steady_min_count) < 0:
             raise ValueError("hit_racket_vxy_steady_min_count must be non-negative")
+        if int(cfg.hit_racket_vxy_penalty_min_hit_count) < 0:
+            raise ValueError(
+                "hit_racket_vxy_penalty_min_hit_count must be non-negative"
+            )
         if float(cfg.hit_racket_vxy_recovery_soft_limit_m_s) < 0.0:
             raise ValueError(
                 "hit_racket_vxy_recovery_soft_limit_m_s must be non-negative"
@@ -4301,6 +8463,16 @@ class MjxJuggleEnv:
             raise ValueError("first_hit_stationary_max_rel_height_m must be positive")
         if float(cfg.first_hit_stationary_penalty_scale_m_s) <= 0.0:
             raise ValueError("first_hit_stationary_penalty_scale_m_s must be positive")
+        if (
+            not math.isfinite(float(cfg.fixed_contact_early_action_clip_excess_multiplier))
+            or float(cfg.fixed_contact_early_action_clip_excess_multiplier) < 1.0
+        ):
+            raise ValueError("early action overflow multiplier must be finite and >= 1")
+        if (
+            not math.isfinite(float(cfg.fixed_plane_v132_early_ball_xy_motion_weight))
+            or float(cfg.fixed_plane_v132_early_ball_xy_motion_weight) < 0.0
+        ):
+            raise ValueError("early ball XY motion weight must be finite and >= 0")
         if int(cfg.early_racket_xy_anchor_hit_count) < 0:
             raise ValueError("early_racket_xy_anchor_hit_count must be non-negative")
         if float(cfg.early_racket_xy_anchor_deadband_m) < 0.0:
@@ -4374,6 +8546,55 @@ class MjxJuggleEnv:
         if float(cfg.phase_teacher_ball_vz_scale_m_s) <= 0.0:
             raise ValueError("phase teacher ball vz scale must be positive")
         self.racket_anchor = jnp.asarray(warm.site_xpos[self.racket_site_id], dtype=jnp.float32)
+        self.fixed_contact_racket_reference_rotation = jnp.asarray(
+            warm.site_xmat[self.racket_site_id].reshape(3, 3),
+            dtype=jnp.float32,
+        )
+        base_yaw = float(self.warm_qpos_np[self.base_yaw_qadr])
+        cosine = math.cos(base_yaw)
+        sine = math.sin(base_yaw)
+        world_to_policy_rotation_np = np.asarray(
+            [
+                [cosine, sine, 0.0],
+                [-sine, cosine, 0.0],
+                [0.0, 0.0, 1.0],
+            ],
+            dtype=np.float32,
+        )
+        policy_origin_world_np = np.asarray(
+            [
+                self.warm_qpos_np[self.base_x_qadr],
+                self.warm_qpos_np[self.base_y_qadr],
+                0.0,
+            ],
+            dtype=np.float32,
+        )
+        self.cartesian_world_to_policy_rotation = jnp.asarray(
+            world_to_policy_rotation_np
+        )
+        self.cartesian_policy_origin_world = jnp.asarray(
+            policy_origin_world_np
+        )
+        if self.cartesian_pose_projection_enabled:
+            warm_position_policy = world_to_policy_rotation_np @ (
+                np.asarray(
+                    warm.site_xpos[self.racket_site_id], dtype=np.float32
+                )
+                - policy_origin_world_np
+            )
+            outer_lower = np.asarray(
+                cfg.cartesian_pose_position_lower_m, dtype=np.float32
+            )
+            outer_upper = np.asarray(
+                cfg.cartesian_pose_position_upper_m, dtype=np.float32
+            )
+            if np.any(warm_position_policy < outer_lower) or np.any(
+                warm_position_policy > outer_upper
+            ):
+                raise ValueError(
+                    "warm racket reference lies outside the Cartesian "
+                    "position hard set"
+                )
         warm_site_jacp = np.zeros((3, self.mj_model.nv), dtype=np.float64)
         mujoco.mj_jacSite(
             self.mj_model,
@@ -4393,9 +8614,31 @@ class MjxJuggleEnv:
             [0.0], dtype=jnp.float32
         )
         self.falling_reset_racket_follow_arm_q = self.warm_arm_q[None, :]
+        self.falling_reset_racket_follow_xy_enabled = bool(
+            cfg.falling_reset_racket_follow_episode_target_xy
+        )
+        self.racket_launch_racket_follow_xy_enabled = bool(
+            cfg.racket_launch_racket_follow_episode_target_xy
+        )
+        self.falling_reset_racket_follow_x_offsets = jnp.asarray(
+            [0.0], dtype=jnp.float32
+        )
+        self.falling_reset_racket_follow_y_offsets = jnp.asarray(
+            [0.0], dtype=jnp.float32
+        )
+        self.falling_reset_racket_follow_xy_arm_q = self.warm_arm_q[
+            None, None, :
+        ]
+        self.falling_reset_racket_follow_xy_max_error_m = 0.0
+        self.falling_reset_racket_follow_xy_max_roll_pitch_rad = 0.0
         if self.falling_reset_racket_follow_enabled:
+            follow_target_y_range = (
+                cfg.falling_reset_episode_target_y_range_m
+                if self.falling_reset_mixed
+                else cfg.episode_target_y_range_m
+            )
             target_y_lo, target_y_hi = sorted(
-                float(value) for value in cfg.episode_target_y_range_m
+                float(value) for value in follow_target_y_range
             )
             local_y_lo, local_y_hi = sorted(
                 float(value)
@@ -4408,7 +8651,7 @@ class MjxJuggleEnv:
             follow_offsets = np.linspace(
                 follow_lo, follow_hi, follow_points, dtype=np.float64
             )
-            warm_arm_q_np = np.asarray(self.warm_arm_q, dtype=np.float64)
+            warm_arm_q_np = self.warm_arm_q_np.astype(np.float64, copy=True)
             warm_racket_pos = warm.site_xpos[self.racket_site_id].copy()
             warm_racket_rot = warm.site_xmat[self.racket_site_id].reshape(3, 3).copy()
 
@@ -4419,7 +8662,9 @@ class MjxJuggleEnv:
                 )
                 jacp = np.zeros((3, self.mj_model.nv), dtype=np.float64)
                 jacr = np.zeros((3, self.mj_model.nv), dtype=np.float64)
-                orientation_weight = 0.08
+                orientation_weight = float(
+                    cfg.falling_reset_racket_follow_ik_orientation_weight
+                )
                 posture_weight = 2.0e-4
                 damping = 2.0e-5
                 for _ in range(200):
@@ -4468,7 +8713,11 @@ class MjxJuggleEnv:
                     delta_norm = float(np.linalg.norm(delta))
                     if delta_norm > 0.10:
                         delta *= 0.10 / delta_norm
-                    q_arm = np.clip(q_arm + delta, np.asarray(self.arm_lo), np.asarray(self.arm_hi))
+                    q_arm = np.clip(
+                        q_arm + delta,
+                        self.arm_lo_np,
+                        self.arm_hi_np,
+                    )
                 warm.qpos[self.arm_qadr_np] = q_arm
                 warm.qvel[self.arm_vadr_np] = 0.0
                 mujoco.mj_forward(self.mj_model, warm)
@@ -4510,9 +8759,421 @@ class MjxJuggleEnv:
                 follow_q, dtype=jnp.float32
             )
             # Restore the canonical warm pose after host-side lookup creation.
-            warm.qpos[:] = np.asarray(self.warm_qpos)
-            warm.qvel[:] = np.asarray(self.warm_qvel)
-            warm.ctrl[:] = np.asarray(self.warm_ctrl)
+            warm.qpos[:] = self.warm_qpos_np
+            warm.qvel[:] = self.warm_qvel_np
+            warm.ctrl[:] = self.warm_ctrl_np
+            mujoco.mj_forward(self.mj_model, warm)
+        if (
+            self.falling_reset_racket_follow_xy_enabled
+            or self.racket_launch_racket_follow_xy_enabled
+        ):
+            if self.racket_launch_racket_follow_xy_enabled:
+                follow_target_x_range = cfg.episode_target_x_range_m
+                follow_target_y_range = cfg.episode_target_y_range_m
+            else:
+                follow_target_x_range = (
+                    cfg.falling_reset_episode_target_x_range_m
+                    if self.falling_reset_mixed
+                    else cfg.episode_target_x_range_m
+                )
+                follow_target_y_range = (
+                    cfg.falling_reset_episode_target_y_range_m
+                    if self.falling_reset_mixed
+                    else cfg.episode_target_y_range_m
+                )
+            blend_target_x_range = follow_target_x_range
+            blend_target_y_range = follow_target_y_range
+            expand_cartesian_blend_domain = bool(
+                getattr(
+                    cfg,
+                    "fixed_contact_cartesian_reset_blend_enabled",
+                    False,
+                )
+                and getattr(
+                    cfg,
+                    "fixed_contact_cartesian_reset_blend_expand_ik_domain",
+                    False,
+                )
+            )
+            if expand_cartesian_blend_domain:
+                blend_kwargs = dict(
+                    fixed_fraction=(
+                        cfg.falling_reset_racket_follow_episode_target_xy_blend
+                    ),
+                    fraction_range=(
+                        cfg.falling_reset_racket_follow_episode_target_xy_blend_range
+                    ),
+                    fraction_choices=(
+                        cfg.falling_reset_racket_follow_episode_target_xy_blend_choices
+                    ),
+                )
+                follow_target_x_range = cartesian_reset_blend_ik_axis_range(
+                    follow_target_x_range,
+                    **blend_kwargs,
+                )
+                follow_target_y_range = cartesian_reset_blend_ik_axis_range(
+                    follow_target_y_range,
+                    **blend_kwargs,
+                )
+            target_x_lo, target_x_hi = sorted(
+                float(value) for value in follow_target_x_range
+            )
+            target_y_lo, target_y_hi = sorted(
+                float(value) for value in follow_target_y_range
+            )
+            follow_spacing_m = float(
+                cfg.falling_reset_racket_follow_xy_ik_spacing_m
+            )
+            follow_x_count = max(
+                2,
+                int(np.ceil((target_x_hi - target_x_lo) / follow_spacing_m))
+                + 1,
+            )
+            follow_y_count = max(
+                2,
+                int(np.ceil((target_y_hi - target_y_lo) / follow_spacing_m))
+                + 1,
+            )
+            follow_x_offsets = np.linspace(
+                target_x_lo,
+                target_x_hi,
+                follow_x_count,
+                dtype=np.float64,
+            )
+            follow_y_offsets = np.linspace(
+                target_y_lo,
+                target_y_hi,
+                follow_y_count,
+                dtype=np.float64,
+            )
+            if expand_cartesian_blend_domain:
+                exact_x_knots = cartesian_reset_blend_ik_axis_knots(
+                    blend_target_x_range,
+                    tuple(float(value) for value in cfg.fixed_contact_eval_grid_x_m),
+                    **blend_kwargs,
+                )
+                exact_y_knots = cartesian_reset_blend_ik_axis_knots(
+                    blend_target_y_range,
+                    tuple(float(value) for value in cfg.fixed_contact_eval_grid_y_m),
+                    **blend_kwargs,
+                )
+                follow_x_offsets = np.unique(
+                    np.concatenate(
+                        [follow_x_offsets, np.asarray(exact_x_knots)]
+                    )
+                )
+                follow_y_offsets = np.unique(
+                    np.concatenate(
+                        [follow_y_offsets, np.asarray(exact_y_knots)]
+                    )
+                )
+            warm_arm_q_np = self.warm_arm_q_np.astype(np.float64, copy=True)
+            warm_racket_pos = warm.site_xpos[self.racket_site_id].copy()
+            warm_racket_rot = warm.site_xmat[self.racket_site_id].reshape(3, 3).copy()
+            workspace_center_xy = np.asarray(
+                cfg.fixed_contact_workspace_center_xy_m,
+                dtype=np.float64,
+            )
+            arm_lo_np = self.arm_lo_np.astype(np.float64, copy=False)
+            arm_hi_np = self.arm_hi_np.astype(np.float64, copy=False)
+
+            def solve_follow_xy_pose(
+                offset_x: float,
+                offset_y: float,
+                q_seed: np.ndarray,
+            ) -> tuple[np.ndarray, float]:
+                q_arm = np.asarray(q_seed, dtype=np.float64).copy()
+                desired_pos = np.asarray(
+                    [
+                        workspace_center_xy[0] + offset_x,
+                        workspace_center_xy[1] + offset_y,
+                        (
+                            float(cfg.fixed_contact_surface_z_m)
+                            if bool(
+                                cfg.falling_reset_racket_follow_fixed_contact_surface_z
+                                or cfg.racket_launch_racket_follow_fixed_contact_surface_z
+                            )
+                            else warm_racket_pos[2]
+                        ),
+                    ],
+                    dtype=np.float64,
+                )
+                jacp = np.zeros((3, self.mj_model.nv), dtype=np.float64)
+                jacr = np.zeros((3, self.mj_model.nv), dtype=np.float64)
+                orientation_weight = float(
+                    cfg.falling_reset_racket_follow_ik_orientation_weight
+                )
+                posture_weight = 2.0e-4
+                damping = 2.0e-5
+                for _ in range(240):
+                    warm.qpos[self.arm_qadr_np] = q_arm
+                    warm.qvel[self.arm_vadr_np] = 0.0
+                    mujoco.mj_forward(self.mj_model, warm)
+                    current_pos = warm.site_xpos[self.racket_site_id]
+                    current_rot = warm.site_xmat[self.racket_site_id].reshape(3, 3)
+                    position_error = desired_pos - current_pos
+                    orientation_error = 0.5 * (
+                        np.cross(current_rot[:, 0], warm_racket_rot[:, 0])
+                        + np.cross(current_rot[:, 1], warm_racket_rot[:, 1])
+                        + np.cross(current_rot[:, 2], warm_racket_rot[:, 2])
+                    )
+                    if (
+                        np.linalg.norm(position_error) < 2.5e-5
+                        and np.linalg.norm(orientation_error) < 5.0e-4
+                    ):
+                        break
+                    mujoco.mj_jacSite(
+                        self.mj_model,
+                        warm,
+                        jacp,
+                        jacr,
+                        self.racket_site_id,
+                    )
+                    jacobian = np.concatenate(
+                        [
+                            jacp[:, self.arm_vadr_np],
+                            orientation_weight * jacr[:, self.arm_vadr_np],
+                        ],
+                        axis=0,
+                    )
+                    task_error = np.concatenate(
+                        [position_error, orientation_weight * orientation_error]
+                    )
+                    lhs = (
+                        jacobian.T @ jacobian
+                        + (damping + posture_weight) * np.eye(self.act_dim)
+                    )
+                    rhs = (
+                        jacobian.T @ task_error
+                        - posture_weight * (q_arm - warm_arm_q_np)
+                    )
+                    delta = np.linalg.solve(lhs, rhs)
+                    delta_norm = float(np.linalg.norm(delta))
+                    if delta_norm > 0.10:
+                        delta *= 0.10 / delta_norm
+                    q_arm = np.clip(q_arm + delta, arm_lo_np, arm_hi_np)
+                warm.qpos[self.arm_qadr_np] = q_arm
+                warm.qvel[self.arm_vadr_np] = 0.0
+                mujoco.mj_forward(self.mj_model, warm)
+                error = float(
+                    np.linalg.norm(
+                        warm.site_xpos[self.racket_site_id] - desired_pos
+                    )
+                )
+                return q_arm, error
+
+            nx = int(follow_x_offsets.size)
+            ny = int(follow_y_offsets.size)
+            follow_xy_q = np.zeros(
+                (nx, ny, self.act_dim), dtype=np.float64
+            )
+            desired_x = workspace_center_xy[0] + follow_x_offsets
+            desired_y = workspace_center_xy[1] + follow_y_offsets
+            x_start = int(np.argmin(np.abs(desired_x - warm_racket_pos[0])))
+            y_start = int(np.argmin(np.abs(desired_y - warm_racket_pos[1])))
+            solved: set[tuple[int, int]] = set()
+            max_follow_error = 0.0
+            if bool(cfg.falling_reset_racket_follow_xy_canonical_ik):
+                for x_index in range(nx):
+                    for y_index in range(ny):
+                        q_solution, error = solve_follow_xy_pose(
+                            float(follow_x_offsets[x_index]),
+                            float(follow_y_offsets[y_index]),
+                            warm_arm_q_np,
+                        )
+                        follow_xy_q[x_index, y_index] = q_solution
+                        solved.add((x_index, y_index))
+                        max_follow_error = max(max_follow_error, error)
+            else:
+                q_start, start_error = solve_follow_xy_pose(
+                    float(follow_x_offsets[x_start]),
+                    float(follow_y_offsets[y_start]),
+                    warm_arm_q_np,
+                )
+                follow_xy_q[x_start, y_start] = q_start
+                solved.add((x_start, y_start))
+                max_follow_error = start_error
+                for radius in range(1, nx + ny):
+                    for x_index in range(nx):
+                        for y_index in range(ny):
+                            if (
+                                (x_index, y_index) in solved
+                                or abs(x_index - x_start)
+                                + abs(y_index - y_start)
+                                != radius
+                            ):
+                                continue
+                            if x_index != x_start:
+                                neighbor = (
+                                    x_index - (
+                                        1 if x_index > x_start else -1
+                                    ),
+                                    y_index,
+                                )
+                            else:
+                                neighbor = (
+                                    x_index,
+                                    y_index - (
+                                        1 if y_index > y_start else -1
+                                    ),
+                                )
+                            if neighbor not in solved:
+                                raise RuntimeError(
+                                    "internal XY IK traversal lost its solved "
+                                    "neighbor"
+                                )
+                            q_seed = follow_xy_q[neighbor]
+                            q_solution, error = solve_follow_xy_pose(
+                                float(follow_x_offsets[x_index]),
+                                float(follow_y_offsets[y_index]),
+                                q_seed,
+                            )
+                            follow_xy_q[x_index, y_index] = q_solution
+                            solved.add((x_index, y_index))
+                            max_follow_error = max(max_follow_error, error)
+            if len(solved) != nx * ny:
+                raise RuntimeError(
+                    "falling reset episode-target XY IK table is incomplete"
+                )
+            if max_follow_error > float(
+                cfg.falling_reset_racket_follow_max_error_m
+            ):
+                raise ValueError(
+                    "falling-contact episode-target XY IK exceeds error limit: "
+                    f"max_error={max_follow_error:.4f} m, "
+                    f"limit={cfg.falling_reset_racket_follow_max_error_m:.4f} m, "
+                    f"x_range=({target_x_lo:.3f}, {target_x_hi:.3f}) m, "
+                    f"y_range=({target_y_lo:.3f}, {target_y_hi:.3f}) m"
+                )
+            self.falling_reset_racket_follow_x_offsets = jnp.asarray(
+                follow_x_offsets, dtype=jnp.float32
+            )
+            self.falling_reset_racket_follow_y_offsets = jnp.asarray(
+                follow_y_offsets, dtype=jnp.float32
+            )
+            self.falling_reset_racket_follow_xy_arm_q = jnp.asarray(
+                follow_xy_q, dtype=jnp.float32
+            )
+            self.falling_reset_racket_follow_xy_max_error_m = max_follow_error
+            if bool(
+                getattr(
+                    cfg,
+                    "cartesian_pose_require_reset_reference_safe",
+                    False,
+                )
+            ):
+                if not self.cartesian_pose_projection_enabled:
+                    raise ValueError(
+                        "safe reset-reference validation requires Cartesian "
+                        "pose projection"
+                    )
+                position_lower = np.asarray(
+                    cfg.cartesian_pose_position_lower_m, dtype=np.float64
+                )
+                position_upper = np.asarray(
+                    cfg.cartesian_pose_position_upper_m, dtype=np.float64
+                )
+                roll_pitch_limit_rad = np.deg2rad(
+                    np.asarray(
+                        (
+                            cfg.cartesian_pose_roll_limit_deg,
+                            cfg.cartesian_pose_pitch_limit_deg,
+                        ),
+                        dtype=np.float64,
+                    )
+                )
+                tolerance = float(cfg.cartesian_pose_projection_tolerance)
+                worst_violation = -np.inf
+                worst_details: tuple[int, int, np.ndarray, np.ndarray] | None = (
+                    None
+                )
+                maximum_roll_pitch = 0.0
+                for x_index in range(nx):
+                    for y_index in range(ny):
+                        warm.qpos[self.arm_qadr_np] = follow_xy_q[
+                            x_index, y_index
+                        ]
+                        warm.qvel[self.arm_vadr_np] = 0.0
+                        mujoco.mj_forward(self.mj_model, warm)
+                        position_policy = world_to_policy_rotation_np @ (
+                            warm.site_xpos[self.racket_site_id]
+                            - policy_origin_world_np
+                        )
+                        relative_rotation = (
+                            warm_racket_rot.T
+                            @ warm.site_xmat[self.racket_site_id].reshape(3, 3)
+                        )
+                        pitch = np.arcsin(
+                            np.clip(relative_rotation[0, 2], -1.0, 1.0)
+                        )
+                        if abs(np.cos(pitch)) > 1.0e-6:
+                            roll = np.arctan2(
+                                -relative_rotation[1, 2],
+                                relative_rotation[2, 2],
+                            )
+                        else:
+                            roll = np.arctan2(
+                                relative_rotation[2, 1],
+                                relative_rotation[1, 1],
+                            )
+                        roll_pitch = np.asarray((roll, pitch))
+                        maximum_roll_pitch = max(
+                            maximum_roll_pitch,
+                            float(np.max(np.abs(roll_pitch))),
+                        )
+                        position_violation = float(
+                            np.max(
+                                np.maximum(
+                                    np.maximum(
+                                        position_lower - position_policy,
+                                        position_policy - position_upper,
+                                    ),
+                                    0.0,
+                                )
+                            )
+                        )
+                        orientation_violation = float(
+                            np.max(
+                                np.maximum(
+                                    np.abs(roll_pitch)
+                                    - roll_pitch_limit_rad,
+                                    0.0,
+                                )
+                            )
+                        )
+                        violation = max(
+                            position_violation, orientation_violation
+                        )
+                        if violation > worst_violation:
+                            worst_violation = violation
+                            worst_details = (
+                                x_index,
+                                y_index,
+                                position_policy.copy(),
+                                roll_pitch.copy(),
+                            )
+                self.falling_reset_racket_follow_xy_max_roll_pitch_rad = (
+                    maximum_roll_pitch
+                )
+                if worst_violation > tolerance:
+                    assert worst_details is not None
+                    x_index, y_index, position_policy, roll_pitch = (
+                        worst_details
+                    )
+                    raise ValueError(
+                        "falling-contact XY reset reference lies outside the "
+                        "Cartesian hard set: "
+                        f"violation={worst_violation:.7g}, "
+                        f"offset=({follow_x_offsets[x_index]:.4f}, "
+                        f"{follow_y_offsets[y_index]:.4f}) m, "
+                        f"position={position_policy.tolist()}, "
+                        f"roll_pitch_deg="
+                        f"{np.rad2deg(roll_pitch).tolist()}"
+                    )
+            # Host-side IK must not change the canonical warm model state.
+            warm.qpos[:] = self.warm_qpos_np
+            warm.qvel[:] = self.warm_qvel_np
+            warm.ctrl[:] = self.warm_ctrl_np
             mujoco.mj_forward(self.mj_model, warm)
         if self.waist_body_id >= 0:
             self.chest_target_offset = jnp.asarray(
@@ -4632,18 +9293,22 @@ class MjxJuggleEnv:
         self.default_gravity_z = float(self.mj_model.opt.gravity[2])
         self.gravity_mag = float(np.linalg.norm(self.mj_model.opt.gravity))
         self.original_ball_mass = float(self.mj_model.body_mass[self.ball_body_id]) if self.ball_body_id >= 0 else 0.0027
-        self.original_ball_inertia = (
-            jnp.asarray(self.mj_model.body_inertia[self.ball_body_id], dtype=jnp.float32)
+        self.original_ball_inertia_np = (
+            np.asarray(
+                self.mj_model.body_inertia[self.ball_body_id],
+                dtype=np.float32,
+            ).copy()
             if self.ball_body_id >= 0
-            else jnp.ones((3,), dtype=jnp.float32)
+            else np.ones((3,), dtype=np.float32)
         )
+        self.original_ball_inertia = jnp.asarray(self.original_ball_inertia_np)
         original_ball_radius = (
             float(self.mj_model.geom_size[self.ball_geom_id, 0])
             if self.ball_geom_id >= 0
             else 0.02
         )
         self.original_ball_normalized_inertia = float(
-            np.mean(np.asarray(self.original_ball_inertia, dtype=np.float64))
+            np.mean(self.original_ball_inertia_np, dtype=np.float64)
             / max(
                 self.original_ball_mass * original_ball_radius * original_ball_radius,
                 1e-12,
@@ -4655,6 +9320,21 @@ class MjxJuggleEnv:
         self.original_racket_friction = (
             float(self.mj_model.geom_friction[self.racket_geom_id, 0]) if self.racket_geom_id >= 0 else 0.35
         )
+        self.original_ball_racket_pair_friction = None
+        if len(self.ball_racket_pair_ids_tuple) == 1:
+            pair_id = self.ball_racket_pair_ids_tuple[0]
+            self.original_ball_solref_time = float(
+                self.mj_model.pair_solref[pair_id, 0]
+            )
+            self.original_ball_solref_damping = float(
+                self.mj_model.pair_solref[pair_id, 1]
+            )
+            self.original_ball_racket_pair_friction = jnp.asarray(
+                self.mj_model.pair_friction[pair_id], dtype=jnp.float32
+            )
+            self.original_racket_friction = float(
+                self.mj_model.pair_friction[pair_id, 0]
+            )
         self.original_dof_damping = jnp.asarray(self.mj_model.dof_damping, dtype=jnp.float32)
         self.original_dof_armature = jnp.asarray(self.mj_model.dof_armature, dtype=jnp.float32)
         self.original_racket_body_pos = (
@@ -4799,6 +9479,14 @@ class MjxJuggleEnv:
             pair_friction = model.pair_friction.at[:, self.ball_racket_pair_ids, 0].set(
                 dr_racket_friction[:, None]
             )
+            if bool(getattr(
+                self.cfg,
+                "ball_racket_pair_tie_tangent_friction_dr",
+                False,
+            )):
+                pair_friction = pair_friction.at[
+                    :, self.ball_racket_pair_ids, 1
+                ].set(dr_racket_friction[:, None])
             pair_solref = model.pair_solref.at[:, self.ball_racket_pair_ids, 0].set(
                 dr_ball_solref_time[:, None]
             )
@@ -4823,6 +9511,21 @@ class MjxJuggleEnv:
             )
             radius = jnp.maximum(0.03, new_sizes[:, :, 0] + dr_racket_radius_offset[:, None])
             new_sizes = new_sizes.at[:, :, 0].set(radius)
+            if (self.fixed_contact_plane_training_enabled
+                    and self.cfg.fixed_contact_surface_frame_mode == "mesh_axes_v1"):
+                # geom_size for meshes is compiled bounds, not cylinder
+                # radius. Even a zero DR draw previously inflated thickness
+                # from 1 to 30 mm while the collision vertices stayed fixed.
+                mesh_geoms = jnp.asarray([
+                    self.mj_model.geom_type[int(gid)] == mujoco.mjtGeom.mjGEOM_MESH
+                    for gid in (self.racket_wood_geom_id, self.racket_rubber_geom_id)
+                    if gid >= 0
+                ])
+                new_sizes = jnp.where(
+                    mesh_geoms[None, :, None],
+                    self.original_racket_mount_geom_sizes[None, :, :],
+                    new_sizes,
+                )
             geom_size = model.geom_size.at[:, self.racket_mount_geom_ids, :].set(new_sizes)
             model = model.replace(geom_size=geom_size)
 
@@ -4887,81 +9590,288 @@ class MjxJuggleEnv:
             if bool(self.cfg.domain_randomization and hard_tail_fraction > 0.0)
             else jnp.zeros((n_envs,), dtype=bool)
         )
-        falling_reset = self.ball_reset_mode == "falling_contact"
+        falling_reset = self.ball_reset_mode in {
+            "falling_contact",
+            "scripted_airborne_handoff",
+        }
         racket_launch_reset = self.ball_reset_mode == "racket_launch"
-        xy_jitter_limit = (
-            float(self.cfg.falling_reset_contact_xy_jitter)
-            if falling_reset
-            else (
-                float(self.cfg.racket_launch_xy_jitter)
-                if racket_launch_reset
-                else float(self.cfg.ball_spawn_xy_jitter)
-            )
-        )
-        # A zero falling-reset limit is intentional: it represents an exactly
-        # vertical descending ball.  Do not treat it as an unset value and
-        # silently fall back to the generic launch disturbance, otherwise the
-        # supposed zero-vxy interception curriculum still teaches chasing.
-        vxy_limit = (
-            float(self.cfg.falling_reset_vxy_max)
-            if falling_reset
-            else (
-                float(self.cfg.racket_launch_vxy_max)
-                if racket_launch_reset
-                else float(self.cfg.ball_init_vxy_max)
-            )
-        )
-        xy_jitter = jax.vmap(
-            lambda k: jax.random.uniform(
-                k,
-                (2,),
-                minval=-xy_jitter_limit,
-                maxval=xy_jitter_limit,
-            )
-        )(key_xy)
-        if racket_launch_reset:
-            gap_lo, gap_hi = sorted(float(v) for v in self.cfg.racket_launch_surface_gap_range_m)
-            racket_launch_surface_gap = jax.vmap(
-                lambda k: jax.random.uniform(
-                    k,
-                    (),
-                    minval=gap_lo,
-                    maxval=max(gap_lo + 1e-6, gap_hi),
-                )
-            )(key_z)
-            z_jitter = jnp.zeros((n_envs,), dtype=jnp.float32)
+        mixed_reset = self.falling_reset_mixed
+        if falling_reset:
+            falling_reset_active = jnp.ones((n_envs,), dtype=bool)
+        elif mixed_reset:
+            if self.falling_reset_mixture_probability <= 0.0:
+                falling_reset_active = jnp.zeros((n_envs,), dtype=bool)
+            elif self.falling_reset_mixture_probability >= 1.0:
+                falling_reset_active = jnp.ones((n_envs,), dtype=bool)
+            else:
+                falling_reset_active = jax.vmap(
+                    lambda key: jax.random.bernoulli(
+                        jax.random.fold_in(key, 1500),
+                        p=self.falling_reset_mixture_probability,
+                    )
+                )(key_episode_phase)
         else:
-            racket_launch_surface_gap = jnp.zeros((n_envs,), dtype=jnp.float32)
-            z_jitter = jax.vmap(
-                lambda k: jax.random.uniform(
-                    k,
+            falling_reset_active = jnp.zeros((n_envs,), dtype=bool)
+
+        if self.fixed_contact_skill_mode == "arrival_only":
+            fixed_contact_skill_mode_id = jnp.full(
+                (n_envs,),
+                FIXED_CONTACT_SKILL_MODE_ARRIVAL_ONLY,
+                dtype=jnp.int32,
+            )
+        elif self.fixed_contact_skill_mode == "arrival_conditioned_single_hit":
+            fixed_contact_skill_mode_id = jnp.full(
+                (n_envs,),
+                FIXED_CONTACT_SKILL_MODE_ARRIVED_HIT,
+                dtype=jnp.int32,
+            )
+        elif self.fixed_contact_skill_mode == "mixture":
+            fixed_contact_skill_mode_id = sample_fixed_contact_skill_mode(
+                jax.vmap(lambda key: jax.random.fold_in(key, 260917))(
+                    key_episode_phase
+                ),
+                arrival_only_probability=float(
+                    getattr(
+                        self.cfg,
+                        "fixed_contact_reset_mixture_arrival_only",
+                        0.0,
+                    )
+                ),
+                arrived_hit_probability=float(
+                    getattr(
+                        self.cfg,
+                        "fixed_contact_reset_mixture_arrived_hit",
+                        0.0,
+                    )
+                ),
+                recurrent_probability=float(
+                    getattr(
+                        self.cfg,
+                        "fixed_contact_reset_mixture_recurrent",
+                        1.0,
+                    )
+                ),
+            )
+        else:
+            fixed_contact_skill_mode_id = jnp.full(
+                (n_envs,),
+                FIXED_CONTACT_SKILL_MODE_RECURRENT,
+                dtype=jnp.int32,
+            )
+
+        falling_xy_jitter_limit = float(
+            self.cfg.falling_reset_contact_xy_jitter
+        )
+        racket_xy_jitter_limit = float(self.cfg.racket_launch_xy_jitter)
+        falling_vxy_limit = float(self.cfg.falling_reset_vxy_max)
+        racket_vxy_limit = float(self.cfg.racket_launch_vxy_max)
+        falling_vz_jitter_mag = abs(float(self.cfg.ball_init_vz_jitter))
+        racket_vz_jitter_mag = float(self.cfg.racket_launch_vnormal_max)
+        if mixed_reset:
+            falling_xy_jitter = sample_local_contact_xy_jitter(
+                key_xy,
+                maximum_m=falling_xy_jitter_limit,
+                minimum_radius_m=float(
+                    self.cfg.falling_reset_contact_xy_min_radius_m
+                ),
+                mode=str(self.cfg.falling_reset_contact_xy_sampling_mode),
+            )
+            racket_xy_jitter = jax.vmap(
+                lambda key: jax.random.uniform(
+                    key,
+                    (2,),
+                    minval=-racket_xy_jitter_limit,
+                    maxval=racket_xy_jitter_limit,
+                )
+            )(key_xy)
+            xy_jitter = jnp.where(
+                falling_reset_active[:, None],
+                falling_xy_jitter,
+                racket_xy_jitter,
+            )
+            falling_z_jitter = jax.vmap(
+                lambda key: jax.random.uniform(
+                    key,
                     (),
                     minval=-float(self.cfg.ball_spawn_z_jitter),
                     maxval=float(self.cfg.ball_spawn_z_jitter),
                 )
             )(key_z)
-        vxy = jax.vmap(
-            lambda k: jax.random.uniform(
-                k,
-                (2,),
-                minval=-vxy_limit,
-                maxval=vxy_limit,
+            z_jitter = jnp.where(
+                falling_reset_active,
+                falling_z_jitter,
+                jnp.zeros((n_envs,), dtype=jnp.float32),
             )
-        )(key_vel)
-        vz_jitter_mag = (
-            float(self.cfg.racket_launch_vnormal_max)
-            if racket_launch_reset
-            else abs(float(self.cfg.ball_init_vz_jitter))
-        )
-        vz_jitter = jax.vmap(
-            lambda k: jax.random.uniform(
-                k,
-                (),
-                minval=-vz_jitter_mag,
-                maxval=vz_jitter_mag,
+            gap_lo, gap_hi = sorted(
+                float(value)
+                for value in self.cfg.racket_launch_surface_gap_range_m
             )
-        )(key_ball_init_vz)
-        init_vz = vz_jitter if racket_launch_reset else float(self.cfg.ball_init_vz) + vz_jitter
+            sampled_racket_surface_gap = jax.vmap(
+                lambda key: jax.random.uniform(
+                    key,
+                    (),
+                    minval=gap_lo,
+                    maxval=max(gap_lo + 1e-6, gap_hi),
+                )
+            )(key_z)
+            racket_launch_surface_gap = jnp.where(
+                falling_reset_active,
+                0.0,
+                sampled_racket_surface_gap,
+            )
+            falling_vxy = jax.vmap(
+                lambda key: jax.random.uniform(
+                    key,
+                    (2,),
+                    minval=-falling_vxy_limit,
+                    maxval=falling_vxy_limit,
+                )
+            )(key_vel)
+            racket_vxy = jax.vmap(
+                lambda key: jax.random.uniform(
+                    key,
+                    (2,),
+                    minval=-racket_vxy_limit,
+                    maxval=racket_vxy_limit,
+                )
+            )(key_vel)
+            vxy = jnp.where(
+                falling_reset_active[:, None], falling_vxy, racket_vxy
+            )
+            falling_vz_jitter = jax.vmap(
+                lambda key: jax.random.uniform(
+                    key,
+                    (),
+                    minval=-falling_vz_jitter_mag,
+                    maxval=falling_vz_jitter_mag,
+                )
+            )(key_ball_init_vz)
+            racket_vz_jitter = jax.vmap(
+                lambda key: jax.random.uniform(
+                    key,
+                    (),
+                    minval=-racket_vz_jitter_mag,
+                    maxval=racket_vz_jitter_mag,
+                )
+            )(key_ball_init_vz)
+            vz_jitter = jnp.where(
+                falling_reset_active, falling_vz_jitter, racket_vz_jitter
+            )
+            init_vz = jnp.where(
+                falling_reset_active,
+                float(self.cfg.ball_init_vz) + falling_vz_jitter,
+                racket_vz_jitter,
+            )
+            xy_jitter_limit = 0.0
+            vxy_limit = 0.0
+            vz_jitter_mag = 0.0
+        else:
+            xy_jitter_limit = (
+                falling_xy_jitter_limit
+                if falling_reset
+                else (
+                    racket_xy_jitter_limit
+                    if racket_launch_reset
+                    else float(self.cfg.ball_spawn_xy_jitter)
+                )
+            )
+            # A zero falling-reset limit is intentional: it represents an
+            # exactly vertical descending ball. Do not fall back to the
+            # generic launch disturbance for a zero limit.
+            vxy_limit = (
+                falling_vxy_limit
+                if falling_reset
+                else (
+                    racket_vxy_limit
+                    if racket_launch_reset
+                    else float(self.cfg.ball_init_vxy_max)
+                )
+            )
+            if falling_reset:
+                xy_jitter = sample_local_contact_xy_jitter(
+                    key_xy,
+                    maximum_m=xy_jitter_limit,
+                    minimum_radius_m=float(
+                        self.cfg.falling_reset_contact_xy_min_radius_m
+                    ),
+                    mode=str(
+                        self.cfg.falling_reset_contact_xy_sampling_mode
+                    ),
+                )
+            else:
+                # Preserve the historical racket/anchor sampler exactly.
+                xy_jitter = jax.vmap(
+                    lambda key: jax.random.uniform(
+                        key,
+                        (2,),
+                        minval=-xy_jitter_limit,
+                        maxval=xy_jitter_limit,
+                    )
+                )(key_xy)
+            if racket_launch_reset:
+                gap_lo, gap_hi = sorted(
+                    float(value)
+                    for value in self.cfg.racket_launch_surface_gap_range_m
+                )
+                if (
+                    self.racket_launch_racket_follow_xy_enabled
+                    and gap_lo == gap_hi
+                ):
+                    # The reviewed placed-ball route declares an exact reset
+                    # gap.  The historical generic sampler deliberately
+                    # expands a zero-width interval by one micrometre; keep
+                    # that legacy behavior everywhere else.
+                    racket_launch_surface_gap = jnp.full(
+                        (n_envs,), gap_lo, dtype=jnp.float32
+                    )
+                else:
+                    racket_launch_surface_gap = jax.vmap(
+                        lambda key: jax.random.uniform(
+                            key,
+                            (),
+                            minval=gap_lo,
+                            maxval=max(gap_lo + 1e-6, gap_hi),
+                        )
+                    )(key_z)
+                z_jitter = jnp.zeros((n_envs,), dtype=jnp.float32)
+            else:
+                racket_launch_surface_gap = jnp.zeros(
+                    (n_envs,), dtype=jnp.float32
+                )
+                z_jitter = jax.vmap(
+                    lambda key: jax.random.uniform(
+                        key,
+                        (),
+                        minval=-float(self.cfg.ball_spawn_z_jitter),
+                        maxval=float(self.cfg.ball_spawn_z_jitter),
+                    )
+                )(key_z)
+            vxy = jax.vmap(
+                lambda key: jax.random.uniform(
+                    key,
+                    (2,),
+                    minval=-vxy_limit,
+                    maxval=vxy_limit,
+                )
+            )(key_vel)
+            vz_jitter_mag = (
+                racket_vz_jitter_mag
+                if racket_launch_reset
+                else falling_vz_jitter_mag
+            )
+            vz_jitter = jax.vmap(
+                lambda key: jax.random.uniform(
+                    key,
+                    (),
+                    minval=-vz_jitter_mag,
+                    maxval=vz_jitter_mag,
+                )
+            )(key_ball_init_vz)
+            init_vz = (
+                vz_jitter
+                if racket_launch_reset
+                else float(self.cfg.ball_init_vz) + vz_jitter
+            )
         target_x_offset = jax.vmap(
             lambda k: jax.random.uniform(
                 k,
@@ -4986,6 +9896,189 @@ class MjxJuggleEnv:
                 maxval=float(self.cfg.episode_racket_anchor_z_range_m[1]),
             )
         )(key_episode_anchor_z)
+        if mixed_reset:
+            falling_target_x_range = (
+                self.cfg.falling_reset_episode_target_x_range_m
+            )
+            falling_target_y_range = (
+                self.cfg.falling_reset_episode_target_y_range_m
+            )
+            falling_anchor_z_range = (
+                self.cfg.falling_reset_episode_racket_anchor_z_range_m
+            )
+            falling_target_x_offset = jax.vmap(
+                lambda key: jax.random.uniform(
+                    key,
+                    (),
+                    minval=float(falling_target_x_range[0]),
+                    maxval=float(falling_target_x_range[1]),
+                )
+            )(key_episode_target_x)
+            falling_target_y_offset = jax.vmap(
+                lambda key: jax.random.uniform(
+                    key,
+                    (),
+                    minval=float(falling_target_y_range[0]),
+                    maxval=float(falling_target_y_range[1]),
+                )
+            )(key_episode_target_y)
+            falling_target_z_offset = jax.vmap(
+                lambda key: jax.random.uniform(
+                    key,
+                    (),
+                    minval=float(falling_anchor_z_range[0]),
+                    maxval=float(falling_anchor_z_range[1]),
+                )
+            )(key_episode_anchor_z)
+            target_x_offset = jnp.where(
+                falling_reset_active, falling_target_x_offset, target_x_offset
+            )
+            target_y_offset = jnp.where(
+                falling_reset_active, falling_target_y_offset, target_y_offset
+            )
+            target_z_offset = jnp.where(
+                falling_reset_active, falling_target_z_offset, target_z_offset
+            )
+        if (
+            self.fixed_contact_plane_training_enabled
+            and self.cfg.fixed_contact_xy_bin_sampling_enabled
+        ):
+            x_lo, x_hi = sorted(
+                float(value) for value in self.cfg.episode_target_x_range_m
+            )
+            y_lo, y_hi = sorted(
+                float(value) for value in self.cfg.episode_target_y_range_m
+            )
+            x_bins_np = np.asarray(
+                [
+                    value
+                    for value in self.cfg.fixed_contact_eval_grid_x_m
+                    if x_lo - 1.0e-9 <= float(value) <= x_hi + 1.0e-9
+                ],
+                dtype=np.float32,
+            )
+            y_bins_np = np.asarray(
+                [
+                    value
+                    for value in self.cfg.fixed_contact_eval_grid_y_m
+                    if y_lo - 1.0e-9 <= float(value) <= y_hi + 1.0e-9
+                ],
+                dtype=np.float32,
+            )
+            if x_bins_np.size == 0 or y_bins_np.size == 0:
+                raise ValueError(
+                    "fixed-contact XY grids do not intersect the stage "
+                    "target ranges"
+                )
+            x_bins = jnp.asarray(x_bins_np)
+            y_bins = jnp.asarray(y_bins_np)
+            center_lane = jax.vmap(
+                lambda key: jax.random.bernoulli(
+                    jax.random.fold_in(key, 9101),
+                    p=float(self.cfg.fixed_contact_xy_center_probability),
+                )
+            )(key_episode_target_x)
+            x_indices = jax.vmap(
+                lambda key: jax.random.randint(
+                    jax.random.fold_in(key, 9102),
+                    (),
+                    minval=0,
+                    maxval=int(x_bins_np.size),
+                )
+            )(key_episode_target_x)
+            y_indices = jax.vmap(
+                lambda key: jax.random.randint(
+                    jax.random.fold_in(key, 9103),
+                    (),
+                    minval=0,
+                    maxval=int(y_bins_np.size),
+                )
+            )(key_episode_target_y)
+            x_center_index = int(np.argmin(np.abs(x_bins_np)))
+            y_center_index = int(np.argmin(np.abs(y_bins_np)))
+            x_indices = jnp.where(center_lane, x_center_index, x_indices)
+            y_indices = jnp.where(center_lane, y_center_index, y_indices)
+            jitter_m = max(
+                0.0, float(self.cfg.fixed_contact_xy_bin_jitter_m)
+            )
+            x_jitter = jax.vmap(
+                lambda key: jax.random.uniform(
+                    jax.random.fold_in(key, 9104),
+                    (),
+                    minval=-jitter_m,
+                    maxval=max(jitter_m, 1.0e-9),
+                )
+            )(key_episode_target_x)
+            y_jitter = jax.vmap(
+                lambda key: jax.random.uniform(
+                    jax.random.fold_in(key, 9105),
+                    (),
+                    minval=-jitter_m,
+                    maxval=max(jitter_m, 1.0e-9),
+                )
+            )(key_episode_target_y)
+            target_x_offset = jnp.clip(
+                x_bins[x_indices] + x_jitter, x_lo, x_hi
+            )
+            target_y_offset = jnp.clip(
+                y_bins[y_indices] + y_jitter, y_lo, y_hi
+            )
+            if self.cfg.fixed_contact_xy_equal_bin_evaluation:
+                # Deterministic lane assignment makes every Cartesian bin
+                # equally weighted (up to one lane when n_envs is not an
+                # exact multiple), with no center prior and no jitter.
+                if self.cfg.fixed_contact_factorized_reset_evaluation:
+                    ttc_choices = getattr(
+                        self.cfg,
+                        "fixed_contact_factorized_reset_validation_ttc_choices_s",
+                        None,
+                    )
+                    if ttc_choices:
+                        (
+                            equal_x_index,
+                            equal_y_index,
+                            _equal_blend_index,
+                            _equal_ttc_index,
+                        ) = factorized_reset_lane_indices_with_ttc(
+                            n_envs=n_envs,
+                            n_x=int(x_bins_np.size),
+                            n_y=int(y_bins_np.size),
+                            n_blends=len(
+                                self.cfg.falling_reset_racket_follow_episode_target_xy_blend_choices
+                            ),
+                            n_ttc=len(ttc_choices),
+                        )
+                    else:
+                        equal_x_index, equal_y_index, _equal_blend_index = (
+                            factorized_reset_lane_indices(
+                                n_envs=n_envs,
+                                n_x=int(x_bins_np.size),
+                                n_y=int(y_bins_np.size),
+                                n_blends=len(
+                                    self.cfg.falling_reset_racket_follow_episode_target_xy_blend_choices
+                                ),
+                            )
+                        )
+                else:
+                    if self.cfg.fixed_contact_xy_equal_bin_seed_permutation:
+                        equal_x_index, equal_y_index = (
+                            seed_permuted_xy_lane_indices(
+                                jax.random.fold_in(
+                                    key_episode_target_x[0], 9106
+                                ),
+                                n_envs=n_envs,
+                                n_x=int(x_bins_np.size),
+                                n_y=int(y_bins_np.size),
+                            )
+                        )
+                    else:
+                        lane_index = jnp.arange(n_envs, dtype=jnp.int32)
+                        equal_x_index = (
+                            lane_index // int(y_bins_np.size)
+                        ) % int(x_bins_np.size)
+                        equal_y_index = lane_index % int(y_bins_np.size)
+                target_x_offset = x_bins[equal_x_index]
+                target_y_offset = y_bins[equal_y_index]
         local_y_lo, local_y_hi = sorted(
             float(value)
             for value in self.cfg.falling_reset_contact_local_y_offset_range_m
@@ -5010,6 +10103,39 @@ class MjxJuggleEnv:
                 maxval=max(tau_lo + 1e-6, tau_hi),
             )
         )(key_falling_tau)
+        if hasattr(self.cfg, "fixed_contact_skill_mode"):
+            arrived_tau_lo, arrived_tau_hi = sorted(
+                float(value)
+                for value in self.cfg.fixed_contact_arrived_hit_ttc_range_s
+            )
+            arrived_tau = jax.vmap(
+                lambda key: jax.random.uniform(
+                    jax.random.fold_in(key, 260918),
+                    (),
+                    minval=arrived_tau_lo,
+                    maxval=max(arrived_tau_lo + 1.0e-6, arrived_tau_hi),
+                )
+            )(key_falling_tau)
+            falling_tau_raw = jnp.where(
+                fixed_contact_skill_mode_id
+                == FIXED_CONTACT_SKILL_MODE_ARRIVED_HIT,
+                arrived_tau,
+                falling_tau_raw,
+            )
+            if self.scripted_airborne_handoff:
+                handoff_tau_lo, handoff_tau_hi = sorted(
+                    float(value)
+                    for value in self.cfg.scripted_airborne_handoff_ttc_range_s
+                )
+                handoff_tau = jax.vmap(
+                    lambda key: jax.random.uniform(
+                        jax.random.fold_in(key, 260919),
+                        (),
+                        minval=handoff_tau_lo,
+                        maxval=max(handoff_tau_lo + 1.0e-6, handoff_tau_hi),
+                    )
+                )(key_falling_tau)
+                falling_tau_raw = handoff_tau
         apex_lo, apex_hi = [float(v) for v in self.cfg.falling_reset_apex_height_range_m]
         if apex_hi <= 0.0 and apex_lo <= 0.0:
             contact_rel_height_for_default = (
@@ -5578,30 +10704,73 @@ class MjxJuggleEnv:
             half_width = max(0.5 * abs(hi - lo), 1e-6)
             return ((value - center) / half_width) ** 2
 
-        disturbance_sq = (
-            squared_norm(xy_jitter, xy_jitter_limit)
-            + squared_norm(z_jitter, float(self.cfg.ball_spawn_z_jitter))
-            + squared_norm(vxy, vxy_limit)
-            # Racket-launch reset samples vertical velocity from
-            # racket_launch_vnormal_max, while the released-ball reset uses
-            # ball_init_vz_jitter.  Normalizing every mode by the latter made
-            # autonomous-launch disturbance strength explode when the legacy
-            # jitter was zero (0.003 / 1e-6 ~= 3000), corrupting reset-bucket
-            # diagnostics and CVaR validation.
-            + squared_norm(vz_jitter, vz_jitter_mag)
-        )
-        if falling_reset:
-            disturbance_sq = (
-                disturbance_sq
-                + squared_range(falling_tau_raw, self.cfg.falling_reset_time_to_contact_range_s)
+        if mixed_reset:
+            falling_reset_disturbance_sq = (
+                squared_norm(falling_xy_jitter, falling_xy_jitter_limit)
+                + squared_norm(
+                    falling_z_jitter, float(self.cfg.ball_spawn_z_jitter)
+                )
+                + squared_norm(falling_vxy, falling_vxy_limit)
+                + squared_norm(falling_vz_jitter, falling_vz_jitter_mag)
+                + squared_range(
+                    falling_tau_raw,
+                    self.cfg.falling_reset_time_to_contact_range_s,
+                )
                 + squared_range(
                     falling_apex_height,
                     (
                         max(1e-4, float(apex_lo)),
-                        max(max(1e-4, float(apex_lo)) + 1e-6, float(apex_hi)),
+                        max(
+                            max(1e-4, float(apex_lo)) + 1e-6,
+                            float(apex_hi),
+                        ),
                     ),
                 )
             )
+            racket_reset_disturbance_sq = (
+                squared_norm(racket_xy_jitter, racket_xy_jitter_limit)
+                + squared_norm(
+                    jnp.zeros((n_envs,), dtype=jnp.float32),
+                    float(self.cfg.ball_spawn_z_jitter),
+                )
+                + squared_norm(racket_vxy, racket_vxy_limit)
+                + squared_norm(racket_vz_jitter, racket_vz_jitter_mag)
+            )
+            disturbance_sq = jnp.where(
+                falling_reset_active,
+                falling_reset_disturbance_sq,
+                racket_reset_disturbance_sq,
+            )
+        else:
+            disturbance_sq = (
+                squared_norm(xy_jitter, xy_jitter_limit)
+                + squared_norm(z_jitter, float(self.cfg.ball_spawn_z_jitter))
+                + squared_norm(vxy, vxy_limit)
+                # Racket-launch reset samples vertical velocity from
+                # racket_launch_vnormal_max, while the released-ball reset
+                # uses ball_init_vz_jitter. Normalizing every mode by the
+                # latter made autonomous-launch disturbance strength explode
+                # when the legacy jitter was zero.
+                + squared_norm(vz_jitter, vz_jitter_mag)
+            )
+            if falling_reset:
+                disturbance_sq = (
+                    disturbance_sq
+                    + squared_range(
+                        falling_tau_raw,
+                        self.cfg.falling_reset_time_to_contact_range_s,
+                    )
+                    + squared_range(
+                        falling_apex_height,
+                        (
+                            max(1e-4, float(apex_lo)),
+                            max(
+                                max(1e-4, float(apex_lo)) + 1e-6,
+                                float(apex_hi),
+                            ),
+                        ),
+                    )
+                )
         if randomize_low_level_plant:
             disturbance_sq = (
                 disturbance_sq
@@ -5696,41 +10865,239 @@ class MjxJuggleEnv:
         # the policy should return the ball after contact.
         reset_racket_anchor = data.site_xpos[:, self.racket_site_id]
         episode_target_offset = jnp.stack([target_x_offset, target_y_offset, target_z_offset], axis=-1)
-        episode_racket_anchor = reset_racket_anchor + episode_target_offset
+        if self.fixed_contact_plane_training_enabled:
+            # Fixed-contact target bins are offsets from the registered world
+            # workspace center, not offsets from the warm-reset racket pose.
+            # Z remains the warm calibrated surface/site anchor contract.
+            workspace_center_xy = jnp.asarray(
+                self.cfg.fixed_contact_workspace_center_xy_m,
+                dtype=jnp.float32,
+            )
+            episode_racket_anchor = jnp.concatenate(
+                [
+                    workspace_center_xy[None, :]
+                    + episode_target_offset[:, :2],
+                    (
+                        jnp.full_like(
+                            reset_racket_anchor[:, 2:3],
+                            float(self.cfg.fixed_contact_surface_z_m),
+                        )
+                        if bool(
+                            self.cfg.falling_reset_racket_follow_fixed_contact_surface_z
+                            or self.cfg.racket_launch_racket_follow_fixed_contact_surface_z
+                        )
+                        else reset_racket_anchor[:, 2:3]
+                        + episode_target_offset[:, 2:3]
+                    ),
+                ],
+                axis=-1,
+            )
+        else:
+            episode_racket_anchor = reset_racket_anchor + episode_target_offset
         if self.waist_body_id >= 0:
             chest_target_offset = episode_racket_anchor - data.xpos[:, self.waist_body_id]
         else:
             chest_target_offset = jnp.zeros((n_envs, 3), dtype=jnp.float32)
 
         reset_arm_q = jnp.broadcast_to(self.warm_arm_q, (n_envs, self.act_dim))
-        if falling_reset and self.falling_reset_racket_follow_enabled:
-            reset_base_yaw = data.qpos[:, self.base_yaw_qadr]
-            falling_local_y_offset_world = jnp.stack(
-                [
-                    -jnp.sin(reset_base_yaw) * falling_local_y_offset,
-                    jnp.cos(reset_base_yaw) * falling_local_y_offset,
-                ],
-                axis=-1,
+        falling_follow_active = bool(
+            (
+                self.falling_reset_racket_follow_enabled
+                or self.falling_reset_racket_follow_xy_enabled
             )
-            follow_world_y = (
-                target_y_offset
-                + falling_local_y_offset_world[:, 1]
-                + xy_jitter[:, 1]
-            )
-            reset_arm_q = jax.vmap(
-                lambda q_values: jnp.interp(
-                    follow_world_y,
-                    self.falling_reset_racket_follow_offsets,
-                    q_values,
+            and (
+                falling_reset
+                or (
+                    mixed_reset
+                    and self.falling_reset_mixture_probability > 0.0
                 )
-            )(self.falling_reset_racket_follow_arm_q.T).T
+            )
+        )
+        racket_launch_follow_active = bool(
+            self.racket_launch_racket_follow_xy_enabled
+            and (racket_launch_reset or mixed_reset)
+        )
+        target_follow_blend_range = (
+            self.cfg.falling_reset_racket_follow_episode_target_xy_blend_range
+        )
+        target_follow_blend_choices = (
+            self.cfg.falling_reset_racket_follow_episode_target_xy_blend_choices
+        )
+        target_follow_blend = sample_reset_target_follow_blend(
+            jax.vmap(lambda key: jax.random.fold_in(key, 1670))(
+                key_episode_phase
+            ),
+            fixed_fraction=(
+                self.cfg.falling_reset_racket_follow_episode_target_xy_blend
+            ),
+            fraction_range=target_follow_blend_range,
+            fraction_choices=target_follow_blend_choices,
+            fraction_choice_probabilities=(
+                self.cfg.falling_reset_racket_follow_episode_target_xy_blend_choice_probabilities
+            ),
+        )
+        if bool(
+            getattr(self.cfg, "fixed_contact_factorized_reset_evaluation", False)
+        ):
+            choices = jnp.asarray(target_follow_blend_choices, dtype=jnp.float32)
+            factor_n_x = len(tuple(
+                value
+                for value in self.cfg.fixed_contact_eval_grid_x_m
+                if x_lo - 1.0e-9 <= float(value) <= x_hi + 1.0e-9
+            ))
+            factor_n_y = len(tuple(
+                value
+                for value in self.cfg.fixed_contact_eval_grid_y_m
+                if y_lo - 1.0e-9 <= float(value) <= y_hi + 1.0e-9
+            ))
+            factor_ttc_choices = getattr(
+                self.cfg,
+                "fixed_contact_factorized_reset_validation_ttc_choices_s",
+                None,
+            )
+            if factor_ttc_choices:
+                _x_index, _y_index, blend_index, ttc_index = (
+                    factorized_reset_lane_indices_with_ttc(
+                        n_envs=n_envs,
+                        n_x=factor_n_x,
+                        n_y=factor_n_y,
+                        n_blends=int(choices.shape[0]),
+                        n_ttc=len(factor_ttc_choices),
+                    )
+                )
+                falling_tau_raw = jnp.asarray(
+                    factor_ttc_choices, dtype=jnp.float32
+                )[ttc_index]
+            else:
+                _x_index, _y_index, blend_index = factorized_reset_lane_indices(
+                    n_envs=n_envs,
+                    n_x=factor_n_x,
+                    n_y=factor_n_y,
+                    n_blends=int(choices.shape[0]),
+                )
+            target_follow_blend = choices[blend_index]
+        if bool(getattr(
+            self.cfg,
+            "fixed_contact_feasibility_conditioned_reset_enabled",
+            False,
+        )):
+            falling_tau_raw = feasibility_conditioned_reset_ttc_s(
+                sampled_ttc_s=falling_tau_raw,
+                target_x_m=target_x_offset,
+                target_y_m=target_y_offset,
+                target_follow_blend=target_follow_blend,
+                grid_x_m=tuple(self.cfg.fixed_contact_eval_grid_x_m),
+                grid_y_m=tuple(self.cfg.fixed_contact_eval_grid_y_m),
+                blend080_ttc_floor_grid_s=tuple(
+                    self.cfg.fixed_contact_blend080_ttc_floor_grid_s
+                ),
+                zero_distance_ttc_floor_s=float(
+                    self.cfg.fixed_contact_zero_distance_ttc_floor_s
+                ),
+                reference_blend=float(
+                    self.cfg.fixed_contact_feasibility_reference_blend
+                ),
+            )
+        if falling_follow_active or racket_launch_follow_active:
+            if (
+                self.falling_reset_racket_follow_xy_enabled
+                or self.racket_launch_racket_follow_xy_enabled
+            ):
+                x_offsets = self.falling_reset_racket_follow_x_offsets
+                y_offsets = self.falling_reset_racket_follow_y_offsets
+                # Do not interpolate joint angles across neighboring IK
+                # branches.  A 15 mm Cartesian table makes nearest-node
+                # quantization smaller than the 15 mm reset error contract
+                # while retaining a valid pose-preserving solution.
+                lookup_target_x = target_x_offset
+                lookup_target_y = target_y_offset
+                if bool(
+                    getattr(
+                        self.cfg,
+                        "fixed_contact_cartesian_reset_blend_enabled",
+                        False,
+                    )
+                ):
+                    lookup_target_x, lookup_target_y = (
+                        cartesian_reset_blend_offsets(
+                            target_x_offset,
+                            target_y_offset,
+                            target_follow_blend,
+                        )
+                    )
+                x_index = jnp.argmin(
+                    jnp.abs(lookup_target_x[:, None] - x_offsets[None, :]),
+                    axis=1,
+                )
+                y_index = jnp.argmin(
+                    jnp.abs(lookup_target_y[:, None] - y_offsets[None, :]),
+                    axis=1,
+                )
+                follow_reset_arm_q = (
+                    self.falling_reset_racket_follow_xy_arm_q[x_index, y_index]
+                )
+                warm_reset_arm_q = jnp.broadcast_to(
+                    self.warm_arm_q, follow_reset_arm_q.shape
+                )
+                if not bool(
+                    getattr(
+                        self.cfg,
+                        "fixed_contact_cartesian_reset_blend_enabled",
+                        False,
+                    )
+                ):
+                    follow_reset_arm_q = apply_sampled_reset_target_follow_blend(
+                        warm_reset_arm_q,
+                        follow_reset_arm_q,
+                        sampled_fraction=target_follow_blend,
+                        fixed_fraction=(
+                            self.cfg.falling_reset_racket_follow_episode_target_xy_blend
+                        ),
+                        fraction_range=target_follow_blend_range,
+                        fraction_choices=(
+                            target_follow_blend_choices
+                            if self.cfg.falling_reset_apply_target_follow_blend_choices
+                            else None
+                        ),
+                    )
+            else:
+                reset_base_yaw = data.qpos[:, self.base_yaw_qadr]
+                falling_local_y_offset_world = jnp.stack(
+                    [
+                        -jnp.sin(reset_base_yaw) * falling_local_y_offset,
+                        jnp.cos(reset_base_yaw) * falling_local_y_offset,
+                    ],
+                    axis=-1,
+                )
+                follow_world_y = (
+                    target_y_offset
+                    + falling_local_y_offset_world[:, 1]
+                    + xy_jitter[:, 1]
+                )
+                follow_reset_arm_q = jax.vmap(
+                    lambda q_values: jnp.interp(
+                        follow_world_y,
+                        self.falling_reset_racket_follow_offsets,
+                        q_values,
+                    )
+                )(self.falling_reset_racket_follow_arm_q.T).T
+            follow_lane_active = jnp.zeros((n_envs,), dtype=bool)
+            if falling_follow_active:
+                follow_lane_active = follow_lane_active | falling_reset_active
+            if racket_launch_follow_active:
+                follow_lane_active = follow_lane_active | (~falling_reset_active)
+            reset_arm_q = jnp.where(
+                follow_lane_active[:, None],
+                follow_reset_arm_q,
+                reset_arm_q,
+            )
             qpos = data.qpos.at[:, self.arm_qadr].set(reset_arm_q)
             qvel = data.qvel.at[:, self.arm_vadr].set(0.0)
             ctrl = data.ctrl.at[:, self.arm_aids_j].set(reset_arm_q)
             data = data.replace(qpos=qpos, qvel=qvel, ctrl=ctrl)
             data = self.batched_forward(model, data)
 
-        if falling_reset:
+        if falling_reset or mixed_reset:
             contact_rel_height = (
                 float(self.cfg.hit_confirm_rel_height)
                 if float(self.cfg.falling_reset_contact_rel_height) < 0.0
@@ -5739,10 +11106,26 @@ class MjxJuggleEnv:
             g_abs = jnp.maximum(jnp.abs(dr_gravity_z), 1e-6)
             min_downward_speed = max(0.0, float(self.cfg.falling_reset_min_downward_speed))
             apex_height = jnp.maximum(falling_apex_height, 1e-4)
-            time_apex_to_contact = jnp.sqrt(2.0 * apex_height / g_abs)
-            tau_upper = jnp.maximum(0.02, time_apex_to_contact - min_downward_speed / g_abs)
-            tau_lower = jnp.minimum(jnp.full_like(tau_upper, max(0.0, tau_lo)), tau_upper)
-            tau = jnp.minimum(jnp.maximum(falling_tau_raw, tau_lower), tau_upper)
+            legacy_allow_ascending_phase = bool(
+                self.fixed_contact_plane_training_enabled
+                and self.cfg.fixed_contact_disable_ball_racket_collision
+                and str(self.cfg.fixed_contact_reward_mode)
+                in {
+                    "fixed_contact_full_flight_timed_intercept_v19",
+                    "fixed_contact_gate_aligned_readiness_v20",
+                }
+            )
+            allow_ascending_phase = bool(
+                self.cfg.falling_reset_allow_ascending_phase
+                or legacy_allow_ascending_phase
+            )
+            tau = resolve_falling_reset_time_to_contact_s(
+                falling_tau_raw,
+                apex_height_m=apex_height,
+                gravity_m_s2=g_abs,
+                min_downward_speed_m_s=min_downward_speed,
+                allow_ascending_phase=allow_ascending_phase,
+            )
             reset_base_yaw = data.qpos[:, self.base_yaw_qadr]
             falling_local_y_offset_world = jnp.stack(
                 [
@@ -5751,31 +11134,169 @@ class MjxJuggleEnv:
                 ],
                 axis=-1,
             )
+            if (
+                self.fixed_contact_plane_training_enabled
+                and str(self.cfg.falling_reset_contact_xy_sampling_mode)
+                == "annulus_uniform"
+            ):
+                reflected_xy_jitter = reflect_local_xy_jitter_into_bounds(
+                    episode_racket_anchor[:, :2],
+                    xy_jitter,
+                    x_bounds_m=tuple(
+                        self.cfg.fixed_contact_racket_x_bounds_m
+                    ),
+                    y_bounds_m=tuple(
+                        self.cfg.fixed_contact_racket_y_bounds_m
+                    ),
+                )
+                xy_jitter = jnp.where(
+                    falling_reset_active[:, None]
+                    if mixed_reset
+                    else jnp.ones((n_envs, 1), dtype=bool),
+                    reflected_xy_jitter,
+                    xy_jitter,
+                )
             contact_xy = (
                 episode_racket_anchor[:, :2]
                 + xy_jitter
                 + falling_local_y_offset_world
             )
+            if bool(
+                self.cfg.falling_reset_contact_clip_to_fixed_workspace
+            ):
+                contact_xy = jnp.stack(
+                    [
+                        jnp.clip(
+                            contact_xy[:, 0],
+                            float(self.cfg.fixed_contact_racket_x_bounds_m[0]),
+                            float(self.cfg.fixed_contact_racket_x_bounds_m[1]),
+                        ),
+                        jnp.clip(
+                            contact_xy[:, 1],
+                            float(self.cfg.fixed_contact_racket_y_bounds_m[0]),
+                            float(self.cfg.fixed_contact_racket_y_bounds_m[1]),
+                        ),
+                    ],
+                    axis=-1,
+                )
             contact_z = episode_racket_anchor[:, 2] + contact_rel_height + z_jitter
+            if self.fixed_contact_plane_training_enabled:
+                # This curriculum is defined by one world-frame horizontal
+                # contact plane.  Its falling-ball reset must therefore cross
+                # the ball-center height z_surface + radius independently of
+                # the warm racket pose or any episode anchor bookkeeping.
+                contact_z = jnp.full_like(
+                    contact_z,
+                    float(self.cfg.fixed_contact_surface_z_m)
+                    + float(self.mj_model.geom_size[self.ball_geom_id, 0]),
+                ) + z_jitter
             contact_vz = -jnp.sqrt(2.0 * g_abs * apex_height)
-            init_vz = contact_vz + g_abs * tau
-            ball_xy = contact_xy - vxy * tau[:, None]
-            ball_z = contact_z - init_vz * tau + 0.5 * g_abs * tau * tau
-            ball_init = jnp.concatenate([ball_xy, ball_z[:, None]], axis=-1)
-            ball_init_vel = jnp.concatenate([vxy, init_vz[:, None]], axis=-1)
-            reset_ball_racket_center_offset = jnp.linalg.norm(
+            falling_init_vz = contact_vz + g_abs * tau
+            falling_ball_xy = contact_xy - vxy * tau[:, None]
+            falling_ball_z = (
+                contact_z
+                - falling_init_vz * tau
+                + 0.5 * g_abs * tau * tau
+            )
+            falling_ball_init = jnp.concatenate(
+                [falling_ball_xy, falling_ball_z[:, None]], axis=-1
+            )
+            falling_ball_init_vel = jnp.concatenate(
+                [vxy, falling_init_vz[:, None]], axis=-1
+            )
+            if self.scripted_airborne_handoff:
+                scripted_surface = jnp.concatenate(
+                    [
+                        contact_xy,
+                        (
+                            contact_z
+                            - float(
+                                self.mj_model.geom_size[
+                                    self.ball_geom_id, 0
+                                ]
+                            )
+                        )[:, None],
+                    ],
+                    axis=-1,
+                )
+                scripted_ball, scripted_velocity, _launch_origin = (
+                    scripted_airborne_handoff_ball_state(
+                        racket_surface_position_m=scripted_surface,
+                        time_to_contact_s=falling_tau_raw,
+                        target_apex_abs_m=float(
+                            getattr(
+                                self.cfg,
+                                "scripted_airborne_handoff_target_apex_abs_m",
+                                0.0,
+                            )
+                        ),
+                        ball_radius_m=float(
+                            self.mj_model.geom_size[self.ball_geom_id, 0]
+                        ),
+                        minimum_surface_gap_m=float(
+                            getattr(
+                                self.cfg,
+                                "scripted_airborne_handoff_surface_gap_m",
+                                0.001,
+                            )
+                        ),
+                        gravity_m_s2=g_abs,
+                    )
+                )
+                falling_ball_init = falling_ball_init.at[:, 2].set(
+                    scripted_ball[:, 2]
+                )
+                falling_ball_init_vel = falling_ball_init_vel.at[:, 2].set(
+                    scripted_velocity[:, 2]
+                )
+            falling_reset_ball_racket_center_offset = jnp.linalg.norm(
                 contact_xy - data.site_xpos[:, self.racket_site_id, :2],
                 axis=-1,
             )
-        elif racket_launch_reset:
+        if racket_launch_reset or mixed_reset:
             racket_xmat = data.geom_xmat[:, self.racket_geom_id].reshape((-1, 3, 3))
+            if (self.fixed_contact_plane_training_enabled
+                    and self.cfg.fixed_contact_surface_frame_mode == "mesh_axes_v1"):
+                racket_xmat = racket_surface_frame(
+                    racket_xmat,
+                    normal_axis=int(self.cfg.fixed_contact_racket_surface_size_axis),
+                )
             tangent_x = racket_xmat[:, :, 0]
             tangent_y = racket_xmat[:, :, 1]
             normal_raw = racket_xmat[:, :, 2]
             normal_sign = jnp.where(normal_raw[:, 2] >= 0.0, 1.0, -1.0)
             racket_normal = normal_raw * normal_sign[:, None]
-            racket_half_thickness = model.geom_size[:, self.racket_geom_id, 1]
-            racket_radius = model.geom_size[:, self.racket_geom_id, 0]
+            if self.fixed_contact_plane_training_enabled:
+                # The finite-mesh fixed-contact racket registers its normal
+                # half-thickness axis explicitly (axis 0 for mesh16), unlike
+                # the historical cylinder convention of size[1].  Reusing
+                # the cylinder indices would place a nominally 1 mm launch
+                # ball about 75 mm above this mesh and collapse its usable
+                # in-plane radius to the 1 mm thickness.
+                surface_axis = int(
+                    self.cfg.fixed_contact_racket_surface_size_axis
+                )
+                in_plane_axes = tuple(
+                    axis for axis in range(3) if axis != surface_axis
+                )
+                racket_half_thickness = model.geom_size[
+                    :, self.racket_geom_id, surface_axis
+                ]
+                racket_radius = jnp.min(
+                    jnp.stack(
+                        [
+                            model.geom_size[:, self.racket_geom_id, axis]
+                            for axis in in_plane_axes
+                        ],
+                        axis=-1,
+                    ),
+                    axis=-1,
+                )
+            else:
+                racket_half_thickness = model.geom_size[
+                    :, self.racket_geom_id, 1
+                ]
+                racket_radius = model.geom_size[:, self.racket_geom_id, 0]
             ball_radius = model.geom_size[:, self.ball_geom_id, 0]
             max_center_offset = jnp.maximum(
                 0.0,
@@ -5795,17 +11316,48 @@ class MjxJuggleEnv:
                 data.geom_xpos[:, self.racket_geom_id]
                 + racket_normal * racket_half_thickness[:, None]
             )
-            ball_init = (
+            racket_ball_init = (
                 racket_surface_center
                 + racket_normal * (ball_radius + racket_launch_surface_gap)[:, None]
                 + launch_tangent_offset
             )
-            ball_init_vel = (
+            racket_ball_init_vel = (
                 tangent_x * vxy[:, 0:1]
                 + tangent_y * vxy[:, 1:2]
                 + racket_normal * init_vz[:, None]
             )
-            reset_ball_racket_center_offset = jnp.linalg.norm(launch_offset_uv, axis=-1)
+            racket_reset_ball_racket_center_offset = jnp.linalg.norm(
+                launch_offset_uv, axis=-1
+            )
+
+        if falling_reset:
+            ball_init = falling_ball_init
+            ball_init_vel = falling_ball_init_vel
+            reset_ball_racket_center_offset = (
+                falling_reset_ball_racket_center_offset
+            )
+        elif racket_launch_reset:
+            ball_init = racket_ball_init
+            ball_init_vel = racket_ball_init_vel
+            reset_ball_racket_center_offset = (
+                racket_reset_ball_racket_center_offset
+            )
+        elif mixed_reset:
+            ball_init = jnp.where(
+                falling_reset_active[:, None],
+                falling_ball_init,
+                racket_ball_init,
+            )
+            ball_init_vel = jnp.where(
+                falling_reset_active[:, None],
+                falling_ball_init_vel,
+                racket_ball_init_vel,
+            )
+            reset_ball_racket_center_offset = jnp.where(
+                falling_reset_active,
+                falling_reset_ball_racket_center_offset,
+                racket_reset_ball_racket_center_offset,
+            )
         else:
             ball_init = jnp.concatenate(
                 [
@@ -5832,9 +11384,19 @@ class MjxJuggleEnv:
         ).at[:, self.arm_aids_j].set(reset_arm_q)
         data = data.replace(qpos=qpos, qvel=qvel, ctrl=reset_ctrl)
         data = self.batched_forward(model, data)
+        if self.racket_contact_proxy_enabled:
+            data = self._sync_racket_contact_proxy(data)
+            data = self.batched_forward(model, data)
 
         bpos = data.xpos[:, self.ball_body_id]
         rpos = data.site_xpos[:, self.racket_site_id]
+        reset_ball_surface_gap = racket_launch_surface_gap
+        if self.scripted_airborne_handoff:
+            reset_ball_surface_gap = (
+                bpos[:, 2]
+                - float(self.cfg.fixed_contact_surface_z_m)
+                - float(self.mj_model.geom_size[self.ball_geom_id, 0])
+            )
 
         camera_missing_u = jax.vmap(
             lambda key: jax.random.uniform(jax.random.fold_in(key, 1908))
@@ -5918,6 +11480,17 @@ class MjxJuggleEnv:
                 -int(np.ceil(reset_missing_age / max(self.dt, 1e-6))),
                 0,
             ).astype(jnp.int32)
+        reset_ball_obs_vel = select_reset_ball_observation_velocity(
+            ball_init_vel,
+            reset_ball_obs_missing,
+            use_initialized_velocity=bool(
+                getattr(
+                    self.cfg,
+                    'fixed_contact_reset_observation_uses_ball_init_velocity',
+                    False,
+                )
+            ),
+        )
         stagger_min_frac = float(self.cfg.episode_phase_stagger_min_frac)
         if stagger_episode_phase and stagger_min_frac < 1.0:
             # Spread the first truncation time so the surviving cohort stops
@@ -5949,6 +11522,12 @@ class MjxJuggleEnv:
         racket_launch_hold_steps = jnp.rint(
             racket_launch_hold_time_s / max(self.dt, 1e-9)
         ).astype(jnp.int32)
+        if mixed_reset:
+            racket_launch_hold_steps = jnp.where(
+                falling_reset_active,
+                0,
+                racket_launch_hold_steps,
+            )
 
         initial_rmp_state = init_joint_rmp_state(
             reset_arm_q,
@@ -6099,6 +11678,49 @@ class MjxJuggleEnv:
             self.recovered_rmp_output_delay_buffer_length,
             self.act_dim,
         )
+        if (
+            self.collision_outcome_residual_enabled
+            and self.collision_outcome_residual.posterior_sampling
+        ):
+            collision_outcome_episode_restitution_latent = jax.vmap(
+                lambda key: jax.random.normal(
+                    jax.random.fold_in(key, 260902),
+                    (),
+                    dtype=jnp.float32,
+                )
+            )(next_keys) * float(
+                self.collision_outcome_residual.episode_restitution_std
+            )
+        else:
+            collision_outcome_episode_restitution_latent = jnp.zeros(
+                (n_envs,), dtype=jnp.float32
+            )
+        if self.fixed_plane_v92_history_obs_enabled:
+            reset_racket_pose = jnp.concatenate((
+                rpos,
+                rotation_matrix_to_6d(
+                    data.site_xmat[:, self.racket_site_id].reshape(-1, 3, 3)
+                ),
+            ), axis=-1)
+            history_length = (
+                V99_HISTORY_LENGTH if self.fixed_plane_v99_contiguous_history_obs_enabled
+                else V92_HISTORY_LENGTH
+            )
+            actor_ball_position_history = jnp.broadcast_to(
+                reset_ball_obs_pos[:, None, :],
+                (n_envs, history_length, 3),
+            )
+            actor_racket_pose_history = jnp.broadcast_to(
+                reset_racket_pose[:, None, :],
+                (n_envs, history_length, 9),
+            )
+            actor_ball_age_history = jnp.full(
+                (n_envs, history_length), 1.0, dtype=jnp.float32
+            ).at[:, 0].set(reset_ball_obs_age)
+        else:
+            actor_ball_position_history = jnp.zeros((n_envs, 0, 3), dtype=jnp.float32)
+            actor_racket_pose_history = jnp.zeros((n_envs, 0, 9), dtype=jnp.float32)
+            actor_ball_age_history = jnp.zeros((n_envs, 0), dtype=jnp.float32)
         state = EnvState(
             model=model,
             data=data,
@@ -6111,9 +11733,12 @@ class MjxJuggleEnv:
             reset_ball_vel=ball_init_vel,
             reset_target_offset=episode_target_offset,
             reset_disturbance_strength=reset_disturbance_strength,
-            reset_ball_surface_gap=racket_launch_surface_gap,
+            reset_ball_surface_gap=reset_ball_surface_gap,
             reset_ball_racket_center_offset=reset_ball_racket_center_offset,
             racket_launch_hold_steps=racket_launch_hold_steps,
+            reset_falling_contact_active=falling_reset_active,
+            reset_target_follow_blend=target_follow_blend,
+            fixed_contact_skill_mode_id=fixed_contact_skill_mode_id,
             reset_ball_obs_missing=reset_ball_obs_missing,
             arm_cmd_q=reset_arm_q,
             arm_cmd_qvel=jnp.zeros((n_envs, self.act_dim), dtype=jnp.float32),
@@ -6194,6 +11819,13 @@ class MjxJuggleEnv:
             contact_hold_steps=jnp.zeros((n_envs,), dtype=jnp.int32),
             pending_hit=jnp.zeros((n_envs,), dtype=bool),
             pending_hit_steps=jnp.zeros((n_envs,), dtype=jnp.int32),
+            fixed_plane_v122_third_release_claimed=jnp.zeros(
+                (n_envs,), dtype=bool
+            ),
+            pending_first_hit_peak_ball_vz_m_s=jnp.zeros(
+                (n_envs,), dtype=jnp.float32
+            ),
+            first_failed_launch_credit_paid=jnp.zeros((n_envs,), dtype=bool),
             pending_hit_camera_visible=jnp.zeros((n_envs,), dtype=bool),
             pending_hit_camera_in_margin=jnp.zeros((n_envs,), dtype=bool),
             pending_hit_camera_in_lower_band=jnp.zeros((n_envs,), dtype=bool),
@@ -6213,6 +11845,9 @@ class MjxJuggleEnv:
             pending_hit_racket_local_xz_angular_speed=jnp.zeros(
                 (n_envs,), dtype=jnp.float32
             ),
+            pending_hit_racket_pose_error=jnp.zeros(
+                (n_envs,), dtype=jnp.float32
+            ),
             pending_hit_contact_center_dist=jnp.zeros(
                 (n_envs,), dtype=jnp.float32
             ),
@@ -6226,6 +11861,10 @@ class MjxJuggleEnv:
                 (n_envs,), dtype=jnp.float32
             ),
             hit_count=jnp.zeros((n_envs,), dtype=jnp.int32),
+            late_physical_prev_apex_error_m=jnp.zeros((n_envs,), dtype=jnp.float32),
+            late_physical_prev_signed_apex_error_m=jnp.zeros((n_envs,), dtype=jnp.float32),
+            late_physical_prev_apex_valid=jnp.zeros((n_envs,), dtype=bool),
+            late_physical_weak_streak=jnp.zeros((n_envs,), dtype=jnp.int32),
             rewardable_hit_apex_abs_sum=jnp.zeros(
                 (n_envs,), dtype=jnp.float32
             ),
@@ -6279,7 +11918,10 @@ class MjxJuggleEnv:
                 dtype=jnp.float32,
             ),
             cached_ball_obs_pos=reset_ball_obs_pos,
-            cached_ball_obs_vel=zero_ball_vel,
+            cached_ball_obs_vel=reset_ball_obs_vel,
+            actor_ball_position_history=actor_ball_position_history,
+            actor_racket_pose_history=actor_racket_pose_history,
+            actor_ball_age_history=actor_ball_age_history,
             ball_obs_velocity_observer_xy=jnp.zeros(
                 (n_envs, 2), dtype=jnp.float32
             ),
@@ -6311,8 +11953,25 @@ class MjxJuggleEnv:
             ball_obs_posthit_noise_left=jnp.zeros((n_envs,), dtype=jnp.int32),
             last_ball_obs_step=reset_last_ball_obs_step,
             ball_obs_valid_pos=reset_ball_obs_pos,
-            ball_obs_valid_vel=zero_ball_vel,
+            ball_obs_valid_vel=reset_ball_obs_vel,
             ball_obs_age_seconds=reset_ball_obs_age,
+            fixed_contact_high_ball_predictor_state=(
+                empty_high_ball_predictor_state(
+                    n_envs,
+                    history_frames=int(
+                        self.fixed_contact_high_ball_predictor_cfg.history_frames
+                    ),
+                )
+            ),
+            fixed_contact_ball_observed=(~reset_ball_obs_missing),
+            fixed_contact_ball_predicted=jnp.zeros((n_envs,), dtype=bool),
+            fixed_contact_prediction_horizon_s=jnp.zeros(
+                (n_envs,), dtype=jnp.float32
+            ),
+            fixed_contact_ball_state_valid=(~reset_ball_obs_missing),
+            fixed_contact_reacquisition_rejected=jnp.zeros(
+                (n_envs,), dtype=bool
+            ),
             ball_obs_missing_since_sample=reset_ball_obs_missing,
             ball_obs_dropout_remaining=jnp.zeros((n_envs,), dtype=jnp.int32),
             ball_obs_dropout_steps_total=jnp.zeros((n_envs,), dtype=jnp.int32),
@@ -6353,6 +12012,36 @@ class MjxJuggleEnv:
             ball_obs_vel_bias_base=ball_obs_vel_bias_base,
             ball_obs_scale=ball_obs_scale,
             ball_obs_view_z_high_m=ball_obs_view_z_high_m,
+            collision_outcome_episode_restitution_latent=(
+                collision_outcome_episode_restitution_latent
+            ),
+            collision_outcome_pending_valid=jnp.zeros(
+                (n_envs,), dtype=bool
+            ),
+            collision_outcome_pending_pre_ball_position_m=jnp.zeros(
+                (n_envs, 3), dtype=jnp.float32
+            ),
+            collision_outcome_pending_pre_ball_velocity_m_s=jnp.zeros(
+                (n_envs, 3), dtype=jnp.float32
+            ),
+            collision_outcome_pending_racket_position_m=jnp.zeros(
+                (n_envs, 3), dtype=jnp.float32
+            ),
+            collision_outcome_pending_racket_rotation_world=jnp.broadcast_to(
+                jnp.eye(3, dtype=jnp.float32), (n_envs, 3, 3)
+            ),
+            collision_outcome_pending_racket_linear_velocity_m_s=jnp.zeros(
+                (n_envs, 3), dtype=jnp.float32
+            ),
+            collision_outcome_pending_racket_angular_velocity_rad_s=jnp.zeros(
+                (n_envs, 3), dtype=jnp.float32
+            ),
+            collision_outcome_pending_impact_offset_m=jnp.zeros(
+                (n_envs, 2), dtype=jnp.float32
+            ),
+            collision_outcome_pending_contact_time_s=jnp.zeros(
+                (n_envs,), dtype=jnp.float32
+            ),
         )
         base_obs = self._make_obs(
             state,
@@ -6747,6 +12436,27 @@ class MjxJuggleEnv:
             state.dr_racket_rot_offset,
             scalar_features,
         ]
+        if self.fixed_contact_plane_training_enabled:
+            true_contact_target = self._fixed_contact_target(
+                true_bpos, true_bvel, state.hit_count
+            )
+            racket_rotation = data.site_xmat[
+                :, self.racket_site_id
+            ].reshape((-1, 3, 3))
+            fixed_contact_privileged = jnp.concatenate(
+                [
+                    true_contact_target.position_m[:, :2],
+                    true_contact_target.time_to_contact_s[:, None],
+                    true_contact_target.valid.astype(jnp.float32)[:, None],
+                    so3_log_error(
+                        true_contact_target.rotation_matrix,
+                        racket_rotation,
+                    ),
+                    data.cvel[:, self.racket_body_id, :3],
+                ],
+                axis=-1,
+            )
+            vector_features.append(fixed_contact_privileged)
         if self.critic_command_history_steps > 0:
             command_hist = state.command_buffer[:, -self.critic_command_history_steps :, :] - q[:, None, :]
             vector_features.append(command_hist.reshape((obs.shape[0], -1)))
@@ -6983,7 +12693,705 @@ class MjxJuggleEnv:
                 axis=-1,
             )
             vector_features.append(complete_dr_features)
-        return jnp.concatenate([obs, *vector_features], axis=-1)
+        critic_obs = jnp.concatenate([obs, *vector_features], axis=-1)
+        if self.critic_fixed_plane_task_context:
+            from fixed_plane_v173_critic import append_task_context
+            surface_rotation = data.geom_xmat[
+                :, self.racket_geom_id
+            ].reshape((-1, 3, 3))
+            surface_rotation = racket_surface_frame(
+                surface_rotation,
+                normal_axis=int(self.cfg.fixed_contact_racket_surface_size_axis),
+            )
+            surface_normal = surface_rotation[:, :, 2]
+            surface_normal *= jnp.where(surface_normal[:, 2:3] >= 0., 1., -1.)
+            surface_axis = int(self.cfg.fixed_contact_racket_surface_size_axis)
+            surface_position = (
+                data.geom_xpos[:, self.racket_geom_id]
+                + surface_normal * state.model.geom_size[
+                    :, self.racket_geom_id, surface_axis:surface_axis + 1,
+                ]
+            )
+            contact_context = make_predicted_contact_context(
+                predicted_ball_position_m=(
+                    true_contact_target.predicted_ball_position_at_contact_m
+                ),
+                time_to_contact_s=true_contact_target.time_to_contact_s,
+                contact_valid=true_contact_target.valid,
+                racket_target_position_m=true_contact_target.position_m,
+                racket_target_rotation=true_contact_target.rotation_matrix,
+                racket_surface_position_m=surface_position,
+                next_crossing_xy_m=true_contact_target.next_crossing_target_xy_m,
+            )
+            critic_obs = append_task_context(
+                critic_obs, racket_pose_history=state.actor_racket_pose_history,
+                desired_apex_z_m=(
+                    self._fixed_plane_limit_cycle_desired_apex_z_m(state.hit_count)
+                ),
+                hit_count=state.hit_count, predicted_contact_context=contact_context,
+            )
+        return critic_obs
+
+    def _fixed_plane_limit_cycle_apex_progress(
+        self,
+        confirmed_hit_count: jax.Array,
+    ) -> jax.Array:
+        """Return the actor-visible launch-to-steady schedule coordinate."""
+
+        if not self.fixed_plane_limit_cycle_v1_enabled:
+            return jnp.ones_like(confirmed_hit_count, dtype=jnp.float32)
+        explicit_schedule = self.cfg.fixed_plane_limit_cycle_apex_schedule_z_m
+        if explicit_schedule:
+            return apex_progress_for_schedule(
+                confirmed_hit_count, explicit_schedule
+            )
+        return limit_cycle_apex_progress(
+            confirmed_hit_count,
+            transition_hits=int(
+                self.cfg.fixed_plane_limit_cycle_transition_confirmed_hits
+            ),
+        )
+
+    def _fixed_plane_limit_cycle_desired_apex_z_m(
+        self,
+        confirmed_hit_count: jax.Array,
+    ) -> jax.Array:
+        """Return the one active absolute apex goal for each lane."""
+
+        if not self.fixed_plane_limit_cycle_v1_enabled:
+            return jnp.full(
+                confirmed_hit_count.shape,
+                float(self.fixed_contact_target_cfg.target_apex_z_m),
+                dtype=jnp.float32,
+            )
+        explicit_schedule = self.cfg.fixed_plane_limit_cycle_apex_schedule_z_m
+        if explicit_schedule:
+            return scheduled_apex_z_m(
+                confirmed_hit_count, explicit_schedule
+            )
+        return limit_cycle_desired_apex_z_m(
+            confirmed_hit_count,
+            launch_apex_z_m=float(
+                self.cfg.fixed_plane_limit_cycle_launch_apex_z_m
+            ),
+            steady_apex_z_m=float(
+                self.cfg.fixed_plane_limit_cycle_steady_apex_z_m
+            ),
+            transition_hits=int(
+                self.cfg.fixed_plane_limit_cycle_transition_confirmed_hits
+            ),
+        )
+
+    def _fixed_plane_limit_cycle_dynamic_racket_vz_target_m_s(
+        self,
+        incoming_ball_vz_m_s: jax.Array,
+        confirmed_hit_count: jax.Array,
+    ) -> tuple[jax.Array, jax.Array, jax.Array]:
+        """Return raw/executable live VZ targets for the active apex goal."""
+
+        ball_radius_m = float(
+            self.mj_model.geom_size[self.ball_geom_id, 0]
+        )
+        return limit_cycle_dynamic_racket_vz_target_m_s(
+            incoming_ball_vz_m_s=incoming_ball_vz_m_s,
+            desired_apex_z_m=(
+                self._fixed_plane_limit_cycle_desired_apex_z_m(
+                    confirmed_hit_count
+                )
+            ),
+            contact_ball_center_z_m=(
+                float(self.cfg.fixed_contact_surface_z_m) + ball_radius_m
+            ),
+            gravity_m_s2=float(self.fixed_contact_target_cfg.gravity_m_s2),
+            effective_restitution=float(
+                self.cfg.fixed_plane_limit_cycle_effective_restitution
+            ),
+            min_racket_vz_m_s=float(
+                self.cfg.fixed_plane_limit_cycle_min_contact_vz_m_s
+            ),
+            max_racket_vz_m_s=float(
+                self.cfg.fixed_plane_limit_cycle_max_contact_vz_m_s
+            ),
+        )
+
+    def _fixed_contact_target(
+        self,
+        ball_position_m: jax.Array,
+        ball_velocity_m_s: jax.Array,
+        confirmed_hit_count: jax.Array | None = None,
+    ):
+        """Build the runtime-available dynamic target for the next contact."""
+
+        target_apex_z_m = None
+        if self.fixed_plane_limit_cycle_v1_enabled:
+            if confirmed_hit_count is None:
+                raise ValueError(
+                    "limit-cycle contact targets require confirmed_hit_count"
+                )
+            target_apex_z_m = (
+                self._fixed_plane_limit_cycle_desired_apex_z_m(
+                    confirmed_hit_count
+                )
+            )
+
+        target = compute_dynamic_contact_target(
+            ball_position_m,
+            ball_velocity_m_s,
+            self.fixed_contact_racket_reference_rotation,
+            workspace_center_xy=tuple(
+                getattr(
+                    self.cfg,
+                    "fixed_contact_workspace_center_xy_m",
+                    (0.0, -0.49),
+                )
+            ),
+            contact_surface_z_m=float(
+                getattr(self.cfg, "fixed_contact_surface_z_m", 1.075)
+            ),
+            ball_radius_m=float(
+                self.mj_model.geom_size[self.ball_geom_id, 0]
+            ),
+            cfg=self.fixed_contact_target_cfg,
+            target_apex_z_m=target_apex_z_m,
+        )
+        x_min, x_max = getattr(
+            self.cfg,
+            "fixed_contact_racket_x_bounds_m",
+            (-float("inf"), float("inf")),
+        )
+        y_min, y_max = getattr(
+            self.cfg,
+            "fixed_contact_racket_y_bounds_m",
+            (-float("inf"), float("inf")),
+        )
+        z_min, z_max = getattr(
+            self.cfg,
+            "fixed_contact_racket_z_bounds_m",
+            (-float("inf"), float("inf")),
+        )
+        target_position = target.position_m
+        registered_workspace_reachable = (
+            (target_position[:, 0] >= float(x_min))
+            & (target_position[:, 0] <= float(x_max))
+            & (target_position[:, 1] >= float(y_min))
+            & (target_position[:, 1] <= float(y_max))
+            & (target_position[:, 2] >= float(z_min))
+            & (target_position[:, 2] <= float(z_max))
+        )
+        return target._replace(
+            valid=target.valid & registered_workspace_reachable
+        )
+
+    def _project_cartesian_pose_reference(
+        self,
+        state: EnvState,
+        measured_q: jax.Array,
+        nominal_qvel: jax.Array,
+    ) -> tuple[jax.Array, ...]:
+        """Project one bounded-QVEL update and verify its exact FK hard set."""
+
+        reference_q = state.arm_cmd_q
+        reference_data = state.data.replace(
+            qpos=state.data.qpos.at[:, self.arm_qadr].set(reference_q),
+            qvel=state.data.qvel.at[:, self.arm_vadr].set(0.0),
+        )
+        reference_data = self.batched_forward(state.model, reference_data)
+        position_world = reference_data.site_xpos[:, self.racket_site_id]
+        position_policy = jnp.einsum(
+            "ij,nj->ni",
+            self.cartesian_world_to_policy_rotation,
+            position_world - self.cartesian_policy_origin_world[None, :],
+        )
+        rotation_world = reference_data.site_xmat[
+            :, self.racket_site_id
+        ].reshape((-1, 3, 3))
+        relative_rotation = jnp.einsum(
+            "ji,njk->nik",
+            self.fixed_contact_racket_reference_rotation,
+            rotation_world,
+        )
+        relative_rpy = matrix_to_euler_xyz_jax(relative_rotation)
+
+        joint_axis_world = reference_data.xaxis[:, self.arm_jids, :]
+        joint_anchor_world = reference_data.xanchor[:, self.arm_jids, :]
+        site_offset_world = (
+            position_world[:, None, :] - joint_anchor_world
+        )
+        translation_jacobian_world = jnp.swapaxes(
+            jnp.cross(joint_axis_world, site_offset_world), 1, 2
+        )
+        angular_jacobian_world = jnp.swapaxes(joint_axis_world, 1, 2)
+        translation_jacobian_policy = jnp.einsum(
+            "ij,njk->nik",
+            self.cartesian_world_to_policy_rotation,
+            translation_jacobian_world,
+        )
+        relative_rpy_jacobian = relative_xyz_euler_rate_jacobian_jax(
+            relative_rpy,
+            self.fixed_contact_racket_reference_rotation,
+            angular_jacobian_world,
+        )
+
+        max_reference_error = (
+            self.arm_vel_limit_rad_s
+            * self.recovered_rmp_qvel_reference_error_horizon_s_per_joint
+        )
+        lower_q = jnp.maximum(
+            self.arm_lo[None, :], measured_q - max_reference_error[None, :]
+        )
+        upper_q = jnp.minimum(
+            self.arm_hi[None, :], measured_q + max_reference_error[None, :]
+        )
+        velocity_lower = jnp.maximum(
+            -self.arm_vel_limit_rad_s[None, :],
+            (lower_q - reference_q) / self.dt,
+        )
+        velocity_upper = jnp.minimum(
+            self.arm_vel_limit_rad_s[None, :],
+            (upper_q - reference_q) / self.dt,
+        )
+        projection = project_cartesian_pose_qvel_jax(
+            nominal_qvel=nominal_qvel,
+            position_m=position_policy,
+            relative_rpy_rad=relative_rpy,
+            translation_jacobian=translation_jacobian_policy,
+            relative_rpy_jacobian=relative_rpy_jacobian,
+            position_lower_m=self.cartesian_pose_position_lower,
+            position_upper_m=self.cartesian_pose_position_upper,
+            roll_pitch_limit_rad=self.cartesian_pose_roll_pitch_limit,
+            velocity_lower=velocity_lower,
+            velocity_upper=velocity_upper,
+            velocity_scale=self.arm_vel_limit_rad_s,
+            position_gain_s=float(
+                self.cfg.cartesian_pose_position_cbf_gain_s
+            ),
+            orientation_gain_s=float(
+                self.cfg.cartesian_pose_orientation_cbf_gain_s
+            ),
+            projection_sweeps=int(
+                self.cfg.cartesian_pose_projection_sweeps
+            ),
+        )
+        candidate_q = reference_q + projection.qvel * self.dt
+        candidate_data = reference_data.replace(
+            qpos=reference_data.qpos.at[:, self.arm_qadr].set(candidate_q)
+        )
+        candidate_data = self.batched_forward(state.model, candidate_data)
+        candidate_position_world = candidate_data.site_xpos[
+            :, self.racket_site_id
+        ]
+        candidate_position_policy = jnp.einsum(
+            "ij,nj->ni",
+            self.cartesian_world_to_policy_rotation,
+            candidate_position_world
+            - self.cartesian_policy_origin_world[None, :],
+        )
+        candidate_rotation_world = candidate_data.site_xmat[
+            :, self.racket_site_id
+        ].reshape((-1, 3, 3))
+        candidate_relative_rotation = jnp.einsum(
+            "ji,njk->nik",
+            self.fixed_contact_racket_reference_rotation,
+            candidate_rotation_world,
+        )
+        candidate_rpy = matrix_to_euler_xyz_jax(
+            candidate_relative_rotation
+        )
+
+        outer_position_lower = self.cartesian_pose_outer_position_lower
+        outer_position_upper = self.cartesian_pose_outer_position_upper
+        outer_rp_limit = self.cartesian_pose_outer_roll_pitch_limit
+        current_position_violation = jnp.max(
+            jnp.maximum(
+                jnp.maximum(
+                    outer_position_lower[None, :] - position_policy,
+                    position_policy - outer_position_upper[None, :],
+                ),
+                0.0,
+            ),
+            axis=-1,
+        )
+        current_orientation_violation = jnp.max(
+            jnp.maximum(
+                jnp.abs(relative_rpy[:, :2]) - outer_rp_limit[None, :],
+                0.0,
+            ),
+            axis=-1,
+        )
+        candidate_position_violation = jnp.max(
+            jnp.maximum(
+                jnp.maximum(
+                    outer_position_lower[None, :] - candidate_position_policy,
+                    candidate_position_policy
+                    - outer_position_upper[None, :],
+                ),
+                0.0,
+            ),
+            axis=-1,
+        )
+        candidate_orientation_violation = jnp.max(
+            jnp.maximum(
+                jnp.abs(candidate_rpy[:, :2]) - outer_rp_limit[None, :],
+                0.0,
+            ),
+            axis=-1,
+        )
+        tolerance = float(self.cfg.cartesian_pose_projection_tolerance)
+        current_safe = (
+            jnp.maximum(
+                current_position_violation,
+                current_orientation_violation,
+            )
+            <= tolerance
+        )
+        candidate_safe = (
+            jnp.maximum(
+                candidate_position_violation,
+                candidate_orientation_violation,
+            )
+            <= tolerance
+        )
+        linear_feasible = projection.max_violation <= tolerance
+        accepted = current_safe & candidate_safe & linear_feasible
+        selected_q = jnp.where(accepted[:, None], candidate_q, reference_q)
+        selected_qvel = (selected_q - reference_q) / self.dt
+        final_position_violation = jnp.where(
+            accepted,
+            candidate_position_violation,
+            current_position_violation,
+        )
+        final_orientation_violation = jnp.where(
+            accepted,
+            candidate_orientation_violation,
+            current_orientation_violation,
+        )
+        correction_norm = jnp.linalg.norm(
+            selected_qvel - nominal_qvel, axis=-1
+        )
+        retained_fraction = jnp.linalg.norm(
+            selected_qvel, axis=-1
+        ) / jnp.maximum(jnp.linalg.norm(nominal_qvel, axis=-1), 1.0e-6)
+        intervention = correction_norm > 1.0e-6
+        nonlinear_backstop = current_safe & (~candidate_safe)
+        fallback_to_hold = ~accepted
+        final_yaw_rad = jnp.where(
+            accepted, candidate_rpy[:, 2], relative_rpy[:, 2]
+        )
+        return (
+            selected_q,
+            selected_qvel,
+            correction_norm,
+            retained_fraction,
+            intervention,
+            nonlinear_backstop,
+            fallback_to_hold,
+            current_safe,
+            final_position_violation,
+            final_orientation_violation,
+            projection.max_violation,
+            final_yaw_rad,
+        )
+
+    def _fixed_contact_policy_target(
+        self,
+        ball_position_m: jax.Array,
+        ball_velocity_m_s: jax.Array,
+        ball_state_age_s: jax.Array,
+        confirmed_hit_count: jax.Array,
+        *,
+        already_propagated: jax.Array,
+    ):
+        """Generate the actor target on the current control-tick time base."""
+
+        if bool(
+            self.cfg.fixed_contact_propagate_held_ball_state_to_query_time
+        ):
+            effective_age_s = jnp.where(
+                jnp.asarray(already_propagated, dtype=jnp.bool_),
+                0.0,
+                jnp.asarray(ball_state_age_s, dtype=jnp.float32),
+            )
+            ball_position_m, ball_velocity_m_s = (
+                propagate_ballistic_state_to_age(
+                    ball_position_m,
+                    ball_velocity_m_s,
+                    effective_age_s,
+                    gravity_m_s2=float(
+                        self.fixed_contact_target_cfg.gravity_m_s2
+                    ),
+                )
+            )
+        return self._fixed_contact_target(
+            ball_position_m,
+            ball_velocity_m_s,
+            confirmed_hit_count,
+        )
+
+    def _plant_aware_fixed_plane_nominal_action(
+        self,
+        state: EnvState,
+        contact_target,
+    ) -> tuple[jax.Array, object, jax.Array]:
+        """Return the causal analytic normalized QVEL reference for V1.
+
+        This command occupies the same upstream policy boundary as a learned
+        QVEL action.  The existing bounded measured-q reference, recovered
+        RMP, XML PD, hard limits, and native contact remain the only
+        downstream execution stack.
+        """
+
+        data = state.data
+        q = data.qpos[:, self.arm_qadr]
+        dq = data.qvel[:, self.arm_vadr]
+        rotation = data.site_xmat[:, self.racket_site_id].reshape((-1, 3, 3))
+        normal = rotation[:, :, 2]
+        normal = normal * jnp.where(normal[:, 2:3] >= 0.0, 1.0, -1.0)
+        surface_position = (
+            data.geom_xpos[:, self.racket_geom_id]
+            + normal
+            * state.model.geom_size[
+                :,
+                self.racket_geom_id,
+                int(self.cfg.fixed_contact_racket_surface_size_axis) :
+                int(self.cfg.fixed_contact_racket_surface_size_axis) + 1,
+            ]
+        )
+        site_position = data.site_xpos[:, self.racket_site_id]
+        site_velocity = (
+            site_position - state.prev_racket_pos
+        ) / max(self.dt, 1.0e-6)
+        angular_velocity = data.cvel[:, self.racket_body_id, :3]
+        surface_velocity = site_velocity + jnp.cross(
+            angular_velocity, surface_position - site_position
+        )
+
+        desired_contact_velocity = restitution_consistent_racket_velocity(
+            contact_target.incoming_ball_velocity_m_s,
+            contact_target.desired_post_ball_velocity_m_s,
+            effective_restitution=float(
+                self.cfg.plant_aware_effective_restitution
+            ),
+        )
+        max_vxy = float(self.cfg.plant_aware_max_contact_vxy_m_s)
+        desired_contact_velocity = desired_contact_velocity.at[:, :2].set(
+            jnp.clip(desired_contact_velocity[:, :2], -max_vxy, max_vxy)
+        )
+        desired_contact_velocity = desired_contact_velocity.at[:, 2].set(
+            jnp.clip(
+                desired_contact_velocity[:, 2],
+                float(self.cfg.plant_aware_min_contact_vz_m_s),
+                float(self.cfg.plant_aware_max_contact_vz_m_s),
+            )
+        )
+        phase_reference = plant_aware_phase_reference(
+            target_valid=contact_target.valid,
+            time_to_contact_s=contact_target.time_to_contact_s,
+            incoming_ball_vz_m_s=(
+                contact_target.incoming_ball_velocity_m_s[:, 2]
+            ),
+            pending_hit=state.pending_hit,
+            pending_hit_steps=state.pending_hit_steps,
+            hit_count=state.hit_count,
+            dt_s=self.dt,
+            stroke_lead_s=float(self.cfg.plant_aware_stroke_lead_s),
+            brake_window_s=float(self.cfg.plant_aware_brake_window_s),
+            prestroke_depth_m=float(
+                self.cfg.plant_aware_prestroke_depth_m
+            ),
+            contact_velocity_m_s=(
+                desired_contact_velocity[:, 2]
+                * float(self.cfg.plant_aware_contact_velocity_command_gain)
+            ),
+            retract_window_s=float(self.cfg.plant_aware_retract_window_s),
+            retract_velocity_m_s=float(
+                self.cfg.plant_aware_retract_velocity_m_s
+            ),
+        )
+
+        workspace_center = jnp.asarray(
+            self.cfg.fixed_contact_workspace_center_xy_m,
+            dtype=jnp.float32,
+        )
+        fallback_position = jnp.concatenate(
+            [
+                jnp.broadcast_to(
+                    workspace_center[None, :], (self.n_envs, 2)
+                ),
+                jnp.full(
+                    (self.n_envs, 1),
+                    float(self.cfg.fixed_contact_surface_z_m),
+                    dtype=jnp.float32,
+                ),
+            ],
+            axis=-1,
+        )
+        base_target_position = jnp.where(
+            contact_target.valid[:, None],
+            contact_target.position_m,
+            fallback_position,
+        )
+        desired_position = base_target_position.at[:, 2].add(
+            phase_reference.z_offset_m
+        )
+        strike_or_brake = (
+            phase_reference.phase_one_hot[:, 2]
+            + phase_reference.phase_one_hot[:, 3]
+        )
+        final_brake = phase_reference.phase_one_hot[:, 3]
+        contact_progress = jnp.clip(
+            1.0
+            - contact_target.time_to_contact_s
+            / float(self.cfg.plant_aware_stroke_lead_s),
+            0.0,
+            1.0,
+        )
+        xy_feedforward = (
+            desired_contact_velocity[:, :2]
+            * (contact_progress * contact_progress)[:, None]
+            * strike_or_brake[:, None]
+        )
+        xy_velocity_gain = jnp.where(
+            final_brake > 0.5,
+            float(self.cfg.plant_aware_brake_xy_velocity_gain),
+            float(self.cfg.plant_aware_xy_velocity_gain),
+        )
+        desired_xy_velocity = (
+            xy_feedforward
+            + float(self.cfg.plant_aware_xy_position_gain_s)
+            * (desired_position[:, :2] - surface_position[:, :2])
+            - xy_velocity_gain[:, None] * surface_velocity[:, :2]
+        )
+        z_velocity_gain = jnp.where(
+            final_brake > 0.5,
+            float(self.cfg.plant_aware_brake_z_velocity_gain),
+            float(self.cfg.plant_aware_z_velocity_gain),
+        )
+        desired_z_velocity = (
+            phase_reference.z_velocity_m_s
+            + float(self.cfg.plant_aware_z_position_gain_s)
+            * (desired_position[:, 2] - surface_position[:, 2])
+            - z_velocity_gain * surface_velocity[:, 2]
+        )
+
+        target_rotation = jnp.where(
+            contact_target.valid[:, None, None],
+            contact_target.rotation_matrix,
+            jnp.broadcast_to(
+                self.fixed_contact_racket_reference_rotation,
+                rotation.shape,
+            ),
+        )
+        orientation_error_body = so3_log_error(rotation, target_rotation)
+        orientation_error_world = jnp.einsum(
+            "nij,nj->ni", rotation, orientation_error_body
+        )
+        orientation_gain = jnp.where(
+            final_brake > 0.5,
+            float(self.cfg.plant_aware_brake_orientation_gain_s),
+            float(self.cfg.plant_aware_orientation_gain_s),
+        )
+        orientation_velocity_gain = jnp.where(
+            final_brake > 0.5,
+            float(
+                self.cfg.plant_aware_brake_orientation_velocity_gain
+            ),
+            float(self.cfg.plant_aware_orientation_velocity_gain),
+        )
+        desired_angular_velocity = (
+            orientation_gain[:, None] * orientation_error_world
+            - orientation_velocity_gain[:, None] * angular_velocity
+        )
+        task_twist = jnp.concatenate(
+            [desired_xy_velocity, desired_z_velocity[:, None], desired_angular_velocity],
+            axis=-1,
+        )
+
+        joint_axes = data.xaxis[:, self.arm_jids, :]
+        joint_anchors = data.xanchor[:, self.arm_jids, :]
+        surface_offsets = surface_position[:, None, :] - joint_anchors
+        linear_jacobian = jnp.swapaxes(
+            jnp.cross(joint_axes, surface_offsets), 1, 2
+        )
+        angular_jacobian = jnp.swapaxes(joint_axes, 1, 2)
+        task_jacobian = jnp.concatenate(
+            [linear_jacobian, angular_jacobian], axis=1
+        )
+        transpose = jnp.swapaxes(task_jacobian, 1, 2)
+        gram = transpose @ task_jacobian
+        inverse = jnp.linalg.solve(
+            gram
+            + 3.0e-4
+            * jnp.eye(self.act_dim, dtype=jnp.float32)[None, :, :],
+            transpose,
+        )
+        nominal_qvel = jnp.einsum("nij,nj->ni", inverse, task_twist)
+        accelerate_phase = phase_reference.phase_one_hot[:, 2] > 0.5
+        tracking_quality_window = (
+            contact_target.valid
+            & (contact_target.incoming_ball_velocity_m_s[:, 2] < 0.0)
+            & (~state.pending_hit)
+            & (contact_target.time_to_contact_s > 0.0)
+            & (
+                contact_target.time_to_contact_s
+                <= float(self.cfg.plant_aware_tracking_quality_window_s)
+            )
+        )
+        desired_qvel = apply_rmp_tracking_precompensation(
+            nominal_qvel,
+            dq,
+            accelerate_phase,
+            tracking_quality_window,
+            transient_scale=(
+                self.cfg.plant_aware_vertical_transient_precomp_scale
+            ),
+            correction_gain=float(
+                self.cfg.plant_aware_measured_velocity_correction_gain
+            ),
+        )
+        reference_error = state.arm_cmd_q - q
+        desired_qvel = desired_qvel - (
+            float(self.cfg.plant_aware_reference_unwind_gain)
+            * reference_error
+            / max(self.dt, 1.0e-6)
+        )
+        desired_qvel = jnp.where(
+            contact_target.valid[:, None] | (state.hit_count > 0)[:, None],
+            desired_qvel,
+            -0.20 * dq,
+        )
+        desired_qvel = jnp.clip(
+            desired_qvel,
+            -self.arm_vel_limit_rad_s[None, :],
+            self.arm_vel_limit_rad_s[None, :],
+        )
+        unslewed_qvel = desired_qvel
+        action_denominator = (
+            self.arm_vel_limit_rad_s[None, :]
+            * float(self.cfg.action_velocity_scale)
+            * state.action_scale_mult[:, None]
+        )
+        previous_qvel = state.prev_action * action_denominator
+        max_delta_qvel = (
+            self.arm_acc_limit_rad_s2[None, :]
+            * self.dt
+            * float(self.cfg.plant_aware_command_slew_fraction)
+        )
+        slew_limited_qvel = jnp.clip(
+            desired_qvel,
+            previous_qvel - max_delta_qvel,
+            previous_qvel + max_delta_qvel,
+        )
+        desired_qvel = apply_post_first_contact_slew(
+            unslewed_qvel,
+            slew_limited_qvel,
+            state.hit_count,
+        )
+        nominal_action = jnp.clip(
+            desired_qvel / jnp.maximum(action_denominator, 1.0e-6),
+            -1.0,
+            1.0,
+        )
+        return nominal_action, phase_reference, desired_contact_velocity
 
     def _make_obs(
         self,
@@ -7013,6 +13421,229 @@ class MjxJuggleEnv:
         )
         rpos = data.site_xpos[:, self.racket_site_id]
         rvel = (rpos - state.prev_racket_pos) / max(self.dt, 1e-6)
+        if self.fixed_contact_plane_training_enabled:
+            racket_rotation = data.site_xmat[:, self.racket_site_id].reshape(
+                (-1, 3, 3)
+            )
+            racket_normal = racket_rotation[:, :, 2]
+            racket_normal = racket_normal * jnp.where(
+                racket_normal[:, 2:3] >= 0.0, 1.0, -1.0
+            )
+            racket_surface_position = (
+                data.geom_xpos[:, self.racket_geom_id]
+                + racket_normal
+                * state.model.geom_size[
+                    :,
+                    self.racket_geom_id,
+                    int(self.cfg.fixed_contact_racket_surface_size_axis) :
+                    int(self.cfg.fixed_contact_racket_surface_size_axis) + 1,
+                ]
+            )
+            racket_angular_velocity = data.cvel[
+                :, self.racket_body_id, :3
+            ]
+            racket_surface_velocity = rvel + jnp.cross(
+                racket_angular_velocity,
+                racket_surface_position - rpos,
+            )
+            if self.fixed_plane_v149_simple_obs_enabled:
+                from fixed_plane_v149 import make_simple_position_observation
+                return make_simple_position_observation(
+                    q=q, dq=dq, q_ref_error=state.arm_cmd_q - q,
+                    previous_action=state.prev_action,
+                    ball_positions=state.actor_ball_position_history,
+                    racket_pose_now=jnp.concatenate((
+                        rpos, rotation_matrix_to_6d(racket_rotation)), axis=-1),
+                    ball_ages=state.actor_ball_age_history,
+                    target_xy_m=state.racket_anchor[:, :2],
+                    ball_position_valid=state.fixed_contact_ball_observed,
+                )
+            if self.fixed_plane_v92_history_obs_enabled:
+                history_obs = make_history_actor_observation(
+                    q=q,
+                    dq=dq,
+                    q_ref_error=state.arm_cmd_q - q,
+                    previous_action=state.prev_action,
+                    ball_positions=state.actor_ball_position_history,
+                    racket_poses=state.actor_racket_pose_history,
+                    ball_ages=state.actor_ball_age_history,
+                    desired_apex_z_m=self._fixed_plane_limit_cycle_desired_apex_z_m(
+                        state.hit_count
+                    ),
+                    target_xy_m=state.racket_anchor[:, :2],
+                    hit_count=state.hit_count,
+                    ball_valid=(
+                        state.fixed_contact_ball_observed
+                        & state.fixed_contact_ball_state_valid
+                    ),
+                    lags_ticks=(
+                        V99_HISTORY_LAGS_TICKS
+                        if self.fixed_plane_v99_contiguous_history_obs_enabled
+                        else V92_HISTORY_LAGS_TICKS
+                    ),
+                )
+                if not self.fixed_plane_v93_contact_context_enabled:
+                    return history_obs
+                contact_target = self._fixed_contact_policy_target(
+                    ball_obs_pos,
+                    ball_obs_vel,
+                    ball_obs_age_seconds,
+                    state.hit_count,
+                    already_propagated=state.fixed_contact_ball_predicted,
+                )
+                contact_valid = (
+                    contact_target.valid & state.fixed_contact_ball_state_valid
+                )
+                contact_context = make_predicted_contact_context(
+                    predicted_ball_position_m=(
+                        contact_target.predicted_ball_position_at_contact_m
+                    ),
+                    time_to_contact_s=contact_target.time_to_contact_s,
+                    contact_valid=contact_valid,
+                    racket_target_position_m=contact_target.position_m,
+                    racket_target_rotation=contact_target.rotation_matrix,
+                    racket_surface_position_m=racket_surface_position,
+                    next_crossing_xy_m=contact_target.next_crossing_target_xy_m,
+                )
+                return jnp.concatenate((history_obs, contact_context), axis=-1)
+            contact_target = self._fixed_contact_policy_target(
+                ball_obs_pos,
+                ball_obs_vel,
+                ball_obs_age_seconds,
+                state.hit_count,
+                already_propagated=state.fixed_contact_ball_predicted,
+            )
+            contact_target = contact_target._replace(
+                valid=(
+                    contact_target.valid
+                    & state.fixed_contact_ball_state_valid
+                )
+            )
+            fixed_contact_prefix = make_fixed_contact_actor_observation(
+                q=q,
+                dq=dq,
+                q_ref_error=state.arm_cmd_q - q,
+                previous_executed_action=state.prev_action,
+                # These caches are the latest direct camera/simulator sample.
+                # The high-ball predictor may drive ``contact_target`` but may
+                # never overwrite the actor's explicit current-state slots.
+                observed_ball_position_current=state.cached_ball_obs_pos,
+                observed_ball_velocity_current=state.cached_ball_obs_vel,
+                prediction_uses_extrapolated_current_state=(
+                    state.fixed_contact_ball_predicted
+                    | (
+                        bool(
+                            self.cfg.fixed_contact_propagate_held_ball_state_to_query_time
+                        )
+                        & (ball_obs_age_seconds > 0.0)
+                    )
+                ),
+                racket_position_current=racket_surface_position,
+                racket_rotation_current=racket_rotation,
+                racket_linear_velocity=racket_surface_velocity,
+                racket_angular_velocity=racket_angular_velocity,
+                contact_target=contact_target,
+                workspace_center_xy=tuple(
+                    getattr(
+                        self.cfg,
+                        "fixed_contact_workspace_center_xy_m",
+                        (0.0, -0.49),
+                    )
+                ),
+                target_conditioning_scale=(
+                    self.fixed_contact_target_conditioning_observation_scale
+                ),
+            )
+            if self.fixed_plane_limit_cycle_v1_enabled:
+                apex_progress = self._fixed_plane_limit_cycle_apex_progress(
+                    state.hit_count
+                )
+                desired_apex_z_m = (
+                    self._fixed_plane_limit_cycle_desired_apex_z_m(
+                        state.hit_count
+                    )
+                )
+                desired_racket_contact_velocity = (
+                    restitution_consistent_racket_velocity_m_s(
+                        contact_target.incoming_ball_velocity_m_s,
+                        contact_target.desired_post_ball_velocity_m_s,
+                        effective_restitution=float(
+                            self.cfg.fixed_plane_limit_cycle_effective_restitution
+                        ),
+                    )
+                )
+                if bool(
+                    self.cfg.fixed_plane_limit_cycle_dynamic_stroke_enabled
+                ):
+                    (
+                        _raw_racket_vz,
+                        executable_racket_vz,
+                        _racket_vz_clipped,
+                    ) = self._fixed_plane_limit_cycle_dynamic_racket_vz_target_m_s(
+                        contact_target.incoming_ball_velocity_m_s[:, 2],
+                        state.hit_count,
+                    )
+                    desired_racket_contact_velocity = (
+                        desired_racket_contact_velocity.at[:, 2].set(
+                            executable_racket_vz
+                        )
+                    )
+                limit_cycle_obs = make_fixed_plane_limit_cycle_observation(
+                    fixed_contact_prefix_80d=fixed_contact_prefix,
+                    desired_post_ball_velocity_m_s=(
+                        contact_target.desired_post_ball_velocity_m_s
+                    ),
+                    desired_racket_contact_velocity_m_s=(
+                        desired_racket_contact_velocity
+                    ),
+                    desired_apex_z_m=desired_apex_z_m,
+                    measured_dq_delta_rad_s=dq - state.prev_arm_qvel,
+                    ball_observation_age_s=ball_obs_age_seconds,
+                    apex_progress=apex_progress,
+                    ball_age_clip_s=float(self.cfg.ball_obs_age_clip),
+                )
+                if self.cfg.fixed_plane_v63_previous_apex_error_obs_enabled:
+                    from fixed_plane_v63 import previous_apex_error_observation
+
+                    return jnp.concatenate((
+                        limit_cycle_obs,
+                        previous_apex_error_observation(
+                            state.late_physical_prev_signed_apex_error_m,
+                            state.late_physical_prev_apex_valid,
+                        ),
+                    ), axis=-1)
+                return limit_cycle_obs
+            if self.plant_aware_fixed_plane_v1_enabled:
+                (
+                    nominal_action,
+                    phase_reference,
+                    desired_contact_velocity,
+                ) = self._plant_aware_fixed_plane_nominal_action(
+                    state,
+                    contact_target,
+                )
+                return make_plant_aware_fixed_plane_observation(
+                    fixed_contact_prefix_80d=fixed_contact_prefix,
+                    desired_post_ball_velocity_m_s=(
+                        contact_target.desired_post_ball_velocity_m_s
+                    ),
+                    desired_racket_contact_velocity_m_s=(
+                        desired_contact_velocity
+                    ),
+                    ball_observation_age_s=ball_obs_age_seconds,
+                    phase_one_hot=phase_reference.phase_one_hot,
+                    time_since_contact_s=jnp.where(
+                        state.pending_hit,
+                        state.pending_hit_steps.astype(jnp.float32) * self.dt,
+                        0.0,
+                    ),
+                    pending_hit=state.pending_hit,
+                    hit_count=state.hit_count,
+                    measured_dq_delta_rad_s=dq - state.prev_arm_qvel,
+                    nominal_normalized_qvel=nominal_action,
+                    ball_age_clip_s=float(self.cfg.ball_obs_age_clip),
+                )
+            return fixed_contact_prefix
         bpos_base = self._point_to_base(ball_obs_pos, base_q)
         rpos_base = self._point_to_base(rpos, base_q)
         bvel_base = self._vel_to_base(ball_obs_vel, ball_obs_pos, base_q, base_dq)
@@ -7081,6 +13712,7 @@ class MjxJuggleEnv:
     # Base-obs slices for the velocity channels that carry the real-robot gap.
     _DQ_OBS_SLICE = slice(7, 14)
     _RACKET_VEL_OBS_SLICE = slice(29, 32)
+    _FIXED_CONTACT_RACKET_VEL_OBS_SLICE = slice(46, 49)
 
     def _apply_proprio_obs_noise(
         self, state: EnvState, base_obs: jax.Array, key: jax.Array
@@ -7116,7 +13748,14 @@ class MjxJuggleEnv:
         )
         delta = noise_state * std[None, :] * scale[:, None]
         base_obs = base_obs.at[:, self._DQ_OBS_SLICE].add(delta[:, : self.act_dim])
-        base_obs = base_obs.at[:, self._RACKET_VEL_OBS_SLICE].add(delta[:, self.act_dim :])
+        racket_velocity_slice = (
+            self._FIXED_CONTACT_RACKET_VEL_OBS_SLICE
+            if self.fixed_contact_plane_training_enabled
+            else self._RACKET_VEL_OBS_SLICE
+        )
+        base_obs = base_obs.at[:, racket_velocity_slice].add(
+            delta[:, self.act_dim :]
+        )
         return base_obs, noise_state
 
     def _apply_proprio_obs_staleness(
@@ -7141,6 +13780,30 @@ class MjxJuggleEnv:
         )(key)
         held = held & (state.step_count > 0)
         previous = state.obs_buffer[:, -1, :]
+
+        if self.fixed_contact_plane_training_enabled:
+            stale = base_obs
+            stale = stale.at[:, 0:14].set(previous[:, 0:14])
+            stale = stale.at[:, 37:52].set(previous[:, 37:52])
+            # q_ref stays current while measured q is held.
+            stale = stale.at[:, 14:21].add(
+                base_obs[:, 0:7] - previous[:, 0:7]
+            )
+            # Position-relative features retain the current ball/target while
+            # replacing only the joint-derived racket surface position.
+            racket_position_delta = (
+                base_obs[:, 37:40] - previous[:, 37:40]
+            )
+            stale = stale.at[:, 61:64].add(racket_position_delta)
+            stale = stale.at[:, 67:70].add(racket_position_delta)
+            target_rotation = rotation_6d_to_matrix(base_obs[:, 55:61])
+            held_racket_rotation = rotation_6d_to_matrix(
+                previous[:, 40:46]
+            )
+            stale = stale.at[:, 64:67].set(
+                so3_log_error(target_rotation, held_racket_rotation)
+            )
+            return jnp.where(held[:, None], stale, base_obs), held
 
         stale = base_obs
         stale = stale.at[:, 0:14].set(previous[:, 0:14])
@@ -7428,10 +14091,66 @@ class MjxJuggleEnv:
         external_arm_q_horizon_ref: jax.Array | None = None,
         external_arm_qdd_horizon_ref: jax.Array | None = None,
     ) -> tuple[EnvState, jax.Array, jax.Array, jax.Array, dict[str, jax.Array]]:
+        # Cache the state before any physics substep.  If this control interval
+        # contains a new physical contact edge, these are the closest available
+        # pre-impact ball quantities and are carried until contact separation.
+        step_start_ball_position_m = state.data.xpos[:, self.ball_body_id]
+        step_start_ball_velocity_m_s = state.data.qvel[
+            :, self.ball_vadr : self.ball_vadr + 3
+        ]
+        step_start_contact_target = None
+        if self.fixed_contact_plane_training_enabled:
+            step_start_contact_target = self._fixed_contact_policy_target(
+                state.ball_obs_valid_pos,
+                state.ball_obs_valid_vel,
+                state.ball_obs_age_seconds,
+                state.hit_count,
+                already_propagated=state.fixed_contact_ball_predicted,
+            )
+            step_start_contact_target = step_start_contact_target._replace(
+                valid=(
+                    step_start_contact_target.valid
+                    & state.fixed_contact_ball_state_valid
+                )
+            )
         raw_policy_action = action
-        policy_action = jnp.clip(raw_policy_action, -1.0, 1.0)
+        residual_policy_action = jnp.clip(raw_policy_action, -1.0, 1.0)
+        plant_aware_nominal_action = jnp.zeros_like(residual_policy_action)
+        plant_aware_phase_id = jnp.zeros(
+            (residual_policy_action.shape[0],), dtype=jnp.int32
+        )
+        plant_aware_desired_contact_velocity = jnp.zeros(
+            (residual_policy_action.shape[0], 3), dtype=jnp.float32
+        )
+        if self.plant_aware_fixed_plane_v1_enabled:
+            if step_start_contact_target is None:
+                raise ValueError("plant-aware V1 requires a contact target")
+            (
+                plant_aware_nominal_action,
+                plant_aware_phase_reference_value,
+                plant_aware_desired_contact_velocity,
+            ) = self._plant_aware_fixed_plane_nominal_action(
+                state,
+                step_start_contact_target,
+            )
+            plant_aware_phase_id = (
+                plant_aware_phase_reference_value.phase_id
+            )
+            policy_action = compose_bounded_residual_action(
+                plant_aware_nominal_action,
+                residual_policy_action,
+                residual_scale=float(
+                    self.cfg.plant_aware_residual_action_scale
+                ),
+            )
+        else:
+            policy_action = residual_policy_action
+        racket_launch_reset_active = (
+            self.racket_launch_reset_capable
+            & (~state.reset_falling_contact_active)
+        )
         pre_release_control_active = (
-            (self.ball_reset_mode == "racket_launch")
+            racket_launch_reset_active
             & (state.racket_launch_hold_steps > 0)
             & ((state.step_count + 1) <= state.racket_launch_hold_steps)
             & (state.hit_count <= 0)
@@ -7538,6 +14257,30 @@ class MjxJuggleEnv:
             or self.measured_qvel_actuator_ablation
             or self.command_qvel_actuator_ablation
         )
+        cartesian_zero = jnp.zeros(
+            (action.shape[0],), dtype=action.dtype
+        )
+        cartesian_projection_correction_norm = cartesian_zero
+        cartesian_projection_retained_fraction = jnp.ones_like(
+            cartesian_zero
+        )
+        cartesian_projection_intervened = jnp.zeros_like(
+            cartesian_zero, dtype=bool
+        )
+        cartesian_projection_nonlinear_backstop = jnp.zeros_like(
+            cartesian_zero, dtype=bool
+        )
+        cartesian_projection_fallback_to_hold = jnp.zeros_like(
+            cartesian_zero, dtype=bool
+        )
+        cartesian_projection_current_safe = jnp.ones_like(
+            cartesian_zero, dtype=bool
+        )
+        cartesian_qref_position_violation = cartesian_zero
+        cartesian_qref_orientation_violation = cartesian_zero
+        cartesian_projection_linear_violation = cartesian_zero
+        cartesian_qref_yaw_rad = cartesian_zero
+        cartesian_projection_penalty = cartesian_zero
         if self.action_command_mode == "velocity":
             # QVEL actions name a desired joint velocity.  Legacy paths track it
             # through the pre-existing acceleration-limited integrator.  The
@@ -7559,16 +14302,60 @@ class MjxJuggleEnv:
                 desired_qvel = desired_qvel_raw
             if direct_qvel_position_target:
                 if self.recovered_rmp_bounded_qvel_reference:
-                    arm_cmd_q = integrate_bounded_measured_qvel_reference(
-                        state.arm_cmd_q,
-                        feedback_q,
-                        desired_qvel,
-                        self.dt,
-                        self.recovered_rmp_qvel_reference_error_horizon_s_per_joint,
-                        self.arm_vel_limit_rad_s,
-                        self.arm_lo,
-                        self.arm_hi,
-                    )
+                    if self.cartesian_pose_projection_enabled:
+                        (
+                            arm_cmd_q,
+                            desired_qvel,
+                            cartesian_projection_correction_norm,
+                            cartesian_projection_retained_fraction,
+                            cartesian_projection_intervened,
+                            cartesian_projection_nonlinear_backstop,
+                            cartesian_projection_fallback_to_hold,
+                            cartesian_projection_current_safe,
+                            cartesian_qref_position_violation,
+                            cartesian_qref_orientation_violation,
+                            cartesian_projection_linear_violation,
+                            cartesian_qref_yaw_rad,
+                        ) = self._project_cartesian_pose_reference(
+                            state,
+                            feedback_q,
+                            desired_qvel,
+                        )
+                        action_denominator = (
+                            self.arm_vel_limit_rad_s[None, :]
+                            * float(self.cfg.action_velocity_scale)
+                            * state.action_scale_mult[:, None]
+                        )
+                        action = jnp.clip(
+                            desired_qvel
+                            / jnp.maximum(action_denominator, 1.0e-6),
+                            -1.0,
+                            1.0,
+                        )
+                        da = action - state.prev_action
+                        cartesian_projection_penalty = (
+                            -float(
+                                self.cfg.cartesian_pose_projection_penalty_weight
+                            )
+                            * jnp.mean(
+                                jnp.square(
+                                    cartesian_projection_correction_norm[:, None]
+                                    / jnp.sqrt(float(self.act_dim))
+                                ),
+                                axis=-1,
+                            )
+                        )
+                    else:
+                        arm_cmd_q = integrate_bounded_measured_qvel_reference(
+                            state.arm_cmd_q,
+                            feedback_q,
+                            desired_qvel,
+                            self.dt,
+                            self.recovered_rmp_qvel_reference_error_horizon_s_per_joint,
+                            self.arm_vel_limit_rad_s,
+                            self.arm_lo,
+                            self.arm_hi,
+                        )
                 else:
                     qvel_target_horizon_s = (
                         self.dt
@@ -9313,6 +16100,19 @@ class MjxJuggleEnv:
         arm_applied_qacc = (
             arm_applied_qvel - state.arm_applied_qvel
         ) / max(self.dt, 1e-6)
+        if planner_before_actuator:
+            arm_servo_safety_delta = raw_future_output - arm_servo_command_q
+        else:
+            arm_servo_command_q = arm_applied_q
+            arm_servo_command_qvel = arm_applied_qvel
+            arm_servo_safety_delta, arm_servo_clip = command_safety_telemetry(
+                arm_servo_target_unlimited,
+                arm_applied_q,
+                limiter_enabled=bool(
+                    self.cfg.arm_servo_target_tracking_planner
+                    or self.cfg.arm_servo_target_limiter
+                ),
+            )
         if self.recovered_rmp_motion_mode:
             # These are the delayed 1 kHz Plan outputs, not derivatives
             # reconstructed from surrounding 200 Hz samples.
@@ -9321,12 +16121,11 @@ class MjxJuggleEnv:
             arm_safe_qacc = low_level_rmp_qdd
             arm_applied_qvel = low_level_rmp_qvel
             arm_applied_qacc = low_level_rmp_qdd
-        if not planner_before_actuator:
-            arm_servo_command_q = arm_applied_q
-            arm_servo_command_qvel = arm_applied_qvel
-            arm_servo_clip = jnp.abs(
-                arm_servo_target_unlimited - arm_applied_q
-            ) > 1e-7
+        arm_rmp_tracking_delta = jnp.where(
+            self.recovered_rmp_motion_mode,
+            arm_servo_target_unlimited - arm_applied_q,
+            jnp.zeros_like(arm_applied_q),
+        )
 
         acc_clip_diff = desired_qdd_raw - desired_qdd
         vel_clip_diff = raw_cmd_qvel - cmd_qvel
@@ -9412,6 +16211,30 @@ class MjxJuggleEnv:
         arm_actual_high_acceleration_sign_flip_count_init = jnp.zeros(
             (action.shape[0],), dtype=jnp.int32
         )
+        first_proximity_substep_init = jnp.full(
+            (action.shape[0],), -1, dtype=jnp.int32
+        )
+        first_penetration_substep_init = jnp.full(
+            (action.shape[0],), -1, dtype=jnp.int32
+        )
+        penetration_count_init = jnp.zeros(
+            (action.shape[0],), dtype=jnp.int32
+        )
+        first_penetration_distance_init = jnp.zeros(
+            (action.shape[0],), dtype=jnp.float32
+        )
+        min_contact_distance_init = jnp.full(
+            (action.shape[0],), jnp.inf, dtype=jnp.float32
+        )
+        first_penetration_pre_ball_vz_init = jnp.zeros(
+            (action.shape[0],), dtype=jnp.float32
+        )
+        first_penetration_post_ball_vz_init = jnp.zeros(
+            (action.shape[0],), dtype=jnp.float32
+        )
+        first_penetration_racket_vz_init = jnp.zeros(
+            (action.shape[0],), dtype=jnp.float32
+        )
 
         def one_substep(substep_index, carry):
             (
@@ -9430,14 +16253,29 @@ class MjxJuggleEnv:
                 arm_actual_jerk_utilization_max,
                 arm_actual_acceleration_saturation_count,
                 arm_actual_high_acceleration_sign_flip_count,
+                first_proximity_substep,
+                first_penetration_substep,
+                penetration_count,
+                first_penetration_distance,
+                min_contact_distance,
+                first_penetration_pre_ball_vz,
+                first_penetration_post_ball_vz,
+                first_penetration_racket_vz,
             ) = carry
             d_before = d
             if self.recovered_rmp_motion_mode:
                 substep_ctrl = ctrl.at[:, self.arm_aids_j].set(
-                    arm_low_level_ctrl_q_history[substep_index]
+                    arm_low_level_ctrl_q_history[
+                        substep_index // self.recovered_rmp_physics_substeps_per_tick
+                    ]
                 )
             else:
                 substep_ctrl = ctrl
+            if self.racket_contact_proxy_enabled:
+                # Follow current robot FK/cvel rather than stale pre-integration
+                # kinematics. mjx.step forwards once more after this overwrite.
+                d = self.batched_forward(state.model, d)
+                d = self._sync_racket_contact_proxy(d)
             d = self.batched_step(state.model, d.replace(ctrl=substep_ctrl))
             if float(self.cfg.ball_flight_drag_coefficient_m_inv) > 0.0:
                 ball_linear_velocity = d.qvel[
@@ -9636,6 +16474,55 @@ class MjxJuggleEnv:
                 arm_actual_feasible = arm_actual_feasible & substep_feasible
             substep_contact, substep_other_ball_contact = self._ball_contact_flags(d)
             first_contact = substep_contact & (~contact_any)
+            if bool(self.cfg.fixed_contact_substep_diagnostic_enabled):
+                first_proximity_substep = jnp.where(
+                    first_contact, substep_index, first_proximity_substep
+                )
+                contact_geom = d.contact.geom
+                if contact_geom.shape[1] > 0:
+                    g0 = contact_geom[..., 0]
+                    g1 = contact_geom[..., 1]
+                    racket_pair = (
+                        ((g0 == self.ball_geom_id)
+                         & (g1 == self.racket_contact_geom_id))
+                        | ((g1 == self.ball_geom_id)
+                           & (g0 == self.racket_contact_geom_id))
+                    )
+                    pair_distance = jnp.min(
+                        jnp.where(racket_pair, d.contact.dist, jnp.inf),
+                        axis=-1,
+                    )
+                else:
+                    pair_distance = jnp.full_like(
+                        first_penetration_distance, jnp.inf
+                    )
+                penetration = pair_distance <= 0.0
+                first_penetration = penetration & (first_penetration_substep < 0)
+                first_penetration_substep = jnp.where(
+                    first_penetration, substep_index, first_penetration_substep
+                )
+                penetration_count = penetration_count + penetration.astype(jnp.int32)
+                min_contact_distance = jnp.minimum(min_contact_distance, pair_distance)
+                first_penetration_distance = jnp.where(
+                    first_penetration, pair_distance, first_penetration_distance
+                )
+                first_penetration_pre_ball_vz = jnp.where(
+                    first_penetration,
+                    d_before.qvel[:, self.ball_vadr + 2],
+                    first_penetration_pre_ball_vz,
+                )
+                first_penetration_post_ball_vz = jnp.where(
+                    first_penetration,
+                    d.qvel[:, self.ball_vadr + 2],
+                    first_penetration_post_ball_vz,
+                )
+                first_penetration_racket_vz = jnp.where(
+                    first_penetration,
+                    (d.site_xpos[:, self.racket_site_id, 2]
+                     - d_before.site_xpos[:, self.racket_site_id, 2])
+                    / self.timestep,
+                    first_penetration_racket_vz,
+                )
             substep_bpos = d.xpos[:, self.ball_body_id]
             substep_camera_terms = self._camera_reward_terms(d, substep_bpos)
             substep_camera_visible = substep_camera_terms["metric/camera_visible"] > 0.5
@@ -9660,6 +16547,14 @@ class MjxJuggleEnv:
                 arm_actual_jerk_utilization_max,
                 arm_actual_acceleration_saturation_count,
                 arm_actual_high_acceleration_sign_flip_count,
+                first_proximity_substep,
+                first_penetration_substep,
+                penetration_count,
+                first_penetration_distance,
+                min_contact_distance,
+                first_penetration_pre_ball_vz,
+                first_penetration_post_ball_vz,
+                first_penetration_racket_vz,
             )
 
         (
@@ -9678,6 +16573,14 @@ class MjxJuggleEnv:
             arm_actual_jerk_utilization_max,
             arm_actual_acceleration_saturation_count,
             arm_actual_high_acceleration_sign_flip_count,
+            first_proximity_substep,
+            first_penetration_substep,
+            penetration_count,
+            first_penetration_distance,
+            min_contact_distance,
+            first_penetration_pre_ball_vz,
+            first_penetration_post_ball_vz,
+            first_penetration_racket_vz,
         ) = jax.lax.fori_loop(
             0,
             int(self.cfg.frame_skip),
@@ -9698,6 +16601,14 @@ class MjxJuggleEnv:
                 arm_actual_jerk_utilization_max_init,
                 arm_actual_acceleration_saturation_count_init,
                 arm_actual_high_acceleration_sign_flip_count_init,
+                first_proximity_substep_init,
+                first_penetration_substep_init,
+                penetration_count_init,
+                first_penetration_distance_init,
+                min_contact_distance_init,
+                first_penetration_pre_ball_vz_init,
+                first_penetration_post_ball_vz_init,
+                first_penetration_racket_vz_init,
             ),
         )
         if bool(self.cfg.arm_actual_target_tracking_governor):
@@ -9720,7 +16631,7 @@ class MjxJuggleEnv:
         current_time = step_count.astype(jnp.float32) * self.dt
         hold_steps = state.racket_launch_hold_steps
         racket_launch_hold_active = (
-            (self.ball_reset_mode == "racket_launch")
+            racket_launch_reset_active
             & (hold_steps > 0)
             & (step_count <= hold_steps)
             & (state.hit_count <= 0)
@@ -9730,14 +16641,27 @@ class MjxJuggleEnv:
         # its upper contact surface, so pinning relative to that site would
         # silently reduce the configured air gap by the rubber half-thickness.
         hold_rmat = data.geom_xmat[:, self.racket_geom_id].reshape((-1, 3, 3))
+        if (self.fixed_contact_plane_training_enabled
+                and self.cfg.fixed_contact_surface_frame_mode == "mesh_axes_v1"):
+            hold_rmat = racket_surface_frame(
+                hold_rmat,
+                normal_axis=int(self.cfg.fixed_contact_racket_surface_size_axis),
+            )
         hold_normal_raw = hold_rmat[:, :, 2]
         hold_normal = hold_normal_raw * jnp.where(
             hold_normal_raw[:, 2] >= 0.0,
             1.0,
             -1.0,
         )[:, None]
+        hold_surface_axis = (
+            int(self.cfg.fixed_contact_racket_surface_size_axis)
+            if self.fixed_contact_plane_training_enabled
+            and (self.racket_launch_racket_follow_xy_enabled
+                 or self.cfg.fixed_contact_surface_frame_mode == "mesh_axes_v1")
+            else 1
+        )
         hold_racket_half_thickness = state.model.geom_size[
-            :, self.racket_geom_id, 1
+            :, self.racket_geom_id, hold_surface_axis
         ]
         hold_rpos = (
             data.geom_xpos[:, self.racket_geom_id]
@@ -9800,9 +16724,177 @@ class MjxJuggleEnv:
         if bool(self.cfg.stationary_ball_training):
             in_contact = jnp.zeros_like(in_contact)
             other_ball_contact = jnp.zeros_like(other_ball_contact)
+        (
+            collision_outcome_contact_edge,
+            collision_outcome_release_event,
+        ) = collision_outcome_event_edges(
+            in_contact=in_contact,
+            previous_contact=state.prev_contact,
+            pending_valid=state.collision_outcome_pending_valid,
+            held_or_static=(
+                racket_launch_hold_active
+                | jnp.asarray(bool(self.cfg.stationary_ball_training))
+            ),
+        )
+        if self.collision_outcome_residual_enabled:
+            if self.collision_outcome_residual.posterior_sampling:
+                collision_event_keys = jax.vmap(
+                    lambda key, step: jax.random.fold_in(
+                        key, step + jnp.int32(260903)
+                    )
+                )(state.rng, state.total_env_steps)
+                collision_event_noise_local_m_s = jax.vmap(
+                    lambda key: jax.random.normal(
+                        key, (3,), dtype=jnp.float32
+                    )
+                )(collision_event_keys) * jnp.asarray(
+                    self.collision_outcome_residual.event_velocity_std_local_m_s,
+                    dtype=jnp.float32,
+                )
+            else:
+                collision_event_noise_local_m_s = jnp.zeros(
+                    (self.n_envs, 3), dtype=jnp.float32
+                )
+            (
+                corrected_ball_velocity_m_s,
+                collision_outcome_residual_world_m_s,
+                collision_outcome_residual_local_m_s,
+                collision_outcome_target_local_m_s,
+                collision_outcome_predictive_std_local_m_s,
+                collision_outcome_pre_relative_local_m_s,
+                collision_outcome_native_post_relative_local_m_s,
+                collision_outcome_contact_point_velocity_m_s,
+                collision_outcome_incoming_normal_speed_m_s,
+                collision_outcome_applied,
+                collision_outcome_outside_population,
+                collision_outcome_saturated,
+            ) = apply_collision_outcome_residual_jax(
+                self.collision_outcome_residual,
+                pre_ball_velocity_m_s=(
+                    state.collision_outcome_pending_pre_ball_velocity_m_s
+                ),
+                native_post_ball_velocity_m_s=data.qvel[
+                    :, self.ball_vadr : self.ball_vadr + 3
+                ],
+                racket_rotation_world=(
+                    state.collision_outcome_pending_racket_rotation_world
+                ),
+                racket_linear_velocity_m_s=(
+                    state.collision_outcome_pending_racket_linear_velocity_m_s
+                ),
+                racket_angular_velocity_rad_s=(
+                    state.collision_outcome_pending_racket_angular_velocity_rad_s
+                ),
+                impact_offset_m=(
+                    state.collision_outcome_pending_impact_offset_m
+                ),
+                episode_restitution_latent=(
+                    state.collision_outcome_episode_restitution_latent
+                ),
+                event_noise_local_m_s=collision_event_noise_local_m_s,
+                event_gate=collision_outcome_release_event,
+                valid=state.collision_outcome_pending_valid,
+                residual_application_delay_s=jnp.maximum(
+                    0.0,
+                    current_time
+                    - state.collision_outcome_pending_contact_time_s,
+                ),
+                gravity_world_m_s2=state.model.opt.gravity,
+            )
+            corrected_data = data.replace(
+                qvel=data.qvel.at[
+                    :, self.ball_vadr : self.ball_vadr + 3
+                ].set(corrected_ball_velocity_m_s)
+            )
+            data = jax.lax.cond(
+                jnp.any(collision_outcome_applied),
+                lambda candidate: self.batched_forward(
+                    state.model, candidate
+                ),
+                lambda candidate: candidate,
+                corrected_data,
+            )
+        else:
+            collision_outcome_residual_world_m_s = jnp.zeros(
+                (self.n_envs, 3), dtype=jnp.float32
+            )
+            collision_outcome_residual_local_m_s = jnp.zeros(
+                (self.n_envs, 3), dtype=jnp.float32
+            )
+            collision_outcome_target_local_m_s = jnp.zeros(
+                (self.n_envs, 3), dtype=jnp.float32
+            )
+            collision_outcome_predictive_std_local_m_s = jnp.zeros(
+                (self.n_envs, 3), dtype=jnp.float32
+            )
+            collision_outcome_pre_relative_local_m_s = jnp.zeros(
+                (self.n_envs, 3), dtype=jnp.float32
+            )
+            collision_outcome_native_post_relative_local_m_s = jnp.zeros(
+                (self.n_envs, 3), dtype=jnp.float32
+            )
+            collision_outcome_contact_point_velocity_m_s = jnp.zeros(
+                (self.n_envs, 3), dtype=jnp.float32
+            )
+            collision_outcome_incoming_normal_speed_m_s = jnp.zeros(
+                (self.n_envs,), dtype=jnp.float32
+            )
+            collision_outcome_applied = jnp.zeros(
+                (self.n_envs,), dtype=bool
+            )
+            collision_outcome_outside_population = jnp.zeros(
+                (self.n_envs,), dtype=bool
+            )
+            collision_outcome_saturated = jnp.zeros(
+                (self.n_envs,), dtype=bool
+            )
         bpos = data.xpos[:, self.ball_body_id]
         rpos = data.site_xpos[:, self.racket_site_id]
         rmat = data.site_xmat[:, self.racket_site_id].reshape((-1, 3, 3))
+        actual_cartesian_position_violation = jnp.zeros(
+            (rpos.shape[0],), dtype=rpos.dtype
+        )
+        actual_cartesian_orientation_violation = jnp.zeros_like(
+            actual_cartesian_position_violation
+        )
+        actual_cartesian_yaw_rad = jnp.zeros_like(
+            actual_cartesian_position_violation
+        )
+        if self.cartesian_pose_projection_enabled:
+            actual_position_policy = jnp.einsum(
+                "ij,nj->ni",
+                self.cartesian_world_to_policy_rotation,
+                rpos - self.cartesian_policy_origin_world[None, :],
+            )
+            actual_relative_rotation = jnp.einsum(
+                "ji,njk->nik",
+                self.fixed_contact_racket_reference_rotation,
+                rmat,
+            )
+            actual_relative_rpy = matrix_to_euler_xyz_jax(
+                actual_relative_rotation
+            )
+            actual_cartesian_position_violation = jnp.max(
+                jnp.maximum(
+                    jnp.maximum(
+                        self.cartesian_pose_outer_position_lower[None, :]
+                        - actual_position_policy,
+                        actual_position_policy
+                        - self.cartesian_pose_outer_position_upper[None, :],
+                    ),
+                    0.0,
+                ),
+                axis=-1,
+            )
+            actual_cartesian_orientation_violation = jnp.max(
+                jnp.maximum(
+                    jnp.abs(actual_relative_rpy[:, :2])
+                    - self.cartesian_pose_outer_roll_pitch_limit[None, :],
+                    0.0,
+                ),
+                axis=-1,
+            )
+            actual_cartesian_yaw_rad = actual_relative_rpy[:, 2]
         racket_normal = rmat[:, :, 2]
         bvel = jnp.where(
             racket_launch_hold_active[:, None],
@@ -9838,7 +16930,27 @@ class MjxJuggleEnv:
             "nij,nj->ni", jnp.swapaxes(rmat, 1, 2), rel
         )
         contact_xy_norm = jnp.linalg.norm(rel_local[:, :2], axis=-1)
-        contact_radius = state.model.geom_size[:, self.racket_geom_id, 0]
+        if (
+            self.fixed_contact_plane_training_enabled
+            and (self.racket_launch_racket_follow_xy_enabled
+                 or self.cfg.fixed_contact_surface_frame_mode == "mesh_axes_v1")
+        ):
+            contact_surface_axis = int(
+                self.cfg.fixed_contact_racket_surface_size_axis
+            )
+            contact_radius = jnp.min(
+                jnp.stack(
+                    [
+                        state.model.geom_size[:, self.racket_geom_id, axis]
+                        for axis in range(3)
+                        if axis != contact_surface_axis
+                    ],
+                    axis=-1,
+                ),
+                axis=-1,
+            )
+        else:
+            contact_radius = state.model.geom_size[:, self.racket_geom_id, 0]
         contact_xy_scale = jnp.minimum(
             1.0,
             contact_radius / jnp.maximum(contact_xy_norm, 1e-6),
@@ -9865,15 +16977,53 @@ class MjxJuggleEnv:
         sep_dist = jnp.linalg.norm(rel, axis=-1)
         no_contact_steps = jnp.where(in_contact, 0, state.no_contact_steps + 1)
         contact_hold_steps = jnp.where(in_contact, state.contact_hold_steps + 1, 0)
-        hit_armed = jnp.where(
+        rearm_eligible = (
             (~in_contact)
             & (no_contact_steps >= int(self.cfg.hit_rearm_no_contact_steps))
-            & (sep_dist >= float(self.cfg.hit_rearm_distance)),
+            & (sep_dist >= float(self.cfg.hit_rearm_distance))
+        )
+        if self.cfg.hit_rearm_min_vertical_clearance_m > 0.0:
+            rearm_eligible = fixed_contact_rearm_eligible(
+                in_contact=in_contact,
+                no_contact_steps=no_contact_steps,
+                separation_distance_m=sep_dist,
+                vertical_separation_m=rel[:, 2],
+                required_no_contact_steps=int(self.cfg.hit_rearm_no_contact_steps),
+                required_separation_distance_m=float(self.cfg.hit_rearm_distance),
+                min_vertical_separation_m=float(
+                    self.cfg.hit_rearm_min_vertical_clearance_m
+                ),
+            )
+        hit_armed = jnp.where(
+            rearm_eligible,
             True,
             state.hit_armed,
         )
 
-        hit_edge = in_contact & (~state.prev_contact) & hit_armed & (~state.pending_hit)
+        (
+            raw_physical_contact_edge,
+            hit_edge,
+            pending_recontact_edge,
+        ) = fixed_contact_physical_edge_events(
+            in_contact=in_contact,
+            previous_contact=state.prev_contact,
+            hit_armed=hit_armed,
+            pending_hit=state.pending_hit,
+            reject_recontact=bool(
+                getattr(
+                    self.cfg,
+                    "hit_pending_recontact_termination_enabled",
+                    False,
+                )
+            ),
+        )
+        atomic_pending_recontact = jnp.zeros_like(hit_edge)
+        if self.cfg.fixed_plane_v72_atomic_pending_recontact_enabled:
+            hit_edge, atomic_pending_recontact = atomic_contact_restart_events(
+                raw_edge=raw_physical_contact_edge,
+                logical_hit_edge=hit_edge,
+                previous_pending=state.pending_hit,
+            )
         contact_racket_xy = rpos[:, :2]
         contact_prev_racket_xy = state.prev_racket_pos[:, :2]
         contact_cycle_xy_path_acc = (
@@ -9963,6 +17113,23 @@ class MjxJuggleEnv:
             racket_local_xz_angular_speed,
             state.pending_hit_racket_local_xz_angular_speed,
         )
+        if self.fixed_contact_plane_training_enabled:
+            contact_racket_pose_error = jnp.linalg.norm(
+                so3_log_error(
+                    step_start_contact_target.rotation_matrix,
+                    rmat,
+                ),
+                axis=-1,
+            )
+            pending_hit_racket_pose_error = jnp.where(
+                hit_edge,
+                contact_racket_pose_error,
+                state.pending_hit_racket_pose_error,
+            )
+        else:
+            pending_hit_racket_pose_error = (
+                state.pending_hit_racket_pose_error
+            )
         pending_hit_contact_center_dist = jnp.where(
             hit_edge,
             contact_center_dist,
@@ -9994,8 +17161,61 @@ class MjxJuggleEnv:
             state.pending_hit_cycle_racket_xy_area_twice,
         )
         pending_hit = state.pending_hit | hit_edge
+        pending_before_resolution = pending_hit
+        pending_started = hit_edge & (~state.pending_hit)
         pending_steps = jnp.where(pending_hit, state.pending_hit_steps + 1, 0)
+        if self.cfg.fixed_plane_v72_atomic_pending_recontact_enabled:
+            pending_steps = jnp.where(atomic_pending_recontact, 1, pending_steps)
         hit_armed = jnp.where(hit_edge, False, hit_armed)
+        collision_outcome_pending_valid = jnp.where(
+            collision_outcome_contact_edge,
+            True,
+            jnp.where(
+                collision_outcome_release_event,
+                False,
+                state.collision_outcome_pending_valid,
+            ),
+        )
+        collision_outcome_pending_pre_ball_position_m = jnp.where(
+            collision_outcome_contact_edge[:, None],
+            step_start_ball_position_m,
+            state.collision_outcome_pending_pre_ball_position_m,
+        )
+        collision_outcome_pending_pre_ball_velocity_m_s = jnp.where(
+            collision_outcome_contact_edge[:, None],
+            step_start_ball_velocity_m_s,
+            state.collision_outcome_pending_pre_ball_velocity_m_s,
+        )
+        collision_outcome_pending_racket_position_m = jnp.where(
+            collision_outcome_contact_edge[:, None],
+            rpos,
+            state.collision_outcome_pending_racket_position_m,
+        )
+        collision_outcome_pending_racket_rotation_world = jnp.where(
+            collision_outcome_contact_edge[:, None, None],
+            rmat,
+            state.collision_outcome_pending_racket_rotation_world,
+        )
+        collision_outcome_pending_racket_linear_velocity_m_s = jnp.where(
+            collision_outcome_contact_edge[:, None],
+            rvel,
+            state.collision_outcome_pending_racket_linear_velocity_m_s,
+        )
+        collision_outcome_pending_racket_angular_velocity_rad_s = jnp.where(
+            collision_outcome_contact_edge[:, None],
+            racket_angular_velocity,
+            state.collision_outcome_pending_racket_angular_velocity_rad_s,
+        )
+        collision_outcome_pending_impact_offset_m = jnp.where(
+            collision_outcome_contact_edge[:, None],
+            contact_offset_local[:, :2],
+            state.collision_outcome_pending_impact_offset_m,
+        )
+        collision_outcome_pending_contact_time_s = jnp.where(
+            collision_outcome_contact_edge,
+            current_time,
+            state.collision_outcome_pending_contact_time_s,
+        )
 
         upward_vz = jnp.maximum(0.0, bvel[:, 2])
         gravity_mag = jnp.maximum(jnp.abs(state.dr_gravity_z), 1e-6)
@@ -10011,14 +17231,57 @@ class MjxJuggleEnv:
             * float(self.cfg.target_height),
             min_launch_rel_z + 0.06,
         )
+        if self.fixed_plane_limit_cycle_v1_enabled:
+            scheduled_apex_z = (
+                self._fixed_plane_limit_cycle_desired_apex_z_m(
+                    state.hit_count
+                )
+            )
+            contact_ball_center_z = jnp.full_like(
+                scheduled_apex_z,
+                float(self.cfg.fixed_contact_surface_z_m),
+            ) + state.model.geom_size[:, self.ball_geom_id, 0]
+            min_survival_apex_z, min_launch_apex_z = (
+                limit_cycle_hit_apex_thresholds_m(
+                    scheduled_apex_z,
+                    contact_ball_center_z_m=contact_ball_center_z,
+                    quality_margin_m=float(
+                        self.cfg.fixed_plane_limit_cycle_hit_quality_apex_margin_m
+                    ),
+                    survival_margin_m=float(
+                        self.cfg.fixed_plane_limit_cycle_hit_survival_apex_margin_m
+                    ),
+                )
+            )
+        confirmation_rel_z = min_launch_rel_z
+        confirmation_max_steps = int(self.cfg.hit_confirm_max_steps)
+        if (
+            self.cfg.fixed_plane_v107_first_confirm_rel_height_m > 0.0
+            or self.cfg.fixed_plane_v107_first_confirm_max_steps > 0
+        ):
+            from fixed_plane_v107 import first_launch_confirmation_limits
+
+            confirmation_rel_z, confirmation_max_steps = (
+                first_launch_confirmation_limits(
+                    hit_count=state.hit_count,
+                    legacy_clearance_m=min_launch_rel_z,
+                    legacy_deadline_steps=int(self.cfg.hit_confirm_max_steps),
+                    first_clearance_m=float(
+                        self.cfg.fixed_plane_v107_first_confirm_rel_height_m
+                    ),
+                    first_deadline_steps=int(
+                        self.cfg.fixed_plane_v107_first_confirm_max_steps
+                    ),
+                )
+            )
         previous_rel_z = (
             state.prev_ball_pos[:, 2] - state.prev_racket_pos[:, 2]
         )
         launch_clearance_crossing = (
             pending_hit
             & (~in_contact)
-            & (previous_rel_z < min_launch_rel_z)
-            & (rel[:, 2] >= min_launch_rel_z)
+            & (previous_rel_z < confirmation_rel_z)
+            & (rel[:, 2] >= confirmation_rel_z)
             & (bvel[:, 2] > 0.0)
         )
         low_survival_launch = (
@@ -10032,7 +17295,7 @@ class MjxJuggleEnv:
         launched_upward_raw = (
             pending_hit
             & (~in_contact)
-            & (rel[:, 2] >= min_launch_rel_z)
+            & (rel[:, 2] >= confirmation_rel_z)
             & (bvel[:, 2] > 0.0)
             & (predicted_apex_z >= min_launch_apex_z)
         )
@@ -10047,7 +17310,12 @@ class MjxJuggleEnv:
         rewardable_hit = counted_hit & ((cap <= 0) | (state.rewarded_hit_count < cap))
         unrewarded_extra_hit = counted_hit & (~rewardable_hit)
         launched_upward = counted_hit
-        failed_hit = pending_hit & (pending_steps >= int(self.cfg.hit_confirm_max_steps)) & (~launched_upward_raw)
+        failed_hit_timeout = (
+            pending_hit
+            & (pending_steps >= confirmation_max_steps)
+            & (~launched_upward_raw)
+        )
+        failed_hit = failed_hit_timeout | pending_recontact_edge | atomic_pending_recontact
         hit_count = state.hit_count + counted_hit.astype(jnp.int32)
         confirmed_hit_count = state.confirmed_hit_count + launched_upward_raw.astype(jnp.int32)
         ignored_fast_hit_count = state.ignored_fast_hit_count + ignored_fast_hit.astype(jnp.int32)
@@ -10135,13 +17403,67 @@ class MjxJuggleEnv:
             0.0,
         )
         last_hit_time = jnp.where(launched_upward_raw, current_time, state.last_hit_time)
-        pending_hit = jnp.where(launched_upward_raw | failed_hit, False, pending_hit)
-        pending_steps = jnp.where(launched_upward_raw | failed_hit, 0, pending_steps)
+        weak_launch_resolved = (
+            (low_survival_launch | subfloor_launch)
+            if self.cfg.fixed_plane_v34_resolve_weak_launch
+            else jnp.zeros_like(low_survival_launch)
+        )
+        resolved_hit = launched_upward_raw | failed_hit | weak_launch_resolved
+        pending_first_hit_peak_ball_vz_m_s = (
+            state.pending_first_hit_peak_ball_vz_m_s
+        )
+        first_failed_launch_credit_paid = state.first_failed_launch_credit_paid
+        failed_first_peak_vz_credit = jnp.zeros_like(bvel[:, 2])
+        failed_first_peak_vz_for_credit = jnp.zeros_like(bvel[:, 2])
+        if (
+            self.cfg.fixed_plane_v69_failed_first_peak_vz_reward_weight > 0.0
+            or self.cfg.fixed_plane_v77_first_peak_vz_weight > 0.0
+            or self.cfg.fixed_plane_v78_first_resolved_peak_vz_weight > 0.0
+        ):
+            (
+                failed_first_peak_vz_for_credit,
+                pending_first_hit_peak_ball_vz_m_s,
+            ) = pending_first_launch_peak_vz(
+                previous_peak_vz_m_s=state.pending_first_hit_peak_ball_vz_m_s,
+                ball_vz_m_s=bvel[:, 2],
+                hit_edge=hit_edge,
+                pending_hit=pending_hit,
+                resolved_hit=resolved_hit,
+            )
+            if self.cfg.fixed_plane_v72_atomic_pending_recontact_enabled:
+                failed_first_peak_vz_for_credit = jnp.where(
+                    atomic_pending_recontact,
+                    state.pending_first_hit_peak_ball_vz_m_s,
+                    failed_first_peak_vz_for_credit,
+                )
+                pending_first_hit_peak_ball_vz_m_s = jnp.where(
+                    atomic_pending_recontact,
+                    jnp.maximum(bvel[:, 2], 0.0),
+                    pending_first_hit_peak_ball_vz_m_s,
+                )
+            (
+                failed_first_peak_vz_credit,
+                first_failed_launch_credit_paid,
+            ) = failed_first_launch_peak_vz_credit(
+                peak_vz_m_s=failed_first_peak_vz_for_credit,
+                failed_hit=failed_hit,
+                previous_hit_count=state.hit_count,
+                previous_credit_paid=state.first_failed_launch_credit_paid,
+                weight=float(
+                    self.cfg.fixed_plane_v69_failed_first_peak_vz_reward_weight
+                ),
+            )
+        if self.cfg.fixed_plane_v72_atomic_pending_recontact_enabled:
+            pending_hit = jnp.where(resolved_hit & (~atomic_pending_recontact), False, pending_hit)
+            pending_steps = jnp.where(resolved_hit & (~atomic_pending_recontact), 0, pending_steps)
+        else:
+            pending_hit = jnp.where(resolved_hit, False, pending_hit)
+            pending_steps = jnp.where(resolved_hit, 0, pending_steps)
         hit_camera_visible = pending_hit_camera_visible
         hit_camera_in_margin = pending_hit_camera_in_margin
         hit_camera_in_lower_band = pending_hit_camera_in_lower_band
         hit_camera_v_frac = pending_hit_camera_v_frac
-        hit_resolved = launched_upward_raw | failed_hit
+        hit_resolved = resolved_hit & (~atomic_pending_recontact)
         pending_hit_camera_visible = jnp.where(hit_resolved, False, pending_hit_camera_visible)
         pending_hit_camera_in_margin = jnp.where(hit_resolved, False, pending_hit_camera_in_margin)
         pending_hit_camera_in_lower_band = jnp.where(hit_resolved, False, pending_hit_camera_in_lower_band)
@@ -10300,6 +17622,7 @@ class MjxJuggleEnv:
             arm_limiter_pen=arm_limiter_pen,
             bpos=bpos,
             bvel=bvel,
+            step_start_ball_velocity_m_s=step_start_ball_velocity_m_s,
             rpos=rpos,
             rvel=rvel,
             racket_vertical_acc=racket_vertical_acc,
@@ -10313,9 +17636,20 @@ class MjxJuggleEnv:
             racket_normal=racket_normal,
             predicted_apex_z=predicted_apex_z,
             hit_count=hit_count,
+            previous_late_apex_error_m=state.late_physical_prev_apex_error_m,
+            previous_late_apex_signed_error_m=(
+                state.late_physical_prev_signed_apex_error_m
+            ),
+            previous_late_apex_valid=state.late_physical_prev_apex_valid,
+            episode_time_s=current_time,
+            racket_launch_hold_active=racket_launch_hold_active,
             new_hit=launched_upward,
             physical_contact_edge=hit_edge,
+            pending_hit=pending_hit,
+            pending_hit_steps=pending_steps,
             low_survival_launch=low_survival_launch,
+            subfloor_launch=subfloor_launch,
+            ball_radius_m=state.model.geom_size[:, self.ball_geom_id, 0],
             rewardable_hit=rewardable_hit,
             failed_hit=failed_hit,
             ignored_fast_hit=ignored_fast_hit,
@@ -10337,6 +17671,7 @@ class MjxJuggleEnv:
             prev_arm_qvel=state.prev_arm_qvel,
             racket_anchor=state.racket_anchor,
             chest_target_offset=state.chest_target_offset,
+            reset_falling_contact_active=state.reset_falling_contact_active,
             hit_cycle_eligible=cycle_eligible,
             hit_cycle_q_pen=hit_cycle_q_pen,
             hit_cycle_q_error_max_rad=jnp.max(cycle_q_abs_delta, axis=-1),
@@ -10366,12 +17701,329 @@ class MjxJuggleEnv:
             hit_racket_local_xz_angular_speed_at_contact=(
                 pending_hit_racket_local_xz_angular_speed
             ),
+            hit_racket_pose_error_at_contact=(
+                pending_hit_racket_pose_error
+            ),
             hit_contact_center_dist_at_contact=(
                 pending_hit_contact_center_dist
             ),
+            hit_racket_xy_at_contact=pending_hit_racket_xy,
             hit_ball_z_at_contact=pending_hit_ball_z,
             hit_racket_z_at_contact=pending_hit_racket_z,
+            fixed_contact_policy_target=step_start_contact_target,
         )
+        if self.cfg.fixed_plane_v69_failed_first_peak_vz_reward_weight > 0.0:
+            reward = reward + failed_first_peak_vz_credit
+            reward_terms = dict(reward_terms)
+            reward_terms["fixed_plane_v69_failed_first_peak_vz_credit"] = (
+                failed_first_peak_vz_credit
+            )
+            reward_terms["metric/v69_failed_first_peak_ball_vz_m_s"] = jnp.where(
+                failed_hit & (state.hit_count == 0),
+                failed_first_peak_vz_for_credit,
+                0.0,
+            )
+            reward_terms["total"] = reward
+
+        if self.cfg.fixed_plane_v75_post_hit_target_progress_weight > 0.0:
+            (
+                same_target_progress_reward,
+                same_target_progress_active,
+                same_target_error_before_m,
+                same_target_error_after_m,
+            ) = post_hit_same_target_xy_progress_reward(
+                target_xy_m=step_start_contact_target.position_m[:, :2],
+                racket_xy_before_m=state.data.site_xpos[:, self.racket_site_id, :2],
+                racket_xy_after_m=rpos[:, :2],
+                target_valid=step_start_contact_target.valid,
+                hit_count=state.hit_count,
+                pending_hit=state.pending_hit,
+                in_contact=in_contact,
+                time_to_contact_s=step_start_contact_target.time_to_contact_s,
+                lead_s=float(self.cfg.fixed_plane_v75_post_hit_target_progress_lead_s),
+                weight=float(self.cfg.fixed_plane_v75_post_hit_target_progress_weight),
+                max_step_m=float(self.cfg.fixed_plane_v75_post_hit_target_progress_max_step_m),
+                min_hit_count=int(self.cfg.fixed_plane_v75_post_hit_target_progress_min_hit_count),
+            )
+            reward = reward + same_target_progress_reward
+            reward_terms = dict(reward_terms)
+            reward_terms["fixed_plane_v75_same_target_progress"] = (
+                same_target_progress_reward
+            )
+            reward_terms["metric/v75_same_target_progress_active"] = (
+                same_target_progress_active.astype(jnp.float32)
+            )
+            reward_terms["metric/v75_same_target_error_before_m"] = jnp.where(
+                same_target_progress_active, same_target_error_before_m, 0.0
+            )
+            reward_terms["metric/v75_same_target_error_after_m"] = jnp.where(
+                same_target_progress_active, same_target_error_after_m, 0.0
+            )
+            reward_terms["total"] = reward
+
+        if self.cfg.fixed_plane_v115_third_hit_bonus_weight > 0.0:
+            third_hit_bridge_bonus = third_confirmed_hit_bridge_bonus(
+                confirmed_hit=counted_hit,
+                previous_hit_count=state.hit_count,
+                weight=float(self.cfg.fixed_plane_v115_third_hit_bonus_weight),
+            )
+            reward = reward + third_hit_bridge_bonus
+            reward_terms = dict(reward_terms)
+            reward_terms["fixed_plane_v115_third_hit_bridge_bonus"] = (
+                third_hit_bridge_bonus
+            )
+            reward_terms["total"] = reward
+
+        if self.cfg.fixed_plane_v116_post_second_intercept_weight_per_s > 0.0:
+            intercept_penalty, intercept_active = post_second_intercept_error_penalty(
+                target_xy_m=step_start_contact_target.position_m[:, :2],
+                racket_xy_m=rpos[:, :2],
+                target_valid=step_start_contact_target.valid,
+                previous_hit_count=state.hit_count,
+                pending_hit=state.pending_hit,
+                in_contact=in_contact,
+                time_to_contact_s=step_start_contact_target.time_to_contact_s,
+                weight_per_s=float(self.cfg.fixed_plane_v116_post_second_intercept_weight_per_s),
+                sigma_m=float(self.cfg.fixed_plane_v116_post_second_intercept_sigma_m),
+                window_s=float(self.cfg.fixed_plane_v116_post_second_intercept_window_s),
+                dt_s=float(self.dt),
+            )
+            reward = reward + intercept_penalty
+            reward_terms = dict(reward_terms)
+            reward_terms["fixed_plane_v116_post_second_intercept_penalty"] = intercept_penalty
+            reward_terms["metric/v116_post_second_intercept_active"] = (
+                intercept_active.astype(jnp.float32)
+            )
+            reward_terms["total"] = reward
+
+        if self.cfg.fixed_plane_v118_post_second_clearance_weight > 0.0:
+            post_second_clearance_reward = post_second_pending_clearance_credit(
+                pending_hit=pending_hit,
+                failed_hit=failed_hit,
+                previous_hit_count=state.hit_count,
+                ball_vz_m_s=bvel[:, 2],
+                relative_z_m=rel[:, 2],
+                previous_relative_z_m=previous_rel_z,
+                contact_baseline_relative_z_m=(
+                    pending_hit_ball_z - pending_hit_racket_z
+                ),
+                confirm_relative_z_m=min_launch_rel_z,
+                weight=float(self.cfg.fixed_plane_v118_post_second_clearance_weight),
+            )
+            reward = reward + post_second_clearance_reward
+            reward_terms = dict(reward_terms)
+            reward_terms["fixed_plane_v118_post_second_clearance_credit"] = (
+                post_second_clearance_reward
+            )
+            reward_terms["total"] = reward
+
+        if self.cfg.fixed_plane_v118_post_second_retract_weight_per_s > 0.0:
+            post_second_retract_reward, post_second_retract_active = (
+                post_second_pending_retract_reward(
+                    racket_vz_m_s=racket_contact_point_velocity[:, 2],
+                    pending_hit=pending_hit,
+                    pending_hit_steps=pending_steps,
+                    previous_hit_count=state.hit_count,
+                    target_retract_vz_m_s=float(
+                        self.cfg.fixed_plane_v118_post_second_retract_target_m_s
+                    ),
+                    active_window_s=float(
+                        self.cfg.fixed_plane_v118_post_second_retract_window_s
+                    ),
+                    reward_weight_per_s=float(
+                        self.cfg.fixed_plane_v118_post_second_retract_weight_per_s
+                    ),
+                    dt_s=float(self.dt),
+                )
+            )
+            reward = reward + post_second_retract_reward
+            reward_terms = dict(reward_terms)
+            reward_terms["fixed_plane_v118_post_second_retract_reward"] = (
+                post_second_retract_reward
+            )
+            reward_terms["metric/v118_post_second_retract_active"] = (
+                post_second_retract_active.astype(jnp.float32)
+            )
+            reward_terms["total"] = reward
+
+        third_release_claimed = state.fixed_plane_v122_third_release_claimed
+        if self.cfg.fixed_plane_v122_third_release_vz_weight > 0.0:
+            (
+                third_release_reward,
+                third_release_active,
+                third_release_score,
+                third_release_claimed,
+            ) = first_third_release_vz_credit(
+                release_event=collision_outcome_release_event,
+                previous_hit_count=state.hit_count,
+                previous_pending_hit=state.pending_hit,
+                previous_contact_time_s=(
+                    state.collision_outcome_pending_contact_time_s
+                ),
+                last_counted_hit_time_s=state.last_counted_hit_time,
+                previous_claimed=third_release_claimed,
+                outgoing_ball_vz_m_s=bvel[:, 2],
+                target_vz_m_s=float(
+                    self.cfg.fixed_plane_v122_third_release_vz_target_m_s
+                ),
+                weight=float(self.cfg.fixed_plane_v122_third_release_vz_weight),
+            )
+            reward = reward + third_release_reward
+            reward_terms = dict(reward_terms)
+            reward_terms["fixed_plane_v122_third_release_vz_credit"] = (
+                third_release_reward
+            )
+            reward_terms["metric/v122_third_release_active"] = (
+                third_release_active.astype(jnp.float32)
+            )
+            reward_terms["metric/v122_third_release_vz_score"] = jnp.where(
+                third_release_active, third_release_score, 0.0
+            )
+            reward_terms["total"] = reward
+
+        if (
+            self.cfg.fixed_plane_v124_edge_z_penalty_weight > 0.0
+            or self.cfg.fixed_plane_v124_edge_vz_reward_weight > 0.0
+        ):
+            (
+                third_edge_preparation_reward,
+                third_edge_preparation_active,
+                third_edge_z_penalty,
+                third_edge_vz_credit,
+            ) = first_third_edge_preparation_reward(
+                raw_physical_edge=raw_physical_contact_edge,
+                previous_hit_count=state.hit_count,
+                previous_pending=state.pending_hit,
+                previous_physical_contact_time_s=(
+                    state.collision_outcome_pending_contact_time_s
+                ),
+                last_counted_hit_time_s=state.last_counted_hit_time,
+                racket_z_m=rpos[:, 2],
+                racket_contact_vz_m_s=racket_contact_point_velocity[:, 2],
+                lower_target_z_m=float(self.cfg.fixed_plane_v124_edge_z_target_m),
+                upper_bound_z_m=float(self.cfg.fixed_contact_racket_z_bounds_m[1]),
+                z_penalty_weight=float(self.cfg.fixed_plane_v124_edge_z_penalty_weight),
+                vz_floor_m_s=float(self.cfg.fixed_plane_v124_edge_vz_floor_m_s),
+                vz_target_m_s=float(self.cfg.fixed_plane_v124_edge_vz_target_m_s),
+                vz_reward_weight=float(self.cfg.fixed_plane_v124_edge_vz_reward_weight),
+            )
+            reward = reward + third_edge_preparation_reward
+            reward_terms = dict(reward_terms)
+            reward_terms["fixed_plane_v124_third_edge_preparation"] = (
+                third_edge_preparation_reward
+            )
+            reward_terms["fixed_plane_v124_edge_z_penalty"] = (
+                third_edge_z_penalty
+            )
+            reward_terms["fixed_plane_v124_edge_vz_credit"] = (
+                third_edge_vz_credit
+            )
+            reward_terms["metric/v124_third_edge_active"] = (
+                third_edge_preparation_active.astype(jnp.float32)
+            )
+            reward_terms["total"] = reward
+
+        if self.cfg.fixed_plane_v120_third_edge_outgoing_vz_weight > 0.0:
+            third_edge_outgoing_vz_reward, third_edge_active, third_edge_vz_score = (
+                third_first_physical_edge_outgoing_vz_credit(
+                    raw_physical_edge=raw_physical_contact_edge,
+                    previous_hit_count=state.hit_count,
+                    previous_pending=state.pending_hit,
+                    previous_physical_contact_time_s=(
+                        state.collision_outcome_pending_contact_time_s
+                    ),
+                    last_counted_hit_time_s=state.last_counted_hit_time,
+                    outgoing_ball_vz_m_s=bvel[:, 2],
+                    target_vz_m_s=float(
+                        self.cfg.fixed_plane_v120_third_edge_outgoing_vz_target_m_s
+                    ),
+                    weight=float(self.cfg.fixed_plane_v120_third_edge_outgoing_vz_weight),
+                    floor_vz_m_s=float(
+                        self.cfg.fixed_plane_v121_third_edge_outgoing_vz_floor_m_s
+                    ),
+                )
+            )
+            reward = reward + third_edge_outgoing_vz_reward
+            reward_terms = dict(reward_terms)
+            reward_terms["fixed_plane_v120_third_edge_outgoing_vz_credit"] = (
+                third_edge_outgoing_vz_reward
+            )
+            reward_terms["metric/v120_third_edge_active"] = (
+                third_edge_active.astype(jnp.float32)
+            )
+            reward_terms["metric/v120_third_edge_vz_score"] = jnp.where(
+                third_edge_active, third_edge_vz_score, 0.0
+            )
+            reward_terms["total"] = reward
+
+        if self.cfg.fixed_plane_v77_first_peak_vz_weight > 0.0:
+            first_confirmed_peak_vz_reward = first_confirmed_peak_vz_credit(
+                peak_vz_m_s=failed_first_peak_vz_for_credit,
+                confirmed_hit=counted_hit,
+                previous_hit_count=state.hit_count,
+                weight=float(self.cfg.fixed_plane_v77_first_peak_vz_weight),
+                target_vz_m_s=float(
+                    self.cfg.fixed_plane_v77_first_peak_vz_target_m_s
+                ),
+            )
+            reward = reward + first_confirmed_peak_vz_reward
+            reward_terms = dict(reward_terms)
+            reward_terms["fixed_plane_v77_first_confirmed_peak_vz"] = (
+                first_confirmed_peak_vz_reward
+            )
+            reward_terms["metric/v77_first_confirmed_peak_vz_m_s"] = jnp.where(
+                counted_hit & (state.hit_count == 0),
+                failed_first_peak_vz_for_credit,
+                0.0,
+            )
+            reward_terms["total"] = reward
+
+        if self.cfg.fixed_plane_v78_first_resolved_peak_vz_weight > 0.0:
+            first_resolved_upward_launch = (
+                counted_hit | low_survival_launch | subfloor_launch
+            )
+            prior_first_credit_paid = first_failed_launch_credit_paid
+            (
+                first_resolved_peak_vz_reward,
+                first_failed_launch_credit_paid,
+            ) = first_resolved_launch_peak_vz_credit(
+                peak_vz_m_s=failed_first_peak_vz_for_credit,
+                resolved_upward_launch=first_resolved_upward_launch,
+                previous_hit_count=state.hit_count,
+                previous_credit_paid=prior_first_credit_paid,
+                weight=float(
+                    self.cfg.fixed_plane_v78_first_resolved_peak_vz_weight
+                ),
+                target_vz_m_s=float(
+                    self.cfg.fixed_plane_v78_first_resolved_peak_vz_target_m_s
+                ),
+            )
+            rewarded_resolved_launch = (
+                first_resolved_upward_launch
+                & (state.hit_count == 0)
+                & (~prior_first_credit_paid)
+            )
+            reward = reward + first_resolved_peak_vz_reward
+            reward_terms = dict(reward_terms)
+            reward_terms["fixed_plane_v78_first_resolved_peak_vz"] = (
+                first_resolved_peak_vz_reward
+            )
+            reward_terms["metric/v78_first_resolved_event"] = (
+                rewarded_resolved_launch.astype(jnp.float32)
+            )
+            reward_terms["metric/v78_first_resolved_weak_event"] = (
+                rewarded_resolved_launch
+                & (low_survival_launch | subfloor_launch)
+            ).astype(jnp.float32)
+            reward_terms["metric/v78_first_resolved_peak_vz_m_s"] = jnp.where(
+                rewarded_resolved_launch,
+                failed_first_peak_vz_for_credit,
+                0.0,
+            )
+            reward_terms["metric/v78_first_resolved_apex_z_m"] = jnp.where(
+                rewarded_resolved_launch, predicted_apex_z, 0.0
+            )
+            reward_terms["total"] = reward
 
         measured_hit_ball_z, _ = select_hit_contact_heights_jax(
             bpos[:, 2],
@@ -10380,6 +18032,59 @@ class MjxJuggleEnv:
             pending_hit_racket_z,
             self.hit_contact_height_measurement_mode,
         )
+        late_physical_prev_apex_error_m = state.late_physical_prev_apex_error_m
+        late_physical_prev_signed_apex_error_m = (
+            state.late_physical_prev_signed_apex_error_m
+        )
+        late_physical_prev_apex_valid = state.late_physical_prev_apex_valid
+        if (
+            self.cfg.fixed_plane_v58_apex_error_expansion_weight > 0.0
+            or self.cfg.fixed_plane_v80_steady_height_weight > 0.0
+        ):
+            late_physical_event = (
+                (launched_upward | ignored_fast_hit | low_survival_launch | subfloor_launch)
+                & (state.hit_count >= 3)
+            )
+            late_physical_prev_apex_error_m = jnp.where(
+                late_physical_event,
+                jnp.abs(predicted_apex_z - float(
+                    self.cfg.fixed_plane_limit_cycle_steady_apex_z_m
+                )),
+                late_physical_prev_apex_error_m,
+            )
+            if (
+                self.cfg.fixed_plane_v63_previous_apex_error_obs_enabled
+                or self.cfg.fixed_plane_v80_steady_height_weight > 0.0
+            ):
+                late_physical_prev_signed_apex_error_m = jnp.where(
+                    late_physical_event,
+                    predicted_apex_z - float(
+                        self.cfg.fixed_plane_limit_cycle_steady_apex_z_m
+                    ),
+                    late_physical_prev_signed_apex_error_m,
+                )
+            late_physical_prev_apex_valid = (
+                late_physical_prev_apex_valid | late_physical_event
+            )
+        late_physical_weak_streak = state.late_physical_weak_streak
+        late_weak_streak_failed = jnp.zeros_like(hit_count, dtype=bool)
+        if self.cfg.fixed_plane_v60_late_weak_streak_limit > 0:
+            from fixed_plane_v60 import late_weak_streak_transition
+
+            late_physical_weak_streak, late_weak_streak_failed = (
+                late_weak_streak_transition(
+                    previous=state.late_physical_weak_streak,
+                    weak_event=(
+                        (low_survival_launch | subfloor_launch)
+                        & (state.hit_count >= 3)
+                    ),
+                    good_event=(
+                        (launched_upward | ignored_fast_hit)
+                        & (state.hit_count >= 3)
+                    ),
+                    limit=int(self.cfg.fixed_plane_v60_late_weak_streak_limit),
+                )
+            )
         rewardable_hit_apex_abs_sum = (
             state.rewardable_hit_apex_abs_sum
             + jnp.where(rewardable_hit, predicted_apex_z, 0.0)
@@ -10411,6 +18116,26 @@ class MjxJuggleEnv:
 
         arm_qvel = data.qvel[:, self.arm_vadr]
         terminated, done_terms = self._termination_terms(data, bpos, rpos, state.racket_anchor)
+        failed_confirmation_termination = (
+            failed_hit
+            & bool(getattr(
+                self.cfg,
+                "hit_failed_confirmation_termination_enabled",
+                False,
+            ))
+        )
+        terminated = (
+            terminated
+            | pending_recontact_edge
+            | failed_confirmation_termination
+            | late_weak_streak_failed
+        )
+        done_terms = dict(done_terms)
+        done_terms["late_weak_streak"] = late_weak_streak_failed
+        done_terms["pending_hit_recontact"] = pending_recontact_edge
+        done_terms["failed_hit_confirmation"] = (
+            failed_confirmation_termination
+        )
         hit_racket_vxy_constraint_threshold = float(
             self.cfg.hit_racket_vxy_constraint_threshold_m_s
         )
@@ -10424,7 +18149,6 @@ class MjxJuggleEnv:
             & (pending_hit_racket_vxy > hit_racket_vxy_constraint_threshold)
         )
         terminated = terminated | hit_racket_vxy_exceeded
-        done_terms = dict(done_terms)
         done_terms["hit_racket_vxy_exceeded"] = hit_racket_vxy_exceeded
         hit_racket_vxy_constraint_excess = jnp.maximum(
             pending_hit_racket_vxy - hit_racket_vxy_constraint_threshold,
@@ -10499,6 +18223,245 @@ class MjxJuggleEnv:
         )
         terminated = terminated | hit_curriculum_complete
         done_terms["hit_curriculum_complete"] = hit_curriculum_complete
+        fixed_contact_first_hit_timeout = jnp.zeros_like(
+            terminated, dtype=jnp.bool_
+        )
+        if self.fixed_contact_plane_training_enabled:
+            fixed_contact_first_hit_timeout = (
+                fixed_contact_first_hit_timeout_mask(
+                    hit_count=hit_count,
+                    pending_hit=pending_hit,
+                    episode_time_s=current_time,
+                    deadline_s=float(
+                        self.cfg.fixed_contact_first_hit_deadline_s
+                    ),
+                )
+            )
+            terminated = terminated | fixed_contact_first_hit_timeout
+        done_terms["fixed_contact_first_hit_timeout"] = (
+            fixed_contact_first_hit_timeout
+        )
+        fixed_contact_recurrent_hit_timeout = jnp.zeros_like(
+            terminated, dtype=jnp.bool_
+        )
+        if self.fixed_contact_plane_training_enabled:
+            fixed_contact_recurrent_hit_timeout = (
+                fixed_contact_recurrent_hit_timeout_mask(
+                    hit_count=hit_count,
+                    pending_hit=pending_hit,
+                    new_counted_hit=counted_hit,
+                    time_since_counted_hit_s=time_since_counted_hit,
+                    deadline_s=float(
+                        self.cfg.fixed_contact_recurrent_hit_deadline_s
+                    ),
+                )
+            )
+            terminated = terminated | fixed_contact_recurrent_hit_timeout
+        done_terms["fixed_contact_recurrent_hit_timeout"] = (
+            fixed_contact_recurrent_hit_timeout
+        )
+        fixed_contact_arrival_complete = jnp.zeros_like(
+            terminated, dtype=jnp.bool_
+        )
+        fixed_contact_arrived_hit_complete = jnp.zeros_like(
+            terminated, dtype=jnp.bool_
+        )
+        fixed_contact_post_hit_recovery_complete = jnp.zeros_like(
+            terminated, dtype=jnp.bool_
+        )
+        fixed_contact_return_basin_complete = jnp.zeros_like(
+            terminated, dtype=jnp.bool_
+        )
+        if self.fixed_contact_plane_training_enabled and hasattr(
+            self.cfg, "fixed_contact_skill_mode"
+        ):
+            arrival_lane = (
+                state.fixed_contact_skill_mode_id
+                == FIXED_CONTACT_SKILL_MODE_ARRIVAL_ONLY
+            )
+            arrived_hit_lane = (
+                state.fixed_contact_skill_mode_id
+                == FIXED_CONTACT_SKILL_MODE_ARRIVED_HIT
+            )
+            fixed_contact_arrival_complete = arrival_lane & (
+                (~step_start_contact_target.valid)
+                | (
+                    step_start_contact_target.time_to_contact_s
+                    <= float(self.cfg.fixed_contact_arrival_terminate_ttc_s)
+                )
+            )
+            fixed_contact_arrived_hit_complete = arrived_hit_lane & counted_hit
+            terminated = (
+                terminated
+                | fixed_contact_arrival_complete
+                | fixed_contact_arrived_hit_complete
+            )
+            if bool(getattr(
+                self.cfg,
+                "fixed_contact_post_hit_recovery_lesson_enabled",
+                False,
+            )):
+                ball_above_surface = (
+                    jnp.sum(rel * racket_normal, axis=-1)
+                    - state.model.geom_size[:, self.ball_geom_id, 0]
+                )
+                recovery_surface_position = (
+                    data.geom_xpos[:, self.racket_geom_id]
+                    + racket_normal
+                    * state.model.geom_size[
+                        :,
+                        self.racket_geom_id,
+                        int(self.cfg.fixed_contact_racket_surface_size_axis),
+                    ][:, None]
+                )
+                recovery_surface_velocity = rvel + jnp.cross(
+                    racket_angular_velocity,
+                    recovery_surface_position - rpos,
+                )
+                use_policy_target = bool(getattr(
+                    self.cfg,
+                    "fixed_contact_post_hit_recovery_use_policy_target",
+                    False,
+                ))
+                recovery_errors = (
+                    fixed_contact_post_hit_recovery_reference_errors(
+                        racket_site_position_m=rpos,
+                        racket_surface_position_m=recovery_surface_position,
+                        racket_site_velocity_m_s=rvel,
+                        racket_surface_velocity_m_s=(
+                            recovery_surface_velocity
+                        ),
+                        racket_anchor_m=state.racket_anchor,
+                        policy_target_position_m=(
+                            step_start_contact_target.position_m
+                        ),
+                        use_policy_target=use_policy_target,
+                    )
+                )
+                fixed_contact_post_hit_recovery_complete = (
+                    fixed_contact_post_hit_recovery_success_mask(
+                        hit_count=hit_count,
+                        in_contact=in_contact,
+                        ball_above_racket_surface_m=ball_above_surface,
+                        racket_z_error_m=recovery_errors.z_error_m,
+                        racket_pose_error_rad=contact_racket_pose_error,
+                        time_since_counted_hit_s=time_since_counted_hit,
+                        min_elapsed_s=float(
+                            self.cfg.fixed_contact_post_hit_recovery_min_elapsed_s
+                        ),
+                        min_surface_gap_m=float(
+                            self.cfg.fixed_contact_post_hit_recovery_min_surface_gap_m
+                        ),
+                        max_racket_z_error_m=float(
+                            self.cfg.fixed_contact_post_hit_recovery_max_racket_z_error_m
+                        ),
+                        max_racket_pose_error_rad=float(
+                            self.cfg.fixed_contact_post_hit_recovery_max_pose_error_rad
+                        ),
+                        require_full_readiness=bool(
+                            self.cfg.fixed_contact_post_hit_recovery_require_full_readiness
+                        ),
+                        racket_xy_error_m=recovery_errors.xy_error_m,
+                        racket_vxy_m_s=recovery_errors.vxy_m_s,
+                        racket_omega_rad_s=racket_angular_speed,
+                        max_racket_xy_error_m=float(
+                            self.cfg.fixed_contact_s0_ready_max_xy_error_m
+                        ),
+                        max_racket_vxy_m_s=float(
+                            self.cfg.fixed_contact_s0_ready_max_vxy_m_s
+                        ),
+                        max_racket_omega_rad_s=float(
+                            self.cfg.fixed_contact_s0_ready_max_omega_rad_s
+                        ),
+                        require_vertical_stability=bool(getattr(
+                            self.cfg,
+                            "fixed_contact_post_hit_recovery_require_vertical_stability",
+                            False,
+                        )),
+                        racket_vz_m_s=recovery_surface_velocity[:, 2],
+                        max_racket_vz_m_s=float(getattr(
+                            self.cfg,
+                            "fixed_contact_post_hit_recovery_max_vz_m_s",
+                            0.080,
+                        )),
+                        min_confirmed_hits=int(getattr(
+                            self.cfg,
+                            "fixed_contact_post_hit_recovery_min_confirmed_hits",
+                            1,
+                        )),
+                        require_reference_readiness=bool(getattr(
+                            self.cfg,
+                            "fixed_contact_post_hit_recovery_require_reference_readiness",
+                            True,
+                        )),
+                    )
+                )
+                if use_policy_target:
+                    fixed_contact_post_hit_recovery_complete = (
+                        fixed_contact_post_hit_recovery_complete
+                        & step_start_contact_target.valid
+                    )
+            if bool(getattr(
+                self.cfg,
+                "fixed_contact_return_basin_lesson_enabled",
+                False,
+            )):
+                fixed_contact_return_basin_complete = (
+                    fixed_contact_return_basin_success_mask(
+                        hit_count=hit_count,
+                        crossing_valid=step_start_contact_target.valid,
+                        time_to_contact_s=(
+                            step_start_contact_target.time_to_contact_s
+                        ),
+                        in_contact=in_contact,
+                        target_ttc_s=float(
+                            self.cfg.fixed_contact_return_basin_ttc_s
+                        ),
+                        control_dt_s=self.dt,
+                    )
+                )
+            terminated = (
+                terminated
+                | fixed_contact_post_hit_recovery_complete
+                | fixed_contact_return_basin_complete
+            )
+            post_hit_recovery_success_reward = jnp.where(
+                fixed_contact_post_hit_recovery_complete,
+                float(
+                    self.cfg.fixed_contact_post_hit_recovery_success_weight
+                ),
+                0.0,
+            )
+            return_basin_success_reward = jnp.where(
+                fixed_contact_return_basin_complete,
+                float(self.cfg.fixed_contact_return_basin_success_weight),
+                0.0,
+            )
+            reward = (
+                reward
+                + post_hit_recovery_success_reward
+                + return_basin_success_reward
+            )
+            reward_terms = dict(reward_terms)
+            reward_terms["fixed_contact_post_hit_recovery_success_reward"] = (
+                post_hit_recovery_success_reward
+            )
+            reward_terms["fixed_contact_return_basin_success_reward"] = (
+                return_basin_success_reward
+            )
+            reward_terms["total"] = reward
+        done_terms["fixed_contact_arrival_complete"] = (
+            fixed_contact_arrival_complete
+        )
+        done_terms["fixed_contact_arrived_hit_complete"] = (
+            fixed_contact_arrived_hit_complete
+        )
+        done_terms["fixed_contact_post_hit_recovery_complete"] = (
+            fixed_contact_post_hit_recovery_complete
+        )
+        done_terms["fixed_contact_return_basin_complete"] = (
+            fixed_contact_return_basin_complete
+        )
         ball_miss = (
             done_terms["ball_too_low"]
             | done_terms["ball_too_high"]
@@ -10510,8 +18473,31 @@ class MjxJuggleEnv:
             | done_terms["ball_view_y_too_high"]
             | done_terms["ball_view_z_too_low"]
             | done_terms["ball_view_z_too_high"]
+            | fixed_contact_first_hit_timeout
+            | fixed_contact_recurrent_hit_timeout
+            | late_weak_streak_failed
         )
-        racket_limit_done = done_terms["racket_too_high"] | done_terms["racket_too_low"]
+        racket_limit_done = (
+            done_terms["racket_too_high"]
+            | done_terms["racket_too_low"]
+        )
+        fixed_contact_workspace_done = jnp.zeros_like(
+            racket_limit_done, dtype=jnp.bool_
+        )
+        if (
+            self.fixed_contact_plane_training_enabled
+            and bool(
+                self.cfg.fixed_contact_workspace_termination_penalty_enabled
+            )
+        ):
+            fixed_contact_workspace_done = (
+                fixed_contact_racket_workspace_termination_mask_jax(
+                    done_terms
+                )
+            )
+            racket_limit_done = (
+                racket_limit_done | fixed_contact_workspace_done
+            )
         ball_miss_penalty_active = ball_miss & (
             (hit_count > 0)
             | (not bool(self.cfg.termination_miss_penalty_requires_hit))
@@ -10552,9 +18538,54 @@ class MjxJuggleEnv:
             0.0,
         )
         truncated = step_count >= state.episode_limit
+        post_hit_recovery_timeout_penalty = (
+            fixed_contact_post_hit_recovery_timeout_penalty(
+                truncated=truncated,
+                lesson_enabled=bool(getattr(
+                    self.cfg,
+                    "fixed_contact_post_hit_recovery_lesson_enabled",
+                    False,
+                )),
+                recovery_complete=fixed_contact_post_hit_recovery_complete,
+                weight=float(getattr(
+                    self.cfg,
+                    "fixed_contact_post_hit_recovery_timeout_penalty_weight",
+                    0.0,
+                )),
+            )
+        )
+        post_hit_recovery_failure_penalty = (
+            fixed_contact_post_hit_recovery_failure_penalty(
+                terminated=terminated,
+                truncated=truncated,
+                lesson_enabled=bool(getattr(
+                    self.cfg,
+                    "fixed_contact_post_hit_recovery_lesson_enabled",
+                    False,
+                )),
+                recovery_complete=fixed_contact_post_hit_recovery_complete,
+                weight=float(getattr(
+                    self.cfg,
+                    "fixed_contact_post_hit_recovery_failure_penalty_weight",
+                    0.0,
+                )),
+            )
+        )
+        penalty_terminated = terminated
+        if self.fixed_contact_plane_training_enabled:
+            # S1/S2 deliberately terminate on the first confirmed hit.  That
+            # is task success, not an early failure with unfinished horizon.
+            penalty_terminated = failure_only_termination_mask_jax(
+                terminated,
+                hit_curriculum_complete
+                | fixed_contact_arrival_complete
+                | fixed_contact_arrived_hit_complete
+                | fixed_contact_post_hit_recovery_complete
+                | fixed_contact_return_basin_complete,
+            )
         early_termination_remaining_horizon_penalty = (
             early_termination_remaining_horizon_penalty_jax(
-                terminated,
+                penalty_terminated,
                 step_count,
                 episode_limit=state.episode_limit,
                 weight=float(
@@ -10589,8 +18620,206 @@ class MjxJuggleEnv:
                 ),
             )
         )
+        v94_pending_recontact_miss_penalty = jnp.zeros_like(reward)
+        v94_first_hit_apex_credit = jnp.zeros_like(reward)
+        v94_first_hit_early_failure_penalty = jnp.zeros_like(reward)
+        v95_early_hit_apex_bridge = jnp.zeros_like(reward)
+        v96_second_hit_viability_adjustment = jnp.zeros_like(reward)
+        v106_first_launch_progress_credit = jnp.zeros_like(reward)
+        v107_first_height_progress_credit = jnp.zeros_like(reward)
+        v108_first_contact_lift_credit = jnp.zeros_like(reward)
+        v106_post_hit_quiet_credit = jnp.zeros_like(reward)
+        v106_first_hit_promptness_credit = jnp.zeros_like(reward)
+        if float(self.cfg.fixed_plane_v94_first_hit_early_failure_weight) > 0.0:
+            v94_first_hit_early_failure_penalty = (
+                first_hit_early_failure_penalty(
+                    failed_termination=penalty_terminated,
+                    hit_count=hit_count,
+                    elapsed_time_s=step_count.astype(jnp.float32) * self.dt,
+                    weight=float(
+                        self.cfg.fixed_plane_v94_first_hit_early_failure_weight
+                    ),
+                    window_s=float(
+                        self.cfg.fixed_plane_v94_first_hit_early_failure_window_s
+                    ),
+                )
+            )
+        if bool(self.cfg.fixed_plane_v94_pending_recontact_as_miss):
+            v94_pending_recontact_miss_penalty = (
+                pending_recontact_miss_equivalent(
+                    pending_recontact=pending_recontact_edge,
+                    ball_miss=ball_miss,
+                    confirmed_hits_before_event=state.hit_count,
+                    miss_penalty=float(self.cfg.termination_miss_penalty_base),
+                )
+            )
+        if float(self.cfg.fixed_plane_v94_first_hit_apex_reward_weight) > 0.0:
+            v94_first_hit_apex_credit = first_confirmed_apex_credit(
+                counted_hit=counted_hit,
+                confirmed_hits_before_event=state.hit_count,
+                predicted_apex_z_m=predicted_apex_z,
+                target_apex_z_m=(
+                    self._fixed_plane_limit_cycle_desired_apex_z_m(
+                        state.hit_count
+                    )
+                ),
+                weight=float(
+                    self.cfg.fixed_plane_v94_first_hit_apex_reward_weight
+                ),
+                sigma_m=float(self.cfg.fixed_plane_v94_first_hit_apex_sigma_m),
+            )
+        if float(self.cfg.fixed_plane_v106_first_launch_progress_weight) > 0.0:
+            from fixed_plane_v106 import first_launch_clearance_credit
+
+            v106_first_launch_progress_credit = first_launch_clearance_credit(
+                pending_hit=pending_hit,
+                failed_hit=failed_hit,
+                confirmed_hits_before_event=state.hit_count,
+                ball_vz_m_s=bvel[:, 2],
+                relative_z_m=rel[:, 2],
+                previous_relative_z_m=previous_rel_z,
+                launch_baseline_relative_z_m=(
+                    state.reset_ball_pos[:, 2] - state.racket_anchor[:, 2]
+                ),
+                confirm_relative_z_m=min_launch_rel_z,
+                weight=float(self.cfg.fixed_plane_v106_first_launch_progress_weight),
+            )
+        if float(self.cfg.fixed_plane_v107_first_height_progress_weight) > 0.0:
+            from fixed_plane_v107 import first_launch_height_progress_credit
+
+            v107_first_height_progress_credit = (
+                first_launch_height_progress_credit(
+                    pending_hit=pending_hit,
+                    failed_hit=failed_hit,
+                    confirmed_hits_before_event=state.hit_count,
+                    ball_z_m=bpos[:, 2],
+                    previous_ball_z_m=state.prev_ball_pos[:, 2],
+                    reset_ball_z_m=state.reset_ball_pos[:, 2],
+                    target_lift_m=float(
+                        self.cfg.fixed_plane_v107_first_height_progress_target_lift_m
+                    ),
+                    weight=float(
+                        self.cfg.fixed_plane_v107_first_height_progress_weight
+                    ),
+                )
+            )
+        if float(self.cfg.fixed_plane_v108_first_contact_lift_weight) > 0.0:
+            from fixed_plane_v108 import first_launch_contact_height_credit
+
+            v108_first_contact_lift_credit = (
+                first_launch_contact_height_credit(
+                    pending_before_resolution=pending_before_resolution,
+                    pending_started=pending_started,
+                    failed_hit=failed_hit,
+                    confirmed_hits_before_event=state.hit_count,
+                    ball_z_m=bpos[:, 2],
+                    previous_ball_z_m=state.prev_ball_pos[:, 2],
+                    contact_ball_z_m=jnp.where(
+                        state.pending_hit,
+                        state.pending_hit_ball_z,
+                        bpos[:, 2],
+                    ),
+                    target_lift_m=float(
+                        self.cfg.fixed_plane_v108_first_contact_lift_target_m
+                    ),
+                    weight=float(
+                        self.cfg.fixed_plane_v108_first_contact_lift_weight
+                    ),
+                )
+            )
+        if float(self.cfg.fixed_plane_v106_post_hit_quiet_weight) > 0.0:
+            from fixed_plane_v106 import post_hit_quiet_credit
+
+            v106_post_hit_quiet_credit = post_hit_quiet_credit(
+                hit_count=hit_count,
+                racket_vxy_m_s=jnp.linalg.norm(rvel[:, :2], axis=-1),
+                racket_omega_rad_s=racket_angular_speed,
+                vxy_sigma_m_s=float(
+                    self.cfg.fixed_contact_s0_vxy_reward_sigma_m_s
+                ),
+                omega_sigma_rad_s=float(
+                    self.cfg.fixed_contact_s0_omega_reward_sigma_rad_s
+                ),
+                weight=float(self.cfg.fixed_plane_v106_post_hit_quiet_weight),
+                dt_s=self.dt,
+            )
+        if float(self.cfg.fixed_plane_v106_first_hit_promptness_weight) > 0.0:
+            from fixed_plane_v106 import first_hit_promptness_credit
+
+            v106_first_hit_promptness_credit = first_hit_promptness_credit(
+                counted_hit=counted_hit,
+                confirmed_hits_before_event=state.hit_count,
+                elapsed_time_s=current_time,
+                weight=float(self.cfg.fixed_plane_v106_first_hit_promptness_weight),
+                time_scale_s=0.25,
+            )
+        if (
+            float(self.cfg.fixed_plane_v95_second_hit_apex_reward_weight) > 0.0
+            or float(self.cfg.fixed_plane_v95_third_hit_apex_reward_weight) > 0.0
+        ):
+            v95_early_hit_apex_bridge = early_confirmed_apex_bridge(
+                counted_hit=counted_hit,
+                confirmed_hits_before_event=state.hit_count,
+                predicted_apex_z_m=predicted_apex_z,
+                target_apex_z_m=(
+                    self._fixed_plane_limit_cycle_desired_apex_z_m(state.hit_count)
+                ),
+                second_weight=float(
+                    self.cfg.fixed_plane_v95_second_hit_apex_reward_weight
+                ),
+                third_weight=float(
+                    self.cfg.fixed_plane_v95_third_hit_apex_reward_weight
+                ),
+                sigma_m=float(self.cfg.fixed_plane_v95_early_hit_apex_sigma_m),
+                low_margin_m=float(self.cfg.fixed_plane_v95_early_hit_low_margin_m),
+                low_penalty_weight=float(
+                    self.cfg.fixed_plane_v95_early_hit_low_penalty_weight
+                ),
+            )
+        if float(self.cfg.fixed_plane_v96_second_hit_viability_weight) > 0.0:
+            v96_second_hit_viability_adjustment = (
+                second_hit_viability_adjustment(
+                    counted_hit=counted_hit,
+                    confirmed_hits_before_event=state.hit_count,
+                    predicted_apex_z_m=predicted_apex_z,
+                    target_apex_z_m=(
+                        self._fixed_plane_limit_cycle_desired_apex_z_m(
+                            state.hit_count
+                        )
+                    ),
+                    landing_error_m=reward_terms["metric/v34_landing_error_m"],
+                    outgoing_vxy_m_s=reward_terms["metric/v34_outgoing_vxy_m_s"],
+                    contact_height_error_m=(
+                        reward_terms["metric/v34_contact_height_error_m"]
+                    ),
+                    racket_vxy_m_s=reward_terms["metric/hit_racket_vxy_sum"],
+                    racket_omega_rad_s=(
+                        reward_terms["metric/hit_racket_full_angular_speed_rad_s"]
+                    ),
+                    weight=float(
+                        self.cfg.fixed_plane_v96_second_hit_viability_weight
+                    ),
+                    center=float(
+                        self.cfg.fixed_plane_v96_second_hit_viability_center
+                    ),
+                    reference_quality=float(
+                        self.cfg.fixed_plane_v96_second_hit_viability_reference_quality
+                    ),
+                    apex_sigma_m=float(self.cfg.fixed_plane_v95_early_hit_apex_sigma_m),
+                )
+            )
         reward = (
             reward
+            + v96_second_hit_viability_adjustment
+            + v95_early_hit_apex_bridge
+            + v94_pending_recontact_miss_penalty
+            + v94_first_hit_apex_credit
+            + v106_first_launch_progress_credit
+            + v107_first_height_progress_credit
+            + v108_first_contact_lift_credit
+            + v106_post_hit_quiet_credit
+            + v106_first_hit_promptness_credit
+            + v94_first_hit_early_failure_penalty
             + ball_miss_penalty
             + racket_limit_penalty
             + racket_anchor_penalty
@@ -10600,8 +18829,25 @@ class MjxJuggleEnv:
             + hit_racket_up_cos_constraint_penalty
             + full_episode_completion_reward
             + full_episode_joint_height_reward
+            + post_hit_recovery_timeout_penalty
+            + post_hit_recovery_failure_penalty
         )
         done = terminated | truncated
+
+        fixed_predictor_state_before_observation = (
+            state.fixed_contact_high_ball_predictor_state
+        )
+        if self.fixed_contact_plane_training_enabled:
+            # A racket impact is a dynamics discontinuity.  Never let the
+            # high-ball fitter combine pre-impact and post-impact samples,
+            # even if the 90 Hz observation clock does not refresh on this
+            # 200 Hz control tick.
+            fixed_predictor_state_before_observation = (
+                clear_high_ball_predictor_lanes(
+                    fixed_predictor_state_before_observation,
+                    hit_edge,
+                )
+            )
 
         next_state = EnvState(
             model=state.model,
@@ -10618,6 +18864,9 @@ class MjxJuggleEnv:
             reset_ball_surface_gap=state.reset_ball_surface_gap,
             reset_ball_racket_center_offset=state.reset_ball_racket_center_offset,
             racket_launch_hold_steps=state.racket_launch_hold_steps,
+            reset_falling_contact_active=state.reset_falling_contact_active,
+            reset_target_follow_blend=state.reset_target_follow_blend,
+            fixed_contact_skill_mode_id=state.fixed_contact_skill_mode_id,
             reset_ball_obs_missing=state.reset_ball_obs_missing,
             arm_cmd_q=arm_cmd_q,
             arm_cmd_qvel=cmd_qvel,
@@ -10682,6 +18931,11 @@ class MjxJuggleEnv:
             contact_hold_steps=contact_hold_steps,
             pending_hit=pending_hit,
             pending_hit_steps=pending_steps,
+            fixed_plane_v122_third_release_claimed=third_release_claimed,
+            pending_first_hit_peak_ball_vz_m_s=(
+                pending_first_hit_peak_ball_vz_m_s
+            ),
+            first_failed_launch_credit_paid=first_failed_launch_credit_paid,
             pending_hit_camera_visible=pending_hit_camera_visible,
             pending_hit_camera_in_margin=pending_hit_camera_in_margin,
             pending_hit_camera_in_lower_band=pending_hit_camera_in_lower_band,
@@ -10703,6 +18957,7 @@ class MjxJuggleEnv:
             pending_hit_racket_local_xz_angular_speed=(
                 pending_hit_racket_local_xz_angular_speed
             ),
+            pending_hit_racket_pose_error=pending_hit_racket_pose_error,
             pending_hit_contact_center_dist=(
                 pending_hit_contact_center_dist
             ),
@@ -10716,6 +18971,12 @@ class MjxJuggleEnv:
                 pending_hit_cycle_racket_xy_area_twice
             ),
             hit_count=hit_count,
+            late_physical_prev_apex_error_m=late_physical_prev_apex_error_m,
+            late_physical_prev_signed_apex_error_m=(
+                late_physical_prev_signed_apex_error_m
+            ),
+            late_physical_prev_apex_valid=late_physical_prev_apex_valid,
+            late_physical_weak_streak=late_physical_weak_streak,
             rewardable_hit_apex_abs_sum=rewardable_hit_apex_abs_sum,
             rewardable_hit_apex_lift_sum=rewardable_hit_apex_lift_sum,
             rewardable_hit_height_count=rewardable_hit_height_count,
@@ -10750,6 +19011,9 @@ class MjxJuggleEnv:
             action_history=state.action_history,
             cached_ball_obs_pos=state.cached_ball_obs_pos,
             cached_ball_obs_vel=state.cached_ball_obs_vel,
+            actor_ball_position_history=state.actor_ball_position_history,
+            actor_racket_pose_history=state.actor_racket_pose_history,
+            actor_ball_age_history=state.actor_ball_age_history,
             ball_obs_velocity_observer_xy=state.ball_obs_velocity_observer_xy,
             ball_obs_velocity_observer_last_sample_step=(
                 state.ball_obs_velocity_observer_last_sample_step
@@ -10777,6 +19041,20 @@ class MjxJuggleEnv:
             ball_obs_valid_pos=state.ball_obs_valid_pos,
             ball_obs_valid_vel=state.ball_obs_valid_vel,
             ball_obs_age_seconds=state.ball_obs_age_seconds,
+            fixed_contact_high_ball_predictor_state=(
+                fixed_predictor_state_before_observation
+            ),
+            fixed_contact_ball_observed=state.fixed_contact_ball_observed,
+            fixed_contact_ball_predicted=state.fixed_contact_ball_predicted,
+            fixed_contact_prediction_horizon_s=(
+                state.fixed_contact_prediction_horizon_s
+            ),
+            fixed_contact_ball_state_valid=(
+                state.fixed_contact_ball_state_valid
+            ),
+            fixed_contact_reacquisition_rejected=(
+                state.fixed_contact_reacquisition_rejected
+            ),
             ball_obs_missing_since_sample=state.ball_obs_missing_since_sample,
             ball_obs_dropout_remaining=state.ball_obs_dropout_remaining,
             ball_obs_dropout_steps_total=state.ball_obs_dropout_steps_total,
@@ -10817,10 +19095,53 @@ class MjxJuggleEnv:
             ball_obs_vel_bias_base=state.ball_obs_vel_bias_base,
             ball_obs_scale=state.ball_obs_scale,
             ball_obs_view_z_high_m=state.ball_obs_view_z_high_m,
+            collision_outcome_episode_restitution_latent=(
+                state.collision_outcome_episode_restitution_latent
+            ),
+            collision_outcome_pending_valid=(
+                collision_outcome_pending_valid
+            ),
+            collision_outcome_pending_pre_ball_position_m=(
+                collision_outcome_pending_pre_ball_position_m
+            ),
+            collision_outcome_pending_pre_ball_velocity_m_s=(
+                collision_outcome_pending_pre_ball_velocity_m_s
+            ),
+            collision_outcome_pending_racket_position_m=(
+                collision_outcome_pending_racket_position_m
+            ),
+            collision_outcome_pending_racket_rotation_world=(
+                collision_outcome_pending_racket_rotation_world
+            ),
+            collision_outcome_pending_racket_linear_velocity_m_s=(
+                collision_outcome_pending_racket_linear_velocity_m_s
+            ),
+            collision_outcome_pending_racket_angular_velocity_rad_s=(
+                collision_outcome_pending_racket_angular_velocity_rad_s
+            ),
+            collision_outcome_pending_impact_offset_m=(
+                collision_outcome_pending_impact_offset_m
+            ),
+            collision_outcome_pending_contact_time_s=(
+                collision_outcome_pending_contact_time_s
+            ),
         )
         obs_state = next_state._replace(prev_racket_pos=state.prev_racket_pos)
         obs_state, obs, obs_metrics = self._apply_observation_pipeline(obs_state, bpos, bvel)
         next_state = obs_state._replace(prev_racket_pos=rpos)
+        predictor_invalid = (
+            jnp.asarray(
+                self.fixed_contact_plane_training_enabled
+                and self.fixed_contact_high_ball_predictor_enabled
+            )
+            & (~next_state.fixed_contact_ball_state_valid)
+        )
+        terminated = terminated | predictor_invalid
+        done = done | predictor_invalid
+        if self.fixed_contact_plane_training_enabled:
+            obs_metrics["fixed_contact_predictor_fail_safe"] = (
+                predictor_invalid.astype(jnp.float32)
+            )
         e_active = arm_q_ref_active - data.qpos[:, self.arm_qadr]
         e_actuator_active = arm_actuator_q_ref_active - data.qpos[:, self.arm_qadr]
         t_contact_est = self._estimate_contact_time_from_z_vz(
@@ -10893,7 +19214,71 @@ class MjxJuggleEnv:
             * action_jerk_norm
             * self.dt
         )
-        reward = reward + command_tracking_penalty + delay_action_jerk_penalty
+        reward = (
+            reward
+            + command_tracking_penalty
+            + delay_action_jerk_penalty
+            + cartesian_projection_penalty
+        )
+        conversion_contact_edge = (
+            raw_physical_contact_edge
+            if getattr(
+                self.cfg, "fixed_contact_conversion_edge_mode", "logical"
+            ) == "raw_physical"
+            else hit_edge
+        )
+        (
+            contact_conversion_numerator,
+            contact_conversion_denominator,
+            terminal_pending_contact,
+        ) = fixed_contact_conversion_events(
+            hit_edge=conversion_contact_edge,
+            counted_hit=counted_hit,
+            failed_hit=failed_hit,
+            terminated=terminated,
+            truncated=truncated,
+            pending_hit=pending_hit,
+            resolved_only=bool(
+                getattr(
+                    self.cfg,
+                    "fixed_contact_contact_conversion_resolved_only",
+                    False,
+                )
+            ),
+        )
+        contact_metric_scale = float(
+            getattr(
+                self.cfg,
+                "fixed_contact_contact_duration_metrics_enabled",
+                False,
+            )
+        )
+        if self.cfg.fixed_plane_v119_terminal_pending_refund_enabled:
+            terminal_clearance_refund, terminal_clearance_refund_active = (
+                terminal_pending_clearance_refund(
+                    pending_hit=pending_hit,
+                    failed_hit=failed_hit,
+                    counted_hit=counted_hit,
+                    terminal=terminated,
+                    truncated=truncated,
+                    previous_hit_count=state.hit_count,
+                    relative_z_m=rel[:, 2],
+                    contact_baseline_relative_z_m=(
+                        pending_hit_ball_z - pending_hit_racket_z
+                    ),
+                    confirm_relative_z_m=min_launch_rel_z,
+                    weight=float(self.cfg.fixed_plane_v118_post_second_clearance_weight),
+                )
+            )
+            reward = reward + terminal_clearance_refund
+            reward_terms = dict(reward_terms)
+            reward_terms["fixed_plane_v119_terminal_pending_refund"] = (
+                terminal_clearance_refund
+            )
+            reward_terms["metric/v119_terminal_pending_refund_active"] = (
+                terminal_clearance_refund_active.astype(jnp.float32)
+            )
+            reward_terms["total"] = reward
         metrics = {
             "hit_count": hit_count.astype(jnp.float32),
             "new_hit": launched_upward.astype(jnp.float32),
@@ -10915,12 +19300,27 @@ class MjxJuggleEnv:
             # non-upward) launch.  Without these two event streams a visually
             # valid low bounce is indistinguishable from contact chatter in
             # aggregate training telemetry.
-            "physical_contact_edge": hit_edge.astype(jnp.float32),
+            "physical_contact_edge": conversion_contact_edge.astype(
+                jnp.float32
+            ),
+            "raw_physical_contact_edge": raw_physical_contact_edge.astype(
+                jnp.float32
+            ),
+            "logical_hit_edge": hit_edge.astype(jnp.float32),
+            "pending_hit_recontact": pending_recontact_edge.astype(
+                jnp.float32
+            ),
+            "atomic_pending_recontact": atomic_pending_recontact.astype(
+                jnp.float32
+            ),
+            "failed_hit_timeout": failed_hit_timeout.astype(jnp.float32),
             "launch_clearance_crossing": launch_clearance_crossing.astype(
                 jnp.float32
             ),
             "low_survival_launch": low_survival_launch.astype(jnp.float32),
             "subfloor_launch": subfloor_launch.astype(jnp.float32),
+            "v60_late_weak_streak": late_physical_weak_streak.astype(jnp.float32),
+            "v60_late_weak_streak_failed": late_weak_streak_failed.astype(jnp.float32),
             "failed_hit": failed_hit.astype(jnp.float32),
             "racket_launch_hold_active": (
                 racket_launch_hold_active.astype(jnp.float32)
@@ -10929,7 +19329,7 @@ class MjxJuggleEnv:
                 pre_release_control_active.astype(jnp.float32)
             ),
             "racket_launch_release_event": (
-                (self.ball_reset_mode == "racket_launch")
+                racket_launch_reset_active
                 & (hold_steps > 0)
                 & (step_count == hold_steps + 1)
             ).astype(jnp.float32),
@@ -10941,11 +19341,78 @@ class MjxJuggleEnv:
             "racket_z": rpos[:, 2],
             "racket_z_rel": rpos[:, 2] - state.racket_anchor[:, 2],
             "in_contact": in_contact.astype(jnp.float32),
+            "contact_detach_event": (
+                state.prev_contact & (~in_contact)
+            ).astype(jnp.float32) * float(
+                getattr(
+                    self.cfg,
+                    "fixed_contact_contact_duration_metrics_enabled",
+                    False,
+                )
+            ),
+            # A contact that is still active when an episode terminates is a
+            # right-censored duration, not evidence that no long contact
+            # occurred.  Include its elapsed lower bound in the duration tail
+            # while keeping the physical detach counter semantically pure.
+            "contact_duration_event": (
+                (state.prev_contact & (~in_contact))
+                | ((terminated | truncated) & in_contact)
+            ).astype(jnp.float32) * float(
+                getattr(
+                    self.cfg,
+                    "fixed_contact_contact_duration_metrics_enabled",
+                    False,
+                )
+            ),
+            "contact_duration_s": (
+                contact_hold_steps.astype(jnp.float32) * self.dt
+            ) * float(
+                getattr(
+                    self.cfg,
+                    "fixed_contact_contact_duration_metrics_enabled",
+                    False,
+                )
+            ),
+            "contact_duration_event_sum_s": jnp.where(
+                state.prev_contact & (~in_contact),
+                state.contact_hold_steps.astype(jnp.float32) * self.dt,
+                jnp.where(
+                    (terminated | truncated) & in_contact,
+                    contact_hold_steps.astype(jnp.float32) * self.dt,
+                    0.0,
+                ),
+            ) * float(
+                getattr(
+                    self.cfg,
+                    "fixed_contact_contact_duration_metrics_enabled",
+                    False,
+                )
+            ),
+            "contact_edge_to_hit_numerator": (
+                contact_conversion_numerator.astype(jnp.float32)
+                * contact_metric_scale
+            ),
+            "contact_edge_to_hit_denominator": (
+                contact_conversion_denominator.astype(jnp.float32)
+                * contact_metric_scale
+            ),
+            "contact_edge_terminal_pending": (
+                terminal_pending_contact.astype(jnp.float32)
+                * contact_metric_scale
+            ),
             "reset_ball_x": state.reset_ball_pos[:, 0],
             "reset_ball_y": state.reset_ball_pos[:, 1],
             "reset_ball_z": state.reset_ball_pos[:, 2],
             "reset_ball_vxy": jnp.linalg.norm(state.reset_ball_vel[:, :2], axis=-1),
             "reset_ball_vz": state.reset_ball_vel[:, 2],
+            "reset_scripted_handoff_launch_apex_z": (
+                state.reset_ball_pos[:, 2]
+                + state.reset_ball_vel[:, 2] ** 2
+                / (
+                    2.0
+                    * jnp.maximum(jnp.abs(state.dr_gravity_z), 1.0e-6)
+                )
+            ) * float(self.scripted_airborne_handoff),
             "reset_ball_anchor_dx": state.reset_ball_pos[:, 0] - state.racket_anchor[:, 0],
             "reset_ball_anchor_dy": state.reset_ball_pos[:, 1] - state.racket_anchor[:, 1],
             "reset_ball_anchor_dz": state.reset_ball_pos[:, 2] - state.racket_anchor[:, 2],
@@ -10957,6 +19424,31 @@ class MjxJuggleEnv:
             "reset_ball_racket_center_offset": state.reset_ball_racket_center_offset,
             "reset_racket_launch_hold_time_s": (
                 state.racket_launch_hold_steps.astype(jnp.float32) * self.dt
+            ),
+            "reset_falling_contact_active": (
+                state.reset_falling_contact_active.astype(jnp.float32)
+            ),
+            "reset_target_follow_blend": state.reset_target_follow_blend,
+            "fixed_contact_skill_mode_id": (
+                state.fixed_contact_skill_mode_id.astype(jnp.float32)
+            ) * float(hasattr(self.cfg, "fixed_contact_skill_mode")),
+            "fixed_contact_skill_arrival_only": (
+                state.fixed_contact_skill_mode_id
+                == FIXED_CONTACT_SKILL_MODE_ARRIVAL_ONLY
+            ).astype(jnp.float32) * float(
+                hasattr(self.cfg, "fixed_contact_skill_mode")
+            ),
+            "fixed_contact_skill_arrived_hit": (
+                state.fixed_contact_skill_mode_id
+                == FIXED_CONTACT_SKILL_MODE_ARRIVED_HIT
+            ).astype(jnp.float32) * float(
+                hasattr(self.cfg, "fixed_contact_skill_mode")
+            ),
+            "fixed_contact_skill_recurrent": (
+                state.fixed_contact_skill_mode_id
+                == FIXED_CONTACT_SKILL_MODE_RECURRENT
+            ).astype(jnp.float32) * float(
+                hasattr(self.cfg, "fixed_contact_skill_mode")
             ),
             "action_scale_mult": state.action_scale_mult,
             "actor_previous_action_scale": state.actor_previous_action_scale,
@@ -11042,6 +19534,46 @@ class MjxJuggleEnv:
             "qvel_reference_error_norm": jnp.linalg.norm(
                 arm_cmd_q - data.qpos[:, self.arm_qadr], axis=-1
             ),
+            "cartesian_pose_projection_enabled": jnp.full(
+                (action.shape[0],),
+                float(self.cartesian_pose_projection_enabled),
+                dtype=jnp.float32,
+            ),
+            "cartesian_pose_projection_intervened": (
+                cartesian_projection_intervened.astype(jnp.float32)
+            ),
+            "cartesian_pose_projection_correction_norm_rad_s": (
+                cartesian_projection_correction_norm
+            ),
+            "cartesian_pose_projection_retained_fraction": (
+                cartesian_projection_retained_fraction
+            ),
+            "cartesian_pose_projection_nonlinear_backstop": (
+                cartesian_projection_nonlinear_backstop.astype(jnp.float32)
+            ),
+            "cartesian_pose_projection_fallback_to_hold": (
+                cartesian_projection_fallback_to_hold.astype(jnp.float32)
+            ),
+            "cartesian_pose_projection_current_safe": (
+                cartesian_projection_current_safe.astype(jnp.float32)
+            ),
+            "cartesian_pose_qref_position_violation_m": (
+                cartesian_qref_position_violation
+            ),
+            "cartesian_pose_qref_orientation_violation_rad": (
+                cartesian_qref_orientation_violation
+            ),
+            "cartesian_pose_projection_linear_violation": (
+                cartesian_projection_linear_violation
+            ),
+            "cartesian_pose_qref_yaw_rad": cartesian_qref_yaw_rad,
+            "cartesian_pose_actual_position_violation_m": (
+                actual_cartesian_position_violation
+            ),
+            "cartesian_pose_actual_orientation_violation_rad": (
+                actual_cartesian_orientation_violation
+            ),
+            "cartesian_pose_actual_yaw_rad": actual_cartesian_yaw_rad,
             "rmp_target_error_norm": jnp.linalg.norm(
                 arm_cmd_q - rmp_command_q, axis=-1
             ),
@@ -11126,16 +19658,16 @@ class MjxJuggleEnv:
             "arm_post_comp_safety_clip_fraction": jnp.mean(arm_safe_clip.astype(jnp.float32), axis=-1),
             "arm_post_comp_safety_feasible": arm_safe_feasible.astype(jnp.float32),
             "arm_servo_safety_delta_norm": jnp.linalg.norm(
-                (
-                    raw_future_output - arm_servo_command_q
-                    if planner_before_actuator
-                    else arm_servo_target_unlimited - arm_applied_q
-                ),
+                arm_servo_safety_delta,
                 axis=-1,
             ),
             "arm_servo_safety_clip_any": jnp.any(arm_servo_clip, axis=-1).astype(jnp.float32),
             "arm_servo_safety_clip_fraction": jnp.mean(arm_servo_clip.astype(jnp.float32), axis=-1),
             "arm_servo_safety_feasible": arm_servo_feasible.astype(jnp.float32),
+            "arm_rmp_tracking_delta_norm": jnp.linalg.norm(
+                arm_rmp_tracking_delta,
+                axis=-1,
+            ),
             "arm_actual_safety_clip_any": jnp.any(
                 arm_actual_clip_count > 0,
                 axis=-1,
@@ -11183,6 +19715,19 @@ class MjxJuggleEnv:
             "dr_obs_latency_steps": state.obs_latency_steps.astype(jnp.float32),
             "dr_action_latency_steps": state.action_latency_steps.astype(jnp.float32),
             "action_norm": jnp.linalg.norm(action, axis=-1),
+            "plant_aware_nominal_action_norm": jnp.linalg.norm(
+                plant_aware_nominal_action, axis=-1
+            ),
+            "plant_aware_residual_action_norm": jnp.linalg.norm(
+                residual_policy_action, axis=-1
+            ),
+            "plant_aware_phase_id": plant_aware_phase_id.astype(jnp.float32),
+            "plant_aware_desired_contact_vxy_m_s": jnp.linalg.norm(
+                plant_aware_desired_contact_velocity[:, :2], axis=-1
+            ),
+            "plant_aware_desired_contact_vz_m_s": (
+                plant_aware_desired_contact_velocity[:, 2]
+            ),
             "action_rate": action_rate_norm,
             "action_jerk": action_jerk_norm,
             "raw_action_clip_fraction": jnp.mean(
@@ -11204,6 +19749,7 @@ class MjxJuggleEnv:
             "racket_contact_point_vxy": jnp.linalg.norm(
                 racket_contact_point_velocity[:, :2], axis=-1
             ),
+            "racket_contact_point_vz": racket_contact_point_velocity[:, 2],
             "racket_angular_velocity_world_x": racket_angular_velocity[:, 0],
             "racket_angular_velocity_world_y": racket_angular_velocity[:, 1],
             "racket_angular_velocity_world_z": racket_angular_velocity[:, 2],
@@ -11278,7 +19824,55 @@ class MjxJuggleEnv:
             else:
                 metrics[f"reward/{name}"] = value
         metrics["reward/ball_miss_termination_penalty"] = ball_miss_penalty
+        if (
+            self.cfg.fixed_plane_v94_pending_recontact_as_miss
+            or self.cfg.fixed_plane_v94_first_hit_apex_reward_weight > 0.0
+            or self.cfg.fixed_plane_v94_first_hit_early_failure_weight > 0.0
+        ):
+            metrics["reward/fixed_plane_v94_pending_recontact_miss_penalty"] = (
+                v94_pending_recontact_miss_penalty
+            )
+            metrics["reward/fixed_plane_v94_first_hit_apex_credit"] = (
+                v94_first_hit_apex_credit
+            )
+            metrics["reward/fixed_plane_v94_first_hit_early_failure_penalty"] = (
+                v94_first_hit_early_failure_penalty
+            )
+        if (
+            float(self.cfg.fixed_plane_v95_second_hit_apex_reward_weight) > 0.0
+            or float(self.cfg.fixed_plane_v95_third_hit_apex_reward_weight) > 0.0
+        ):
+            metrics["reward/fixed_plane_v95_early_hit_apex_bridge"] = (
+                v95_early_hit_apex_bridge
+            )
+        if float(self.cfg.fixed_plane_v96_second_hit_viability_weight) > 0.0:
+            metrics["reward/fixed_plane_v96_second_hit_viability_adjustment"] = (
+                v96_second_hit_viability_adjustment
+            )
+        if float(self.cfg.fixed_plane_v106_first_launch_progress_weight) > 0.0:
+            metrics["reward/fixed_plane_v106_first_launch_progress_credit"] = (
+                v106_first_launch_progress_credit
+            )
+        if float(self.cfg.fixed_plane_v107_first_height_progress_weight) > 0.0:
+            metrics["reward/fixed_plane_v107_first_height_progress_credit"] = (
+                v107_first_height_progress_credit
+            )
+        if float(self.cfg.fixed_plane_v108_first_contact_lift_weight) > 0.0:
+            metrics["reward/fixed_plane_v108_first_contact_lift_credit"] = (
+                v108_first_contact_lift_credit
+            )
+        if float(self.cfg.fixed_plane_v106_post_hit_quiet_weight) > 0.0:
+            metrics["reward/fixed_plane_v106_post_hit_quiet_credit"] = (
+                v106_post_hit_quiet_credit
+            )
+        if float(self.cfg.fixed_plane_v106_first_hit_promptness_weight) > 0.0:
+            metrics["reward/fixed_plane_v106_first_hit_promptness_credit"] = (
+                v106_first_hit_promptness_credit
+            )
         metrics["reward/racket_z_limit_termination_penalty"] = racket_limit_penalty
+        metrics["fixed_contact_workspace_termination"] = (
+            fixed_contact_workspace_done.astype(jnp.float32)
+        )
         metrics["reward/racket_anchor_termination_penalty"] = racket_anchor_penalty
         metrics["reward/early_termination_remaining_horizon_penalty"] = (
             early_termination_remaining_horizon_penalty
@@ -11289,6 +19883,22 @@ class MjxJuggleEnv:
         metrics["reward/full_episode_joint_height"] = (
             full_episode_joint_height_reward
         )
+        if float(getattr(
+            self.cfg,
+            "fixed_contact_post_hit_recovery_timeout_penalty_weight",
+            0.0,
+        )) > 0.0:
+            metrics[
+                "reward/fixed_contact_post_hit_recovery_timeout_penalty"
+            ] = post_hit_recovery_timeout_penalty
+        if float(getattr(
+            self.cfg,
+            "fixed_contact_post_hit_recovery_failure_penalty_weight",
+            0.0,
+        )) > 0.0:
+            metrics[
+                "reward/fixed_contact_post_hit_recovery_failure_penalty"
+            ] = post_hit_recovery_failure_penalty
         metrics["full_episode_joint_height_mean_apex_abs_z_m"] = (
             rewardable_hit_mean_apex_abs_z
         )
@@ -11304,8 +19914,138 @@ class MjxJuggleEnv:
         )
         metrics["reward/command_tracking_error_penalty"] = command_tracking_penalty
         metrics["reward/delay_action_jerk_penalty"] = delay_action_jerk_penalty
+        metrics["reward/cartesian_pose_projection_penalty"] = (
+            cartesian_projection_penalty
+        )
         metrics["reward/total"] = reward
+        if self.collision_outcome_residual_enabled:
+            # Versioned ImpactRecord-compatible telemetry.  These keys are
+            # absent, not merely zero, on every legacy/off path so historical
+            # metric schemas remain unchanged.
+            metrics.update(
+                {
+                    "collision_outcome/release_event": (
+                        collision_outcome_release_event.astype(jnp.float32)
+                    ),
+                    "collision_outcome/applied": (
+                        collision_outcome_applied.astype(jnp.float32)
+                    ),
+                    "collision_outcome/outside_calibrated_population": (
+                        collision_outcome_outside_population.astype(jnp.float32)
+                    ),
+                    "collision_outcome/saturated": (
+                        collision_outcome_saturated.astype(jnp.float32)
+                    ),
+                    "collision_outcome/incoming_normal_speed_m_s": (
+                        collision_outcome_incoming_normal_speed_m_s
+                    ),
+                    "collision_outcome/episode_restitution_latent": (
+                        state.collision_outcome_episode_restitution_latent
+                    ),
+                    "collision_outcome/residual_application_delay_s": jnp.where(
+                        collision_outcome_release_event,
+                        jnp.maximum(
+                            0.0,
+                            current_time
+                            - state.collision_outcome_pending_contact_time_s,
+                        ),
+                        0.0,
+                    ),
+                    "collision_outcome/ball_identity_index": jnp.full(
+                        (self.n_envs,),
+                        float(self.collision_outcome_ball_identity_index),
+                        dtype=jnp.float32,
+                    ),
+                    "collision_outcome/session_identity_index": jnp.full(
+                        (self.n_envs,),
+                        float(self.collision_outcome_session_identity_index),
+                        dtype=jnp.float32,
+                    ),
+                }
+            )
+            vector_metrics = {
+                "pre_ball_position_m": (
+                    state.collision_outcome_pending_pre_ball_position_m
+                ),
+                "pre_ball_velocity_m_s": (
+                    state.collision_outcome_pending_pre_ball_velocity_m_s
+                ),
+                "racket_position_m": (
+                    state.collision_outcome_pending_racket_position_m
+                ),
+                "racket_linear_velocity_m_s": (
+                    state.collision_outcome_pending_racket_linear_velocity_m_s
+                ),
+                "racket_angular_velocity_rad_s": (
+                    state.collision_outcome_pending_racket_angular_velocity_rad_s
+                ),
+                "contact_point_velocity_m_s": (
+                    collision_outcome_contact_point_velocity_m_s
+                ),
+                "pre_relative_velocity_local_m_s": (
+                    collision_outcome_pre_relative_local_m_s
+                ),
+                "native_post_relative_velocity_local_m_s": (
+                    collision_outcome_native_post_relative_local_m_s
+                ),
+                "target_post_relative_velocity_local_m_s": (
+                    collision_outcome_target_local_m_s
+                ),
+                "velocity_residual_world_m_s": (
+                    collision_outcome_residual_world_m_s
+                ),
+                "velocity_residual_local_m_s": (
+                    collision_outcome_residual_local_m_s
+                ),
+                "predictive_std_local_m_s": (
+                    collision_outcome_predictive_std_local_m_s
+                ),
+            }
+            for metric_name, metric_value in vector_metrics.items():
+                for component_index, component_name in enumerate(("x", "y", "z")):
+                    metrics[
+                        f"collision_outcome/{metric_name}_{component_name}"
+                    ] = metric_value[:, component_index]
+            metrics[
+                "collision_outcome/impact_offset_x_m"
+            ] = state.collision_outcome_pending_impact_offset_m[:, 0]
+            metrics[
+                "collision_outcome/impact_offset_y_m"
+            ] = state.collision_outcome_pending_impact_offset_m[:, 1]
+            pending_rotation = (
+                state.collision_outcome_pending_racket_rotation_world
+            )
+            for row_index in range(3):
+                for column_index in range(3):
+                    metrics[
+                        "collision_outcome/racket_rotation_world_"
+                        f"r{row_index}c{column_index}"
+                    ] = pending_rotation[:, row_index, column_index]
+        if bool(self.cfg.fixed_contact_substep_diagnostic_enabled):
+            metrics.update({
+                "debug/contact_first_proximity_substep": first_proximity_substep,
+                "debug/contact_first_penetration_substep": first_penetration_substep,
+                "debug/contact_penetration_substeps": penetration_count,
+                "debug/contact_first_penetration_dist_m": first_penetration_distance,
+                "debug/contact_min_dist_m": jnp.where(
+                    jnp.isfinite(min_contact_distance), min_contact_distance, 0.0
+                ),
+                "debug/contact_first_penetration_pre_ball_vz_m_s": (
+                    first_penetration_pre_ball_vz
+                ),
+                "debug/contact_first_penetration_post_ball_vz_m_s": (
+                    first_penetration_post_ball_vz
+                ),
+                "debug/contact_first_penetration_racket_vz_m_s": (
+                    first_penetration_racket_vz
+                ),
+            })
         metrics.update(obs_metrics)
+        if getattr(self.cfg, 'fixed_plane_v167_global_reward_multiplier', 1.) != 1.:
+            from fixed_plane_v167_reward_scale import scale_reward_terms
+            reward, metrics = scale_reward_terms(
+                reward, metrics,
+                multiplier=self.cfg.fixed_plane_v167_global_reward_multiplier)
         metrics.update({f"done/{name}": value.astype(jnp.float32) for name, value in done_terms.items()})
         return next_state, obs, reward, done, metrics
 
@@ -11495,6 +20235,44 @@ class MjxJuggleEnv:
             velxy_noise_state = state.ball_obs_velxy_noise_state
             posthit_left = state.ball_obs_posthit_noise_left
         sampled_vel = true_bvel + vel_noise
+        if (
+            self.fixed_contact_plane_training_enabled
+            and bool(self.cfg.dr_randomize_ball_obs_frame)
+        ):
+            # This policy and its target generator use registered world
+            # coordinates. Apply the established observation-frame DR in
+            # base coordinates, then transform that direct sample back to the
+            # world frame before caching it or feeding it to the predictor.
+            data = state.data
+            base_q = jnp.stack(
+                [
+                    data.qpos[:, self.base_x_qadr],
+                    data.qpos[:, self.base_y_qadr],
+                    data.qpos[:, self.base_yaw_qadr],
+                ],
+                axis=-1,
+            )
+            base_dq = jnp.stack(
+                [
+                    data.qvel[:, self.base_x_vadr],
+                    data.qvel[:, self.base_y_vadr],
+                    data.qvel[:, self.base_yaw_vadr],
+                ],
+                axis=-1,
+            )
+            sampled_pos_base = self._point_to_base(sampled_pos, base_q)
+            sampled_vel_base = self._vel_to_base(
+                sampled_vel, sampled_pos, base_q, base_dq
+            )
+            sampled_pos_base, sampled_vel_base = (
+                self._apply_ball_obs_frame_bias(
+                    state, sampled_pos_base, sampled_vel_base
+                )
+            )
+            sampled_pos = self._point_from_base(sampled_pos_base, base_q)
+            sampled_vel = self._vel_from_base(
+                sampled_vel_base, sampled_pos, base_q, base_dq
+            )
         last_ball_obs_step = jnp.where(refresh, state.step_count, state.last_ball_obs_step)
 
         still_dropout = state.ball_obs_dropout_remaining > 0
@@ -12085,6 +20863,93 @@ class MjxJuggleEnv:
                 state.ball_obs_age_seconds + self.dt,
                 0.0,
             )
+        fixed_predictor_state = state.fixed_contact_high_ball_predictor_state
+        fixed_ball_observed = jnp.where(
+            refresh,
+            sample_available,
+            state.fixed_contact_ball_observed,
+        )
+        fixed_ball_predicted = jnp.zeros_like(sample_available, dtype=bool)
+        fixed_prediction_horizon_s = jnp.zeros_like(age_seconds)
+        fixed_ball_state_valid = jnp.where(
+            refresh,
+            sample_available,
+            state.fixed_contact_ball_state_valid,
+        )
+        fixed_reacquisition_rejected = jnp.zeros_like(
+            sample_available, dtype=bool
+        )
+        fixed_fit_rmse_m = jnp.zeros_like(valid_pos)
+        if (
+            self.fixed_contact_plane_training_enabled
+            and self.fixed_contact_high_ball_predictor_enabled
+        ):
+            top_view_missing = (
+                missing_on_refresh
+                & bool(self.cfg.ball_obs_require_view_z_high)
+                & (true_bpos[:, 2] > state.ball_obs_view_z_high_m)
+            )
+            (
+                fixed_predictor_state,
+                fixed_predictor_output,
+            ) = update_high_ball_predictor(
+                state.fixed_contact_high_ball_predictor_state,
+                observed_sample_pos,
+                observed_sample_vel,
+                sample_available,
+                state.step_count.astype(jnp.float32) * self.dt,
+                self.fixed_contact_high_ball_predictor_cfg,
+                prediction_requested=top_view_missing,
+            )
+            # Between 90 Hz refreshes, preserve the most recent represented
+            # state.  During an active occlusion, propagate at every 200 Hz
+            # policy tick.  A failed refresh with no valid prediction is
+            # explicit invalid state, never a silently fresh stale sample.
+            update_from_predictor = (
+                fixed_predictor_output.valid
+                & (sample_available | fixed_predictor_output.predicted)
+            )
+            invalidate_on_refresh = missing_on_refresh & (
+                ~fixed_predictor_output.valid
+            )
+            valid_pos = jnp.where(
+                update_from_predictor[:, None],
+                fixed_predictor_output.position_m,
+                jnp.where(invalidate_on_refresh[:, None], 0.0, valid_pos),
+            )
+            valid_vel = jnp.where(
+                update_from_predictor[:, None],
+                fixed_predictor_output.velocity_m_s,
+                jnp.where(invalidate_on_refresh[:, None], 0.0, valid_vel),
+            )
+            # Keep cached_pos/cached_vel as the latest direct observed sample.
+            # Only valid_pos/valid_vel are allowed to carry the predictor's
+            # propagated current estimate into future-contact forecasting.
+            fixed_ball_observed = jnp.where(
+                sample_available | fixed_predictor_output.predicted,
+                fixed_predictor_output.observed,
+                fixed_ball_observed,
+            )
+            fixed_ball_predicted = fixed_predictor_output.predicted
+            fixed_prediction_horizon_s = (
+                fixed_predictor_output.prediction_horizon_s
+            )
+            fixed_ball_state_valid = jnp.where(
+                sample_available
+                | fixed_predictor_output.predicted
+                | missing_on_refresh,
+                fixed_predictor_output.valid,
+                state.fixed_contact_ball_state_valid,
+            )
+            fixed_reacquisition_rejected = (
+                fixed_predictor_output.reacquisition_rejected
+            )
+            fixed_fit_rmse_m = fixed_predictor_output.fit_rmse_m
+            age_seconds = jnp.where(
+                fixed_predictor_output.valid,
+                fixed_predictor_output.represented_state_age_s,
+                age_seconds,
+            )
         dropout_steps_total = state.ball_obs_dropout_steps_total + blocked_by_dropout.astype(jnp.int32)
         burst_count = state.ball_obs_burst_count + burst_start.astype(jnp.int32)
 
@@ -12130,9 +20995,35 @@ class MjxJuggleEnv:
             - state.last_hit_time
         )
 
+        if self.fixed_plane_v92_history_obs_enabled:
+            racket_pose_now = jnp.concatenate((
+                state.data.site_xpos[:, self.racket_site_id],
+                rotation_matrix_to_6d(
+                    state.data.site_xmat[:, self.racket_site_id].reshape(-1, 3, 3)
+                ),
+            ), axis=-1)
+            direct_ball_age = jnp.maximum(
+                state.step_count - last_ball_obs_step, 0
+            ).astype(jnp.float32) * self.dt
+            (actor_ball_position_history, actor_racket_pose_history,
+             actor_ball_age_history) = advance_position_history(
+                ball_positions=state.actor_ball_position_history,
+                racket_poses=state.actor_racket_pose_history,
+                ball_ages=state.actor_ball_age_history,
+                ball_position_now=cached_pos,
+                racket_pose_now=racket_pose_now,
+                ball_age_now=direct_ball_age,
+            )
+        else:
+            actor_ball_position_history = state.actor_ball_position_history
+            actor_racket_pose_history = state.actor_racket_pose_history
+            actor_ball_age_history = state.actor_ball_age_history
         state = state._replace(
             rng=next_rng,
             cached_ball_obs_pos=cached_pos,
+            actor_ball_position_history=actor_ball_position_history,
+            actor_racket_pose_history=actor_racket_pose_history,
+            actor_ball_age_history=actor_ball_age_history,
             cached_ball_obs_vel=cached_vel,
             ball_obs_velocity_observer_xy=observer_xy,
             ball_obs_velocity_observer_last_sample_step=observer_last_sample_step,
@@ -12153,6 +21044,14 @@ class MjxJuggleEnv:
             ball_obs_valid_pos=valid_pos,
             ball_obs_valid_vel=valid_vel,
             ball_obs_age_seconds=age_seconds,
+            fixed_contact_high_ball_predictor_state=fixed_predictor_state,
+            fixed_contact_ball_observed=fixed_ball_observed,
+            fixed_contact_ball_predicted=fixed_ball_predicted,
+            fixed_contact_prediction_horizon_s=fixed_prediction_horizon_s,
+            fixed_contact_ball_state_valid=fixed_ball_state_valid,
+            fixed_contact_reacquisition_rejected=(
+                fixed_reacquisition_rejected
+            ),
             ball_obs_missing_since_sample=missing_since_sample,
             ball_obs_dropout_remaining=dropout_remaining,
             ball_obs_dropout_steps_total=dropout_steps_total,
@@ -12441,6 +21340,89 @@ class MjxJuggleEnv:
                 self._actor_action_feedback(state)[2], axis=-1
             ),
         }
+        if self.fixed_contact_plane_training_enabled:
+            target_rotation = rotation_6d_to_matrix(
+                raw_base_obs[
+                    :,
+                    FIXED_CONTACT_ACTOR_OBS_SLICES[
+                        "contact_target_orientation_6d"
+                    ],
+                ]
+            )
+            target_normal = target_rotation[:, :, 2]
+            target_tilt_deg = jnp.rad2deg(
+                jnp.arccos(jnp.clip(target_normal[:, 2], -1.0, 1.0))
+            )
+            metrics.update(
+                {
+                    "fixed_contact_ball_observed": (
+                        fixed_ball_observed.astype(jnp.float32)
+                    ),
+                    "fixed_contact_ball_predicted": (
+                        fixed_ball_predicted.astype(jnp.float32)
+                    ),
+                    "fixed_contact_prediction_horizon_s": (
+                        fixed_prediction_horizon_s
+                    ),
+                    "fixed_contact_ball_state_valid": (
+                        fixed_ball_state_valid.astype(jnp.float32)
+                    ),
+                    "fixed_contact_reacquisition_rejected": (
+                        fixed_reacquisition_rejected.astype(jnp.float32)
+                    ),
+                    "fixed_contact_predictor_fit_rmse_m": jnp.linalg.norm(
+                        fixed_fit_rmse_m, axis=-1
+                    ),
+                    "fixed_contact_target_tilt_deg": target_tilt_deg,
+                    "fixed_contact_target_position_error_m": jnp.linalg.norm(
+                        raw_base_obs[
+                            :,
+                            FIXED_CONTACT_ACTOR_OBS_SLICES[
+                                "contact_position_error"
+                            ],
+                        ],
+                        axis=-1,
+                    )
+                    / float(self.fixed_contact_target_conditioning_observation_scale),
+                    "fixed_contact_target_orientation_error_rad": (
+                        jnp.linalg.norm(
+                            raw_base_obs[
+                                :,
+                                FIXED_CONTACT_ACTOR_OBS_SLICES[
+                                    "contact_orientation_error"
+                                ],
+                            ],
+                            axis=-1,
+                        )
+                    ),
+                    "fixed_contact_target_valid": raw_base_obs[
+                        :,
+                        FIXED_CONTACT_ACTOR_OBS_SLICES[
+                            "prediction_valid"
+                        ],
+                    ][:, 0],
+                    "fixed_contact_ball_racket_distance_m": jnp.linalg.norm(
+                        raw_base_obs[
+                            :,
+                            FIXED_CONTACT_ACTOR_OBS_SLICES[
+                                "observed_ball_racket_relative_position"
+                            ],
+                        ],
+                        axis=-1,
+                    ),
+                    "fixed_contact_previous_executed_action_norm": (
+                        jnp.linalg.norm(
+                            raw_base_obs[
+                                :,
+                                FIXED_CONTACT_ACTOR_OBS_SLICES[
+                                    "previous_executed_action"
+                                ],
+                            ],
+                            axis=-1,
+                        )
+                    ),
+                }
+            )
         if bool(self.cfg.dr_post_hit_ball_obs_latency):
             metrics.update(
                 {
@@ -12471,16 +21453,64 @@ class MjxJuggleEnv:
             dist = dist[None, ...]
         g0 = geom[..., 0]
         g1 = geom[..., 1]
-        pair = ((g0 == self.ball_geom_id) & (g1 == self.racket_geom_id)) | (
-            (g0 == self.racket_geom_id) & (g1 == self.ball_geom_id)
+        pair = (
+            (g0 == self.ball_geom_id)
+            & (g1 == self.racket_contact_geom_id)
+        ) | (
+            (g0 == self.racket_contact_geom_id)
+            & (g1 == self.ball_geom_id)
         )
         ball_pair = (g0 == self.ball_geom_id) | (g1 == self.ball_geom_id)
-        racket_pair = ((g0 == self.racket_geom_id) | (g1 == self.racket_geom_id))
+        racket_pair = (
+            (g0 == self.racket_contact_geom_id)
+            | (g1 == self.racket_contact_geom_id)
+        )
         proxy0 = jnp.any(g0[..., None] == self.non_racket_geom_ids, axis=-1)
         proxy1 = jnp.any(g1[..., None] == self.non_racket_geom_ids, axis=-1)
         non_racket_pair = ball_pair & (~racket_pair) & (proxy0 | proxy1)
-        close = dist <= 0.002
-        return jnp.any(pair & close, axis=-1), jnp.any(non_racket_pair & close, axis=-1)
+        racket_close = (
+            dist <= float(self.cfg.hit_racket_contact_edge_distance_m)
+        )
+        other_close = dist <= 0.002
+        return (
+            jnp.any(pair & racket_close, axis=-1),
+            jnp.any(non_racket_pair & other_close, axis=-1),
+        )
+
+    def _sync_racket_contact_proxy(self, data):
+        """Overwrite the opt-in proxy from current robot FK and cvel."""
+
+        if not self.racket_contact_proxy_enabled:
+            return data
+        rotation = data.geom_xmat[:, self.racket_geom_id].reshape(
+            (-1, 3, 3)
+        )
+        racket_geom_quaternion_world = _quat_multiply_wxyz_jax(
+            data.xquat[:, self.racket_body_id],
+            self.racket_geom_quaternion_body,
+        )
+        proxy_qpos, proxy_qvel = racket_contact_proxy_state_jax(
+            data.geom_xpos[:, self.racket_geom_id],
+            rotation,
+            data.cvel[:, self.racket_body_id],
+            data.subtree_com[:, self.racket_root_body_id],
+            self.racket_contact_proxy_geom_position_body_m,
+            self.racket_contact_proxy_geom_rotation_body,
+            racket_geom_quaternion_world,
+            self.racket_contact_proxy_geom_quaternion_body,
+        )
+        return data.replace(
+            qpos=data.qpos.at[
+                :,
+                self.racket_contact_proxy_qadr:
+                self.racket_contact_proxy_qadr + 7,
+            ].set(proxy_qpos),
+            qvel=data.qvel.at[
+                :,
+                self.racket_contact_proxy_vadr:
+                self.racket_contact_proxy_vadr + 6,
+            ].set(proxy_qvel),
+        )
 
     def _reward(
         self,
@@ -12492,6 +21522,7 @@ class MjxJuggleEnv:
         arm_limiter_pen: jax.Array,
         bpos: jax.Array,
         bvel: jax.Array,
+        step_start_ball_velocity_m_s: jax.Array,
         rpos: jax.Array,
         rvel: jax.Array,
         racket_vertical_acc: jax.Array,
@@ -12505,9 +21536,18 @@ class MjxJuggleEnv:
         racket_normal: jax.Array,
         predicted_apex_z: jax.Array,
         hit_count: jax.Array,
+        previous_late_apex_error_m: jax.Array,
+        previous_late_apex_signed_error_m: jax.Array,
+        previous_late_apex_valid: jax.Array,
+        episode_time_s: jax.Array,
+        racket_launch_hold_active: jax.Array,
         new_hit: jax.Array,
         physical_contact_edge: jax.Array,
+        pending_hit: jax.Array,
+        pending_hit_steps: jax.Array,
         low_survival_launch: jax.Array,
+        subfloor_launch: jax.Array,
+        ball_radius_m: jax.Array,
         rewardable_hit: jax.Array,
         failed_hit: jax.Array,
         ignored_fast_hit: jax.Array,
@@ -12529,6 +21569,7 @@ class MjxJuggleEnv:
         prev_arm_qvel: jax.Array,
         racket_anchor: jax.Array,
         chest_target_offset: jax.Array,
+        reset_falling_contact_active: jax.Array,
         hit_cycle_eligible: jax.Array,
         hit_cycle_q_pen: jax.Array,
         hit_cycle_q_error_max_rad: jax.Array,
@@ -12548,11 +21589,13 @@ class MjxJuggleEnv:
         hit_racket_full_angular_speed_at_contact: jax.Array,
         hit_racket_local_y_angular_speed_at_contact: jax.Array,
         hit_racket_local_xz_angular_speed_at_contact: jax.Array,
+        hit_racket_pose_error_at_contact: jax.Array,
         hit_contact_center_dist_at_contact: jax.Array,
+        hit_racket_xy_at_contact: jax.Array,
         hit_ball_z_at_contact: jax.Array,
         hit_racket_z_at_contact: jax.Array,
+        fixed_contact_policy_target,
     ) -> tuple[jax.Array, dict[str, jax.Array]]:
-        del cmd_qvel
         if self.cfg.hit_apex_target_abs_z is None:
             target_ball_z = racket_anchor[:, 2] + float(self.cfg.target_height)
             target_hit_apex_z = racket_anchor[:, 2] + float(self.cfg.hit_height_center)
@@ -12756,8 +21799,23 @@ class MjxJuggleEnv:
             ((apex_view_x - float(self.cfg.ball_view_x_target_m)) / max(1e-6, float(self.cfg.hit_apex_view_center_sigma_m))) ** 2
             + ((apex_view_y - float(self.cfg.ball_view_y_target_m)) / max(1e-6, float(self.cfg.hit_apex_view_center_sigma_m))) ** 2
         )
+        hit_next_contact_target_xy = fixed_contact_next_contact_target_xy(
+            contact_xy_m=hit_racket_xy_at_contact,
+            episode_anchor_xy_m=racket_anchor[:, :2],
+            workspace_center_xy=tuple(
+                float(value)
+                for value in self.cfg.fixed_contact_workspace_center_xy_m
+            ),
+            max_lateral_displacement_m=float(
+                self.fixed_contact_target_cfg.max_lateral_displacement_per_bounce_m
+            ),
+            mode=str(self.cfg.fixed_contact_next_contact_target_mode),
+        )
         hit_next_contact_anchor_pen = (
-            jnp.sum((predicted_next_contact_xy - racket_anchor[:, :2]) ** 2, axis=-1)
+            jnp.sum(
+                (predicted_next_contact_xy - hit_next_contact_target_xy) ** 2,
+                axis=-1,
+            )
             / max(1e-6, float(self.cfg.hit_next_contact_anchor_sigma_m)) ** 2
         )
         adaptive_reflected_velocity_target = adaptive_reflected_velocity_target_jax(
@@ -12941,13 +21999,28 @@ class MjxJuggleEnv:
         )
         torque_pen = jnp.mean(data.actuator_force[:, self.arm_aids_j] ** 2, axis=-1)
         sep_dist = jnp.linalg.norm(rel, axis=-1)
+        stick_min_steps = int(self.cfg.stick_min_contact_steps)
+        if self.cfg.fixed_plane_v107_first_stick_grace_steps > 0:
+            from fixed_plane_v107 import first_launch_stick_min_steps
+
+            stick_min_steps = first_launch_stick_min_steps(
+                hit_count=hit_count,
+                episode_step=jnp.rint(episode_time_s / self.dt).astype(jnp.int32),
+                legacy_min_steps=int(self.cfg.stick_min_contact_steps),
+                first_min_steps=int(
+                    self.cfg.fixed_plane_v107_first_stick_grace_steps
+                ),
+                initial_window_steps=int(
+                    self.cfg.fixed_plane_v107_first_confirm_max_steps
+                ),
+            )
         sticky_contact = (
             in_contact
-            & (contact_hold_steps >= int(self.cfg.stick_min_contact_steps))
+            & (contact_hold_steps >= stick_min_steps)
             & (sep_dist <= float(self.cfg.stick_rel_dist_thresh))
             & (rel_speed <= float(self.cfg.stick_rel_speed_thresh))
         )
-        stick_hold_excess = 1.0 + jnp.maximum(0, contact_hold_steps - int(self.cfg.stick_min_contact_steps)).astype(jnp.float32)
+        stick_hold_excess = 1.0 + jnp.maximum(0, contact_hold_steps - stick_min_steps).astype(jnp.float32)
         stick_pen = jnp.where(sticky_contact, stick_hold_excess * float(self.cfg.sticky_contact_penalty_growth), 0.0)
         non_racket_contact_pen = jnp.where(
             other_ball_contact,
@@ -13021,6 +22094,16 @@ class MjxJuggleEnv:
             hit_count,
             self.cfg.post_first_hit_alive_reward_weight,
         )
+        if bool(getattr(
+            self.cfg,
+            "fixed_contact_post_first_hit_alive_requires_free_flight",
+            False,
+        )):
+            term_post_first_hit_alive = jnp.where(
+                in_contact,
+                0.0,
+                term_post_first_hit_alive,
+            )
         term_descending_intercept = float(self.cfg.descending_intercept_reward_weight) * descending_intercept_reward
         term_descending_intercept_excess_penalty = (
             -float(self.cfg.descending_intercept_excess_penalty_weight)
@@ -13135,9 +22218,17 @@ class MjxJuggleEnv:
             4.0 + 4.0 * (early_racket_xy_anchor_excess - 2.0),
             early_racket_xy_anchor_excess**2,
         )
+        from fixed_contact_plane_training import early_racket_xy_anchor_weight
+
+        early_racket_xy_weight = float(self.cfg.early_racket_xy_anchor_penalty_weight)
+        if self.cfg.early_racket_xy_anchor_transition_weight is not None:
+            early_racket_xy_weight = early_racket_xy_anchor_weight(
+                hit_count, weight=self.cfg.early_racket_xy_anchor_penalty_weight,
+                transition_weight=self.cfg.early_racket_xy_anchor_transition_weight,
+            )
         term_early_racket_xy_anchor_penalty = jnp.where(
             early_racket_xy_anchor_active,
-            -float(self.cfg.early_racket_xy_anchor_penalty_weight)
+            -early_racket_xy_weight
             * early_racket_xy_anchor_penalty_shape,
             0.0,
         )
@@ -13180,19 +22271,24 @@ class MjxJuggleEnv:
             1e-6,
             float(self.cfg.racket_stability_angular_speed_scale_rad_s),
         )
-        racket_stability_angular_speed_pen = jnp.minimum(
-            racket_stability_angular_speed_excess**2,
-            4.0,
+        racket_stability_angular_speed_pen = motion_penalty_cost(
+            racket_stability_angular_speed_excess,
+            linear_tail=self.cfg.racket_stability_angular_speed_linear_tail,
         )
         term_racket_stability_angular_speed_penalty = (
             -float(self.cfg.racket_stability_angular_speed_penalty_weight)
             * racket_stability_angular_speed_pen
         )
         racket_up_cos = jnp.maximum(0.0, jnp.sum(racket_normal * jnp.asarray([0.0, 0.0, 1.0]), axis=-1))
-        racket_flatness_err = jnp.maximum(0.0, float(self.cfg.racket_flatness_target_cos) - racket_up_cos)
-        racket_flatness_pen = (
-            racket_flatness_err / max(1e-6, float(self.cfg.racket_flatness_sigma))
-        ) ** 2
+        from fixed_contact_plane_training import racket_flatness_penalty_cost
+
+        racket_flatness_pen = racket_flatness_penalty_cost(
+            racket_up_cos, use_angle=self.cfg.racket_flatness_use_angle_penalty,
+            cos_target=self.cfg.racket_flatness_target_cos,
+            cos_sigma=self.cfg.racket_flatness_sigma,
+            angle_deadband_rad=self.cfg.racket_flatness_angle_deadband_rad,
+            angle_scale_rad=self.cfg.racket_flatness_angle_scale_rad,
+        )
         term_racket_flatness_penalty = (
             -float(self.cfg.racket_flatness_penalty_weight) * racket_flatness_pen
         )
@@ -13272,11 +22368,9 @@ class MjxJuggleEnv:
             racket_cycle_vxy
             - float(self.cfg.racket_cycle_vxy_soft_limit_m_s),
         ) / max(1e-6, float(self.cfg.racket_cycle_vxy_penalty_scale_m_s))
-        racket_cycle_vxy_pen = jnp.where(
-            bool(self.cfg.racket_cycle_vxy_linear_tail)
-            & (racket_cycle_vxy_excess > 2.0),
-            4.0 + 4.0 * (racket_cycle_vxy_excess - 2.0),
-            jnp.minimum(racket_cycle_vxy_excess**2, 4.0),
+        racket_cycle_vxy_pen = motion_penalty_cost(
+            racket_cycle_vxy_excess,
+            linear_tail=self.cfg.racket_cycle_vxy_linear_tail,
         )
         racket_cycle_motion_active = (
             ((hit_count > 0) & (~new_hit))
@@ -13374,7 +22468,16 @@ class MjxJuggleEnv:
         term_action_delta_penalty = -float(self.cfg.action_delta_penalty_weight) * jnp.sum(da**2, axis=-1)
         term_action_clip_excess_penalty = -float(
             self.cfg.action_clip_excess_penalty_weight
-        ) * jnp.sum(jnp.log1p(action_clip_excess * action_clip_excess), axis=-1)
+        ) * action_overflow_loss(
+            action_clip_excess,
+            hit_count,
+            quadratic_early=self.cfg.fixed_contact_early_action_clip_excess_quadratic,
+        )
+        if self.cfg.fixed_contact_early_action_clip_excess_multiplier != 1.0:
+            term_action_clip_excess_penalty *= early_action_overflow_multiplier(
+                hit_count,
+                multiplier=self.cfg.fixed_contact_early_action_clip_excess_multiplier,
+            )
         term_arm_vel_penalty = -float(self.cfg.arm_vel_limit_penalty_weight) * arm_vel_limit_pen
         term_arm_acc_penalty = -float(self.cfg.arm_acc_limit_penalty_weight) * arm_acc_limit_pen
         term_arm_limiter_penalty = -float(self.cfg.arm_limiter_penalty_weight) * arm_limiter_pen
@@ -13742,6 +22845,16 @@ class MjxJuggleEnv:
         )
         low_hit_deficit = jnp.maximum(0.0, (target_ball_z - float(self.cfg.low_hit_apex_margin)) - predicted_apex_z)
         low_hit_pen = float(self.cfg.low_hit_penalty_weight) * low_hit_deficit * low_hit_deficit
+        if self.cfg.fixed_plane_v123_schedule_low_hit_penalty_enabled:
+            scheduled_hit_apex_z = self._fixed_plane_limit_cycle_desired_apex_z_m(
+                jnp.maximum(hit_count - 1, 0)
+            )
+            low_hit_pen = scheduled_low_apex_penalty(
+                predicted_apex_z_m=predicted_apex_z,
+                scheduled_apex_z_m=scheduled_hit_apex_z,
+                margin_m=float(self.cfg.low_hit_apex_margin),
+                weight=float(self.cfg.low_hit_penalty_weight),
+            )
         first_hit_apex_err = (predicted_apex_z - target_hit_apex_z) / max(
             1e-6,
             float(self.cfg.first_hit_apex_sigma),
@@ -13833,8 +22946,17 @@ class MjxJuggleEnv:
             * hit_flatness_excess_pen,
             0.0,
         )
+        from fixed_contact_plane_training import contact_center_penalty_event_mask
+
+        center_penalty_event = contact_center_penalty_event_mask(
+            legacy_mask=recoverability_hit_reward_mask,
+            physical_outcome=(new_hit | ignored_fast_hit | low_survival_launch
+                              | subfloor_launch | failed_hit),
+            recoverability_active=recoverability_active,
+            all_physical=bool(self.cfg.fixed_contact_center_penalty_all_physical_outcomes),
+        )
         term_hit_contact_center_excess_penalty = jnp.where(
-            recoverability_hit_reward_mask,
+            center_penalty_event,
             -hit_contact_center_excess_pen,
             0.0,
         )
@@ -13954,6 +23076,11 @@ class MjxJuggleEnv:
             bool(self.cfg.hit_racket_vxy_apply_from_first_hit),
             hit_reward_mask,
             recoverability_hit_reward_mask,
+        )
+        hit_racket_vxy_reward_mask = fixed_contact_hit_racket_vxy_penalty_mask(
+            base_mask=hit_racket_vxy_reward_mask,
+            hit_count=hit_count,
+            min_hit_count=int(self.cfg.hit_racket_vxy_penalty_min_hit_count),
         )
         term_hit_racket_vxy_penalty = jnp.where(
             hit_racket_vxy_reward_mask,
@@ -14159,6 +23286,2212 @@ class MjxJuggleEnv:
             stationary_dense_reward,
             reward,
         )
+        # Experimental reward fields are absent from legacy configs.
+        # Keep their computation, as well as their output, behind the mode.
+        rapid_motion_bonus = jnp.zeros_like(reward)
+        rapid_hold_motion_penalty = jnp.zeros_like(reward)
+        if self.fixed_contact_plane_training_enabled:
+            reward_goal_hit_count = jnp.maximum(
+                hit_count - new_hit.astype(jnp.int32),
+                0,
+            )
+            fixed_contact_reward_target_apex_z_m = (
+                self._fixed_plane_limit_cycle_desired_apex_z_m(
+                    reward_goal_hit_count
+                )
+            )
+            fixed_contact_limit_cycle_apex_progress = (
+                self._fixed_plane_limit_cycle_apex_progress(
+                    reward_goal_hit_count
+                )
+            )
+            from fixed_contact_plane_training import contact_quality_pose_error
+            fixed_contact_quality = contact_quality_scores(
+                contact_surface_z_m=(
+                    hit_ball_z_at_contact
+                    - float(self.mj_model.geom_size[self.ball_geom_id, 0])
+                ),
+                pose_error_rad=contact_quality_pose_error(
+                    hit_racket_pose_error_at_contact, hit_racket_up_cos_at_contact,
+                    uses_normal_tilt=bool(getattr(
+                        self.cfg, "fixed_contact_quality_pose_uses_normal_tilt", False))),
+                racket_vxy_m_s=hit_racket_vxy_at_contact,
+                racket_omega_rad_s=hit_racket_full_angular_speed_at_contact,
+                contact_offset_m=hit_contact_center_dist_at_contact,
+                target_surface_z_m=float(
+                    getattr(self.cfg, "fixed_contact_surface_z_m", 1.075)
+                ),
+                joint_floor_mix=float(
+                    getattr(
+                        self.cfg,
+                        "fixed_contact_quality_joint_floor_mix",
+                        0.0,
+                    )
+                ),
+                surface_z_sigma_m=float(getattr(
+                    self.cfg, "fixed_contact_quality_surface_z_sigma_m", .010)),
+            )
+            fixed_contact_outcome_target = self._fixed_contact_target(
+                bpos, bvel, hit_count
+            )
+            fixed_crossing_xy = fixed_contact_outcome_target.position_m[:, :2]
+            fixed_outcome_crossing_valid = fixed_contact_outcome_target.valid
+            fixed_tracking_target = fixed_contact_outcome_target
+            if (
+                bool(self.cfg.fixed_contact_reward_uses_policy_target)
+                and fixed_contact_policy_target is not None
+            ):
+                fixed_tracking_target = fixed_contact_policy_target
+            fixed_time_to_contact = fixed_tracking_target.time_to_contact_s
+            fixed_crossing_valid = fixed_tracking_target.valid
+            fixed_contact_elapsed_s = jnp.where(
+                pending_hit,
+                pending_hit_steps.astype(jnp.float32) * self.dt,
+                jnp.where(
+                    (hit_count > 0) & (~fixed_crossing_valid),
+                    time_since_counted_hit,
+                    -1.0,
+                ),
+            )
+            fixed_contact_phase = fixed_contact_ttc_phase(
+                fixed_time_to_contact,
+                fixed_crossing_valid,
+                contact_elapsed_s=fixed_contact_elapsed_s,
+                arrival_start_s=float(
+                    getattr(
+                        self.cfg,
+                        "fixed_contact_ttc_arrival_start_s",
+                        0.100,
+                    )
+                ),
+                settle_start_s=float(
+                    getattr(
+                        self.cfg,
+                        "fixed_contact_ttc_settle_start_s",
+                        0.080,
+                    )
+                ),
+                strike_start_s=float(
+                    getattr(
+                        self.cfg,
+                        "fixed_contact_ttc_strike_start_s",
+                        0.060,
+                    )
+                ),
+            )
+            final_window_s = float(
+                getattr(self.cfg, "fixed_contact_final_window_s", 0.080)
+            )
+            final_window = (
+                fixed_crossing_valid
+                & (fixed_time_to_contact <= final_window_s)
+            )
+            arrival_window_lo_s, arrival_window_hi_s = sorted(
+                float(value)
+                for value in self.cfg.fixed_contact_s0_arrival_window_s
+            )
+            fixed_s0_arrival_window = (
+                fixed_crossing_valid
+                & (fixed_time_to_contact >= arrival_window_lo_s)
+                & (fixed_time_to_contact <= arrival_window_hi_s)
+            )
+            if str(self.cfg.fixed_contact_reward_mode) in {
+                "fixed_contact_additive_s0_v2",
+                "fixed_contact_timed_intercept_v3",
+                "fixed_contact_full_flight_timed_intercept_v19",
+                "fixed_contact_gate_aligned_readiness_v20",
+                "fixed_contact_outcome_constrained_v22",
+            }:
+                tracking_progress_active = (
+                    fixed_contact_s0_progress_active_mask(
+                        crossing_valid=fixed_crossing_valid,
+                        time_to_contact_s=fixed_time_to_contact,
+                        final_window_s=final_window_s,
+                    )
+                )
+            else:
+                # Preserve the V1 potential-reward timing exactly.
+                tracking_progress_active = fixed_crossing_valid
+            fixed_racket_surface_position = (
+                data.geom_xpos[:, self.racket_geom_id]
+                + racket_normal
+                * float(
+                    self.mj_model.geom_size[
+                        self.racket_geom_id,
+                        int(self.cfg.fixed_contact_racket_surface_size_axis),
+                    ]
+                )
+            )
+            fixed_racket_surface_velocity = rvel + jnp.cross(
+                data.cvel[:, self.racket_body_id, :3],
+                fixed_racket_surface_position - rpos,
+            )
+            fixed_return_quality = return_quality_scores(
+                fixed_crossing_xy,
+                predicted_apex_z,
+                launch_contact_xy_m=hit_racket_xy_at_contact,
+                workspace_center_xy=tuple(
+                    getattr(
+                        self.cfg,
+                        "fixed_contact_workspace_center_xy_m",
+                        (0.0, -0.49),
+                    )
+                ),
+                target_apex_z_m=fixed_contact_reward_target_apex_z_m,
+                apex_sigma_m=float(self.cfg.fixed_contact_return_apex_sigma_m),
+                max_lateral_displacement_per_bounce_m=float(
+                    self.fixed_contact_target_cfg.max_lateral_displacement_per_bounce_m
+                ),
+            )
+            fixed_event_joint_quality_gate = (
+                fixed_contact_event_joint_quality_gate(
+                    contact_joint=fixed_contact_quality.joint,
+                    return_joint=fixed_return_quality.joint,
+                    mix=float(
+                        self.cfg.fixed_contact_event_joint_quality_gate_mix
+                    ),
+                )
+            )
+            fixed_apex_error_cost = fixed_contact_apex_error_cost(
+                predicted_apex_z,
+                target_apex_z_m=fixed_contact_reward_target_apex_z_m,
+                scale_m=float(
+                    self.cfg.fixed_contact_apex_error_penalty_scale_m
+                ),
+            )
+            fixed_outcome_constraint_costs = (
+                fixed_contact_outcome_constraint_costs(
+                    surface_z_error_m=jnp.abs(
+                        hit_ball_z_at_contact
+                        - float(self.mj_model.geom_size[self.ball_geom_id, 0])
+                        - float(self.cfg.fixed_contact_surface_z_m)
+                    ),
+                    pose_error_rad=hit_racket_pose_error_at_contact,
+                    racket_vxy_m_s=hit_racket_vxy_at_contact,
+                    racket_omega_rad_s=(
+                        hit_racket_full_angular_speed_at_contact
+                    ),
+                    contact_offset_m=hit_contact_center_dist_at_contact,
+                    horizontal_displacement_m=(
+                        fixed_return_quality.horizontal_displacement_m
+                    ),
+                    center_progress_m=fixed_return_quality.center_progress_m,
+                    max_surface_z_error_m=float(
+                        self.cfg.fixed_contact_outcome_max_surface_z_error_m
+                    ),
+                    max_pose_error_rad=float(
+                        self.cfg.fixed_contact_outcome_max_pose_error_rad
+                    ),
+                    max_racket_vxy_m_s=float(
+                        self.cfg.fixed_contact_outcome_max_racket_vxy_m_s
+                    ),
+                    max_racket_omega_rad_s=float(
+                        self.cfg.fixed_contact_outcome_max_racket_omega_rad_s
+                    ),
+                    max_contact_offset_m=float(
+                        self.cfg.fixed_contact_outcome_max_contact_offset_m
+                    ),
+                    max_horizontal_displacement_m=float(
+                        self.cfg.fixed_contact_outcome_max_horizontal_step_m
+                    ),
+                    max_outward_progress_m=float(
+                        self.cfg.fixed_contact_outcome_max_outward_progress_m
+                    ),
+                )
+            )
+            fixed_outcome_constraint_cost = (
+                aggregate_fixed_contact_outcome_constraint_costs(
+                    fixed_outcome_constraint_costs,
+                    self.cfg.fixed_contact_outcome_constraint_aggregation,
+                )
+            )
+            fixed_outcome_all_ready = jnp.all(
+                fixed_outcome_constraint_costs <= 0.0, axis=-1
+            )
+            fixed_outcome_constraint_penalty = (
+                fixed_contact_outcome_constraint_event_penalty(
+                    event=hit_reward_mask,
+                    hit_count=hit_count,
+                    cost=fixed_outcome_constraint_cost,
+                    min_hit_count=int(
+                        self.cfg.fixed_contact_outcome_constraint_min_hit_count
+                    ),
+                    weight=float(
+                        self.cfg.fixed_contact_outcome_constraint_penalty_weight
+                    ),
+                )
+            )
+            fixed_outcome_constraint_bonus = jnp.where(
+                hit_reward_mask & fixed_outcome_all_ready,
+                float(self.cfg.fixed_contact_outcome_constraint_bonus_weight),
+                0.0,
+            )
+            fixed_apex_error_penalty = jnp.where(
+                hit_reward_mask,
+                -float(self.cfg.fixed_contact_apex_error_penalty_weight)
+                * fixed_apex_error_cost,
+                0.0,
+            )
+            fixed_positive_hit_reward = (
+                1.0
+                + float(
+                    getattr(self.cfg, "fixed_contact_quality_reward_weight", 0.0)
+                )
+                * fixed_contact_quality.combined
+                + float(
+                    getattr(self.cfg, "fixed_contact_return_reward_weight", 0.0)
+                )
+                * fixed_return_quality.combined
+                * fixed_outcome_crossing_valid.astype(jnp.float32)
+            )
+            fixed_contact_vxy_event_bonus = jnp.zeros_like(
+                fixed_positive_hit_reward
+            )
+            if (
+                self.cfg.fixed_plane_limit_cycle_contact_vxy_event_reward_weight
+                > 0.0
+            ):
+                fixed_contact_vxy_event_bonus = (
+                    confirmed_contact_vxy_event_bonus(
+                        event=hit_reward_mask,
+                        racket_vxy_m_s=hit_racket_vxy_at_contact,
+                        ball_outgoing_vxy_m_s=hit_vxy,
+                        weight=(
+                            self.cfg.fixed_plane_limit_cycle_contact_vxy_event_reward_weight
+                        ),
+                        sigma_m_s=(
+                            self.cfg.fixed_plane_limit_cycle_contact_vxy_event_sigma_m_s
+                        ),
+                        reference_m_s=(
+                            self.cfg.fixed_plane_limit_cycle_contact_vxy_event_reference_m_s
+                        ),
+                    )
+                )
+                fixed_positive_hit_reward = (
+                    fixed_positive_hit_reward + fixed_contact_vxy_event_bonus
+                )
+            if float(self.cfg.fixed_contact_event_joint_quality_gate_mix) > 0.0:
+                fixed_positive_hit_reward = (
+                    fixed_positive_hit_reward
+                    * fixed_event_joint_quality_gate
+                )
+            fixed_hit_reward = jnp.where(
+                hit_reward_mask,
+                fixed_positive_hit_reward,
+                0.0,
+            ) + (
+                fixed_outcome_constraint_penalty
+                + fixed_outcome_constraint_bonus
+                + fixed_apex_error_penalty
+            )
+            fixed_survival_reward = (
+                float(
+                    getattr(self.cfg, "fixed_contact_survival_reward_weight", 0.0)
+                )
+                * (hit_count > 0).astype(jnp.float32)
+                * self.dt
+            )
+            fixed_workspace_z_barrier_cost = (
+                fixed_contact_workspace_z_barrier_cost(
+                    racket_surface_z_m=workspace_barrier_height(
+                        site_z_m=rpos[:, 2],
+                        surface_z_m=fixed_racket_surface_position[:, 2],
+                        use_site_height=(
+                            self.cfg.fixed_contact_workspace_z_barrier_use_site_height
+                        ),
+                    ),
+                    lower_z_m=float(
+                        self.cfg.fixed_contact_racket_z_bounds_m[0]
+                    ),
+                    upper_z_m=float(
+                        self.cfg.fixed_contact_racket_z_bounds_m[1]
+                    ),
+                    margin_m=float(
+                        self.cfg.fixed_contact_workspace_z_barrier_margin_m
+                    ),
+                    racket_vertical_velocity_m_s=rvel[:, 2],
+                    downward_lookahead_s=float(
+                        self.cfg.fixed_contact_workspace_z_barrier_downward_lookahead_s
+                    ),
+                )
+            )
+            fixed_workspace_z_barrier_penalty = (
+                -float(self.cfg.fixed_contact_workspace_z_barrier_weight)
+                * fixed_workspace_z_barrier_cost
+                * self.dt
+            )
+            previous_ball_position = bpos - bvel * self.dt
+            previous_contact_target = self._fixed_contact_target(
+                previous_ball_position,
+                bvel,
+                hit_count,
+            )
+            previous_crossing_xy = previous_contact_target.position_m[:, :2]
+            previous_crossing_valid = previous_contact_target.valid
+            current_tracking_error = jnp.linalg.norm(
+                fixed_tracking_target.position_m[:, :2]
+                - fixed_racket_surface_position[:, :2],
+                axis=-1,
+            )
+            previous_tracking_error = jnp.linalg.norm(
+                previous_crossing_xy
+                - (
+                    fixed_racket_surface_position
+                    - fixed_racket_surface_velocity * self.dt
+                )[:, :2],
+                axis=-1,
+            )
+            fixed_tracking_potential = (
+                float(
+                    getattr(self.cfg, "fixed_contact_tracking_potential_weight", 0.0)
+                )
+                * (previous_tracking_error - current_tracking_error)
+                * (
+                    tracking_progress_active & previous_crossing_valid
+                ).astype(jnp.float32)
+            )
+            current_pose_error = jnp.linalg.norm(
+                so3_log_error(
+                    fixed_tracking_target.rotation_matrix,
+                    data.site_xmat[:, self.racket_site_id].reshape((-1, 3, 3)),
+                ),
+                axis=-1,
+            )
+            fixed_impact_racket_vz_target = jnp.zeros_like(
+                fixed_time_to_contact
+            )
+            fixed_impact_phase_z_target = jnp.full_like(
+                fixed_time_to_contact,
+                float(self.cfg.fixed_contact_surface_z_m),
+            )
+            fixed_impact_phase_vz_target = jnp.zeros_like(
+                fixed_time_to_contact
+            )
+            fixed_impact_phase_active = jnp.zeros_like(
+                fixed_crossing_valid,
+                dtype=jnp.bool_,
+            )
+            fixed_limit_cycle_raw_racket_vz_target = jnp.zeros_like(
+                fixed_time_to_contact
+            )
+            fixed_limit_cycle_racket_vz_target = jnp.zeros_like(
+                fixed_time_to_contact
+            )
+            fixed_limit_cycle_racket_vz_clipped = jnp.zeros_like(
+                fixed_crossing_valid,
+                dtype=jnp.bool_,
+            )
+            fixed_limit_cycle_phase_z_target = jnp.full_like(
+                fixed_time_to_contact,
+                float(self.cfg.fixed_contact_surface_z_m),
+            )
+            fixed_limit_cycle_phase_vz_target = jnp.zeros_like(
+                fixed_time_to_contact
+            )
+            fixed_limit_cycle_phase_active = jnp.zeros_like(
+                fixed_crossing_valid,
+                dtype=jnp.bool_,
+            )
+            if bool(
+                self.cfg.fixed_plane_limit_cycle_dynamic_stroke_enabled
+            ):
+                (
+                    fixed_limit_cycle_raw_racket_vz_target,
+                    fixed_limit_cycle_racket_vz_target,
+                    fixed_limit_cycle_racket_vz_clipped,
+                ) = self._fixed_plane_limit_cycle_dynamic_racket_vz_target_m_s(
+                    fixed_tracking_target.incoming_ball_velocity_m_s[:, 2],
+                    hit_count,
+                )
+                (
+                    fixed_limit_cycle_phase_z_target,
+                    fixed_limit_cycle_phase_vz_target,
+                    fixed_limit_cycle_phase_active,
+                ) = limit_cycle_workspace_bounded_stroke_reference(
+                    time_to_contact_s=fixed_time_to_contact,
+                    target_contact_vz_m_s=(
+                        fixed_limit_cycle_racket_vz_target
+                    ),
+                    crossing_valid=fixed_crossing_valid,
+                    pending_hit=pending_hit,
+                    hit_count=hit_count,
+                    contact_surface_z_m=float(
+                        self.cfg.fixed_contact_surface_z_m
+                    ),
+                    prestroke_depth_m=float(
+                        self.cfg.fixed_plane_limit_cycle_prestroke_depth_m
+                    ),
+                    prepare_s=float(
+                        self.cfg.fixed_plane_limit_cycle_stroke_prepare_s
+                    ),
+                    min_hit_count=int(
+                        self.cfg.fixed_contact_smooth_stroke_min_hit_count
+                    ),
+                )
+            if bool(self.cfg.fixed_contact_impact_consistent_stroke_enabled):
+                fixed_impact_racket_vz_target = (
+                    fixed_contact_impact_consistent_racket_vz_target(
+                        incoming_ball_vz_m_s=(
+                            fixed_tracking_target.incoming_ball_velocity_m_s[:, 2]
+                        ),
+                        contact_surface_z_m=float(
+                            self.cfg.fixed_contact_surface_z_m
+                        ),
+                        ball_radius_m=float(
+                            self.mj_model.geom_size[self.ball_geom_id, 0]
+                        ),
+                        target_apex_z_m=float(
+                            self.fixed_contact_target_cfg.target_apex_z_m
+                        ),
+                        gravity_m_s2=float(
+                            self.fixed_contact_target_cfg.gravity_m_s2
+                        ),
+                        effective_restitution=float(
+                            self.cfg.fixed_contact_impact_effective_restitution
+                        ),
+                        min_racket_vz_m_s=float(
+                            self.cfg.fixed_contact_impact_min_racket_vz_m_s
+                        ),
+                        max_racket_vz_m_s=float(
+                            self.cfg.fixed_contact_impact_max_racket_vz_m_s
+                        ),
+                    )
+                )
+                (
+                    fixed_impact_phase_z_target,
+                    fixed_impact_phase_vz_target,
+                    fixed_impact_phase_active,
+                ) = fixed_contact_dynamic_phase_stroke_targets(
+                    time_to_contact_s=fixed_time_to_contact,
+                    target_speed_m_s=fixed_impact_racket_vz_target,
+                    crossing_valid=fixed_crossing_valid,
+                    pending_hit=pending_hit,
+                    hit_count=hit_count,
+                    contact_surface_z_m=float(
+                        self.cfg.fixed_contact_surface_z_m
+                    ),
+                    lead_s=float(
+                        self.cfg.fixed_contact_phase_stroke_lead_s
+                    ),
+                    prepare_s=float(
+                        self.cfg.fixed_contact_phase_stroke_prepare_s
+                    ),
+                    min_hit_count=int(
+                        self.cfg.fixed_contact_phase_stroke_min_hit_count
+                    ),
+                )
+            (
+                fixed_phase_stroke_z_cost,
+                fixed_phase_stroke_z_target,
+                fixed_phase_stroke_z_active,
+            ) = fixed_contact_phase_consistent_stroke_z_cost(
+                racket_surface_z_m=fixed_racket_surface_position[:, 2],
+                hit_count=hit_count,
+                crossing_valid=fixed_crossing_valid,
+                time_to_contact_s=fixed_time_to_contact,
+                pending_hit=pending_hit,
+                contact_surface_z_m=float(self.cfg.fixed_contact_surface_z_m),
+                target_vz_m_s=float(
+                    self.cfg.fixed_contact_phase_stroke_target_vz_m_s
+                ),
+                lead_s=float(self.cfg.fixed_contact_phase_stroke_lead_s),
+                prepare_s=float(self.cfg.fixed_contact_phase_stroke_prepare_s),
+                error_scale_m=float(
+                    self.cfg.fixed_contact_phase_stroke_error_scale_m
+                ),
+                min_hit_count=int(
+                    self.cfg.fixed_contact_phase_stroke_min_hit_count
+                ),
+            )
+            if bool(self.cfg.fixed_contact_impact_consistent_stroke_enabled):
+                fixed_phase_stroke_z_target = fixed_impact_phase_z_target
+                fixed_phase_stroke_z_active = fixed_impact_phase_active
+                fixed_phase_stroke_z_error = (
+                    fixed_racket_surface_position[:, 2]
+                    - fixed_phase_stroke_z_target
+                ) / float(self.cfg.fixed_contact_phase_stroke_error_scale_m)
+                fixed_phase_stroke_z_cost = jnp.where(
+                    fixed_phase_stroke_z_active,
+                    jnp.sqrt(
+                        1.0
+                        + fixed_phase_stroke_z_error
+                        * fixed_phase_stroke_z_error
+                    )
+                    - 1.0,
+                    0.0,
+                )
+            if bool(
+                self.cfg.fixed_plane_limit_cycle_dynamic_stroke_enabled
+            ):
+                fixed_phase_stroke_z_target = (
+                    fixed_limit_cycle_phase_z_target
+                )
+                fixed_phase_stroke_z_active = (
+                    fixed_limit_cycle_phase_active
+                )
+                fixed_phase_stroke_z_error = (
+                    fixed_racket_surface_position[:, 2]
+                    - fixed_phase_stroke_z_target
+                ) / float(self.cfg.fixed_contact_phase_stroke_error_scale_m)
+                fixed_phase_stroke_z_cost = jnp.where(
+                    fixed_phase_stroke_z_active,
+                    jnp.sqrt(
+                        1.0
+                        + fixed_phase_stroke_z_error
+                        * fixed_phase_stroke_z_error
+                    )
+                    - 1.0,
+                    0.0,
+                )
+            fixed_dense_z_target = fixed_contact_phase_dense_z_target(
+                legacy_target_z_m=fixed_tracking_target.position_m[:, 2],
+                phase_target_z_m=fixed_phase_stroke_z_target,
+                phase_active=fixed_phase_stroke_z_active,
+                replace_enabled=bool(
+                    self.cfg.fixed_contact_phase_stroke_replace_dense_z_target
+                ),
+            )
+            fixed_surface_z_error = jnp.abs(
+                fixed_racket_surface_position[:, 2] - fixed_dense_z_target
+            )
+            fixed_racket_vxy = jnp.linalg.norm(
+                fixed_racket_surface_velocity[:, :2], axis=-1
+            )
+            fixed_s0_reward_scores = fixed_contact_s0_component_scores(
+                tracking_xy_error_m=current_tracking_error,
+                surface_z_error_m=fixed_surface_z_error,
+                pose_error_rad=current_pose_error,
+                racket_vxy_m_s=fixed_racket_vxy,
+                racket_omega_rad_s=racket_full_angular_speed,
+                xy_sigma_m=float(self.cfg.fixed_contact_s0_xy_reward_sigma_m),
+                z_sigma_m=float(self.cfg.fixed_contact_s0_z_reward_sigma_m),
+                pose_sigma_rad=float(
+                    self.cfg.fixed_contact_s0_pose_reward_sigma_rad
+                ),
+                vxy_sigma_m_s=float(
+                    self.cfg.fixed_contact_s0_vxy_reward_sigma_m_s
+                ),
+                omega_sigma_rad_s=float(
+                    self.cfg.fixed_contact_s0_omega_reward_sigma_rad_s
+                ),
+            )
+            fixed_s0_gate_scores = fixed_contact_s0_component_scores(
+                tracking_xy_error_m=current_tracking_error,
+                surface_z_error_m=fixed_surface_z_error,
+                pose_error_rad=current_pose_error,
+                racket_vxy_m_s=fixed_racket_vxy,
+                racket_omega_rad_s=racket_full_angular_speed,
+                xy_sigma_m=float(self.cfg.fixed_contact_s0_xy_gate_sigma_m),
+                z_sigma_m=float(self.cfg.fixed_contact_s0_z_gate_sigma_m),
+                pose_sigma_rad=float(
+                    self.cfg.fixed_contact_s0_pose_gate_sigma_rad
+                ),
+                vxy_sigma_m_s=float(
+                    self.cfg.fixed_contact_s0_vxy_gate_sigma_m_s
+                ),
+                omega_sigma_rad_s=float(
+                    self.cfg.fixed_contact_s0_omega_gate_sigma_rad_s
+                ),
+            )
+            fixed_s0_final_scores = fixed_contact_s0_component_scores(
+                tracking_xy_error_m=current_tracking_error,
+                surface_z_error_m=fixed_surface_z_error,
+                pose_error_rad=current_pose_error,
+                racket_vxy_m_s=fixed_racket_vxy,
+                racket_omega_rad_s=racket_full_angular_speed,
+                xy_sigma_m=float(
+                    self.cfg.fixed_contact_s0_final_xy_reward_sigma_m
+                ),
+                z_sigma_m=float(
+                    self.cfg.fixed_contact_s0_final_z_reward_sigma_m
+                ),
+                pose_sigma_rad=float(
+                    self.cfg.fixed_contact_s0_final_pose_reward_sigma_rad
+                ),
+                vxy_sigma_m_s=float(
+                    self.cfg.fixed_contact_s0_ready_max_vxy_m_s
+                ),
+                omega_sigma_rad_s=float(
+                    self.cfg.fixed_contact_s0_ready_max_omega_rad_s
+                ),
+            )
+            fixed_s0_ready = fixed_contact_s0_readiness_mask(
+                tracking_xy_error_m=current_tracking_error,
+                surface_z_error_m=fixed_surface_z_error,
+                pose_error_rad=current_pose_error,
+                racket_vxy_m_s=fixed_racket_vxy,
+                racket_omega_rad_s=racket_full_angular_speed,
+                max_xy_error_m=float(
+                    self.cfg.fixed_contact_s0_ready_max_xy_error_m
+                ),
+                max_z_error_m=float(
+                    self.cfg.fixed_contact_s0_ready_max_z_error_m
+                ),
+                max_pose_error_rad=float(
+                    self.cfg.fixed_contact_s0_ready_max_pose_error_rad
+                ),
+                max_vxy_m_s=float(
+                    self.cfg.fixed_contact_s0_ready_max_vxy_m_s
+                ),
+                max_omega_rad_s=float(
+                    self.cfg.fixed_contact_s0_ready_max_omega_rad_s
+                ),
+            )
+            fixed_s0_gate_aligned_costs = fixed_contact_s0_gate_aligned_costs(
+                tracking_xy_error_m=current_tracking_error,
+                surface_z_error_m=fixed_surface_z_error,
+                pose_error_rad=current_pose_error,
+                racket_vxy_m_s=fixed_racket_vxy,
+                racket_omega_rad_s=racket_full_angular_speed,
+                max_xy_error_m=float(
+                    self.cfg.fixed_contact_s0_ready_max_xy_error_m
+                ),
+                max_z_error_m=float(
+                    self.cfg.fixed_contact_s0_ready_max_z_error_m
+                ),
+                max_pose_error_rad=float(
+                    self.cfg.fixed_contact_s0_ready_max_pose_error_rad
+                ),
+                max_vxy_m_s=float(
+                    self.cfg.fixed_contact_s0_ready_max_vxy_m_s
+                ),
+                max_omega_rad_s=float(
+                    self.cfg.fixed_contact_s0_ready_max_omega_rad_s
+                ),
+            )
+            (
+                fixed_effective_action_penalty,
+                fixed_action_penalty_gate_eligible,
+            ) = fixed_contact_gate_qualified_action_penalty(
+                raw_action_penalty=term_action_penalty * self.dt,
+                component_scores=fixed_s0_gate_scores,
+                minimum_component_scores=(
+                    self.cfg.fixed_contact_s0_action_penalty_min_gate_scores
+                ),
+            )
+            fixed_brake_score = (
+                jnp.exp(-0.5 * (current_tracking_error / 0.010) ** 2)
+                * jnp.exp(-0.5 * (current_pose_error / jnp.deg2rad(2.0)) ** 2)
+                * jnp.exp(
+                    -0.5
+                    * (
+                        jnp.linalg.norm(
+                            fixed_racket_surface_velocity[:, :2], axis=-1
+                        )
+                        / 0.050
+                    )
+                    ** 2
+                )
+                * jnp.exp(-0.5 * (racket_full_angular_speed / 0.50) ** 2)
+            )
+            fixed_final_brake_reward = (
+                float(getattr(self.cfg, "fixed_contact_final_brake_weight", 0.0))
+                * fixed_brake_score
+                * final_window.astype(jnp.float32)
+                * self.dt
+            )
+            fixed_s0_reward_active = fixed_contact_s0_reward_active_mask(
+                crossing_valid=fixed_crossing_valid,
+                hit_count=hit_count,
+                episode_time_s=episode_time_s,
+                pre_hit_budget_s=float(
+                    self.cfg.fixed_contact_pre_hit_s0_reward_max_s
+                ),
+                falling_reset_active=reset_falling_contact_active,
+                falling_pre_hit_budget_s=float(
+                    self.cfg.fixed_contact_falling_pre_hit_s0_reward_max_s
+                ),
+            )
+            (
+                fixed_pre_hit_launch_vz_reward,
+                fixed_pre_hit_launch_vz_score,
+                fixed_pre_hit_launch_vz_active,
+            ) = fixed_contact_pre_hit_launch_vz_reward(
+                racket_vz_m_s=fixed_racket_surface_velocity[:, 2],
+                hit_count=hit_count,
+                episode_time_s=episode_time_s,
+                target_vz_m_s=float(
+                    self.cfg.fixed_contact_pre_hit_launch_vz_target_m_s
+                ),
+                active_window_s=float(
+                    self.cfg.fixed_contact_pre_hit_launch_vz_window_s
+                ),
+                reward_weight=float(
+                    self.cfg.fixed_contact_pre_hit_launch_vz_reward_weight
+                ),
+                dt_s=self.dt,
+            )
+            fixed_pre_hit_launch_command_vz = jnp.sum(
+                cmd_qvel * self.racket_vertical_arm_jacobian[None, :],
+                axis=-1,
+            )
+            (
+                fixed_phase_stroke_command_vz_cost,
+                fixed_phase_stroke_command_vz_target,
+                fixed_phase_stroke_command_vz_active,
+            ) = fixed_contact_phase_stroke_vz_cost(
+                racket_vz_m_s=fixed_pre_hit_launch_command_vz,
+                hit_count=hit_count,
+                crossing_valid=fixed_crossing_valid,
+                time_to_contact_s=fixed_time_to_contact,
+                pending_hit=pending_hit,
+                target_speed_m_s=float(
+                    self.cfg.fixed_contact_phase_stroke_target_vz_m_s
+                ),
+                lead_s=float(self.cfg.fixed_contact_phase_stroke_lead_s),
+                prepare_s=float(self.cfg.fixed_contact_phase_stroke_prepare_s),
+                error_scale_m_s=float(
+                    self.cfg.fixed_contact_phase_stroke_command_vz_error_scale_m_s
+                ),
+                min_hit_count=int(
+                    self.cfg.fixed_contact_phase_stroke_min_hit_count
+                ),
+            )
+            fixed_phase_stroke_command_vz_penalty = (
+                -float(
+                    self.cfg.fixed_contact_phase_stroke_command_vz_penalty_weight
+                )
+                * fixed_phase_stroke_command_vz_cost
+                * self.dt
+            )
+            fixed_impact_task_twist_cost = jnp.zeros_like(
+                fixed_time_to_contact
+            )
+            fixed_impact_task_twist_components = jnp.zeros(
+                (self.n_envs, 3),
+                dtype=jnp.float32,
+            )
+            fixed_impact_command_linear_velocity = jnp.zeros(
+                (self.n_envs, 3),
+                dtype=jnp.float32,
+            )
+            fixed_impact_command_angular_velocity = jnp.zeros(
+                (self.n_envs, 3),
+                dtype=jnp.float32,
+            )
+            fixed_impact_target_linear_velocity = jnp.zeros(
+                (self.n_envs, 3),
+                dtype=jnp.float32,
+            )
+            if bool(self.cfg.fixed_contact_impact_consistent_stroke_enabled):
+                # Evaluate the already-projected command in the current
+                # surface-point Jacobian.  This is the command that can pass
+                # the Cartesian hard set, unlike the historical warm-pose
+                # scalar vertical Jacobian proxy.
+                fixed_joint_axis_world = data.xaxis[:, self.arm_jids, :]
+                fixed_joint_anchor_world = data.xanchor[:, self.arm_jids, :]
+                fixed_surface_offset_world = (
+                    fixed_racket_surface_position[:, None, :]
+                    - fixed_joint_anchor_world
+                )
+                fixed_surface_translation_jacobian = jnp.swapaxes(
+                    jnp.cross(
+                        fixed_joint_axis_world,
+                        fixed_surface_offset_world,
+                    ),
+                    1,
+                    2,
+                )
+                fixed_surface_angular_jacobian = jnp.swapaxes(
+                    fixed_joint_axis_world,
+                    1,
+                    2,
+                )
+                fixed_impact_command_linear_velocity = jnp.einsum(
+                    "nij,nj->ni",
+                    fixed_surface_translation_jacobian,
+                    cmd_qvel,
+                )
+                fixed_impact_command_angular_velocity = jnp.einsum(
+                    "nij,nj->ni",
+                    fixed_surface_angular_jacobian,
+                    cmd_qvel,
+                )
+                fixed_impact_target_xy_velocity = jnp.clip(
+                    float(
+                        self.cfg.fixed_contact_impact_task_twist_xy_position_gain_s
+                    )
+                    * (
+                        fixed_tracking_target.position_m[:, :2]
+                        - fixed_racket_surface_position[:, :2]
+                    ),
+                    -float(
+                        self.cfg.fixed_contact_impact_task_twist_max_vxy_m_s
+                    ),
+                    float(
+                        self.cfg.fixed_contact_impact_task_twist_max_vxy_m_s
+                    ),
+                )
+                fixed_impact_target_z_velocity = jnp.clip(
+                    fixed_impact_phase_vz_target
+                    + float(
+                        self.cfg.fixed_contact_impact_task_twist_z_position_gain_s
+                    )
+                    * (
+                        fixed_impact_phase_z_target
+                        - fixed_racket_surface_position[:, 2]
+                    ),
+                    -float(
+                        self.cfg.fixed_contact_impact_task_twist_max_vz_m_s
+                    ),
+                    float(
+                        self.cfg.fixed_contact_impact_task_twist_max_vz_m_s
+                    ),
+                )
+                fixed_impact_target_linear_velocity = jnp.concatenate(
+                    [
+                        fixed_impact_target_xy_velocity,
+                        fixed_impact_target_z_velocity[:, None],
+                    ],
+                    axis=-1,
+                )
+                (
+                    fixed_impact_task_twist_cost,
+                    fixed_impact_task_twist_components,
+                ) = fixed_contact_task_twist_cost(
+                    command_linear_velocity_m_s=(
+                        fixed_impact_command_linear_velocity
+                    ),
+                    command_angular_velocity_rad_s=(
+                        fixed_impact_command_angular_velocity
+                    ),
+                    target_linear_velocity_m_s=(
+                        fixed_impact_target_linear_velocity
+                    ),
+                    xy_error_scale_m_s=float(
+                        self.cfg.fixed_contact_impact_task_twist_xy_error_scale_m_s
+                    ),
+                    z_error_scale_m_s=float(
+                        self.cfg.fixed_contact_impact_task_twist_z_error_scale_m_s
+                    ),
+                    tilt_omega_error_scale_rad_s=float(
+                        self.cfg.fixed_contact_impact_task_twist_omega_error_scale_rad_s
+                    ),
+                    active=fixed_impact_phase_active,
+                    aggregation=str(
+                        self.cfg.fixed_contact_impact_task_twist_aggregation
+                    ),
+                )
+            fixed_impact_task_twist_penalty = (
+                -float(
+                    self.cfg.fixed_contact_impact_task_twist_penalty_weight
+                )
+                * fixed_impact_task_twist_cost
+                * self.dt
+            )
+            (
+                fixed_recurrent_launch_vz_reward,
+                fixed_recurrent_launch_vz_score,
+                fixed_recurrent_launch_vz_active,
+            ) = fixed_contact_recurrent_launch_vz_reward(
+                racket_vz_m_s=fixed_racket_surface_velocity[:, 2],
+                hit_count=hit_count,
+                crossing_valid=fixed_crossing_valid,
+                time_to_contact_s=fixed_time_to_contact,
+                pending_hit=pending_hit,
+                target_vz_m_s=float(
+                    self.cfg.fixed_contact_recurrent_launch_vz_target_m_s
+                ),
+                active_window_s=float(
+                    self.cfg.fixed_contact_recurrent_launch_vz_window_s
+                ),
+                reward_weight=float(
+                    self.cfg.fixed_contact_recurrent_launch_vz_reward_weight
+                ),
+                dt_s=self.dt,
+                min_hit_count=int(getattr(
+                    self.cfg,
+                    'fixed_contact_recurrent_launch_min_hit_count',
+                    1,
+                )),
+            )
+            fixed_fast_arrival_vz_penalty = jnp.zeros_like(
+                fixed_time_to_contact
+            )
+            fixed_fast_arrival_vz_target = jnp.zeros_like(
+                fixed_time_to_contact
+            )
+            fixed_fast_arrival_vz_active = jnp.zeros_like(
+                fixed_crossing_valid
+            )
+            if self.cfg.fixed_plane_v53_fast_arrival_vz_penalty_weight > 0.0:
+                (
+                    fixed_fast_arrival_vz_penalty,
+                    fixed_fast_arrival_vz_target,
+                    fixed_fast_arrival_vz_active,
+                ) = fast_arrival_vertical_deficit_penalty(
+                    racket_vz_m_s=fixed_racket_surface_velocity[:, 2],
+                    incoming_ball_vz_m_s=(
+                        fixed_tracking_target.incoming_ball_velocity_m_s[:, 2]
+                    ),
+                    hit_count=hit_count,
+                    crossing_valid=fixed_crossing_valid,
+                    time_to_contact_s=fixed_time_to_contact,
+                    pending_hit=pending_hit,
+                    reward_weight=float(
+                        self.cfg.fixed_plane_v53_fast_arrival_vz_penalty_weight
+                    ),
+                    dt_s=self.dt,
+                    speed_threshold_m_s=(
+                        2.0 if self.cfg.fixed_plane_v54_recovery_arrival_enabled
+                        else 2.50
+                    ),
+                    active_window_s=0.12,
+                    base_target_vz_m_s=(
+                        0.25 if self.cfg.fixed_plane_v54_recovery_arrival_enabled
+                        else 0.15
+                    ),
+                    target_gain=(
+                        0.15 if self.cfg.fixed_plane_v54_recovery_arrival_enabled
+                        else 0.5
+                    ),
+                    max_target_vz_m_s=(
+                        0.35 if self.cfg.fixed_plane_v54_recovery_arrival_enabled
+                        else 0.30
+                    ),
+                )
+            (
+                fixed_smooth_stroke_vz_cost,
+                fixed_smooth_stroke_vz_target,
+                fixed_smooth_stroke_vz_active,
+            ) = fixed_contact_smooth_stroke_vz_cost(
+                racket_vz_m_s=fixed_racket_surface_velocity[:, 2],
+                hit_count=hit_count,
+                crossing_valid=fixed_crossing_valid,
+                time_to_contact_s=fixed_time_to_contact,
+                pending_hit=pending_hit,
+                peak_vz_m_s=float(
+                    self.cfg.fixed_contact_smooth_stroke_peak_m_s
+                ),
+                lead_s=float(self.cfg.fixed_contact_smooth_stroke_lead_s),
+                brake_lead_s=float(
+                    self.cfg.fixed_contact_smooth_stroke_brake_lead_s
+                ),
+                error_scale_m_s=float(
+                    self.cfg.fixed_contact_smooth_stroke_error_scale_m_s
+                ),
+                min_hit_count=int(
+                    self.cfg.fixed_contact_smooth_stroke_min_hit_count
+                ),
+            )
+            fixed_smooth_stroke_vz_penalty = (
+                -float(
+                    self.cfg.fixed_contact_smooth_stroke_vz_penalty_weight
+                )
+                * fixed_smooth_stroke_vz_cost
+                * self.dt
+            )
+            (
+                fixed_smooth_stroke_vz_reward,
+                fixed_smooth_stroke_vz_reward_score,
+                fixed_smooth_stroke_vz_reward_active,
+            ) = fixed_contact_smooth_stroke_vz_reward(
+                racket_vz_m_s=fixed_racket_surface_velocity[:, 2],
+                hit_count=hit_count,
+                crossing_valid=fixed_crossing_valid,
+                time_to_contact_s=fixed_time_to_contact,
+                pending_hit=pending_hit,
+                peak_vz_m_s=float(
+                    self.cfg.fixed_contact_smooth_stroke_peak_m_s
+                ),
+                lead_s=float(self.cfg.fixed_contact_smooth_stroke_lead_s),
+                brake_lead_s=float(
+                    self.cfg.fixed_contact_smooth_stroke_brake_lead_s
+                ),
+                error_scale_m_s=float(
+                    self.cfg.fixed_contact_smooth_stroke_error_scale_m_s
+                ),
+                reward_weight=float(
+                    self.cfg.fixed_contact_smooth_stroke_vz_reward_weight
+                ),
+                dt_s=self.dt,
+                min_hit_count=int(
+                    self.cfg.fixed_contact_smooth_stroke_min_hit_count
+                ),
+            )
+            if bool(
+                self.cfg.fixed_plane_limit_cycle_dynamic_stroke_enabled
+            ):
+                fixed_smooth_stroke_vz_target = (
+                    fixed_limit_cycle_phase_vz_target
+                )
+                fixed_smooth_stroke_vz_active = (
+                    fixed_limit_cycle_phase_active
+                )
+                fixed_smooth_stroke_vz_error = (
+                    fixed_racket_surface_velocity[:, 2]
+                    - fixed_smooth_stroke_vz_target
+                ) / float(self.cfg.fixed_contact_smooth_stroke_error_scale_m_s)
+                fixed_smooth_stroke_vz_cost = jnp.where(
+                    fixed_smooth_stroke_vz_active,
+                    jnp.sqrt(
+                        1.0
+                        + fixed_smooth_stroke_vz_error
+                        * fixed_smooth_stroke_vz_error
+                    )
+                    - 1.0,
+                    0.0,
+                )
+                fixed_smooth_stroke_vz_penalty = (
+                    -float(
+                        self.cfg.fixed_contact_smooth_stroke_vz_penalty_weight
+                    )
+                    * fixed_smooth_stroke_vz_cost
+                    * self.dt
+                )
+                fixed_smooth_stroke_vz_reward_active = (
+                    fixed_smooth_stroke_vz_active
+                )
+                fixed_smooth_stroke_vz_reward_score = jnp.where(
+                    fixed_smooth_stroke_vz_reward_active,
+                    1.0 / (1.0 + fixed_smooth_stroke_vz_cost),
+                    0.0,
+                )
+                fixed_smooth_stroke_vz_reward = (
+                    float(
+                        self.cfg.fixed_contact_smooth_stroke_vz_reward_weight
+                    )
+                    * fixed_smooth_stroke_vz_reward_score
+                    * self.dt
+                )
+            fixed_post_second_hit_handoff_reward = (
+                fixed_contact_confirmed_hit_handoff_reward(
+                    new_hit=hit_reward_mask,
+                    hit_count=hit_count,
+                    target_hit_count=int(
+                        self.cfg.fixed_contact_post_second_hit_handoff_count
+                    ),
+                    reward_weight=float(
+                        self.cfg.fixed_contact_post_second_hit_handoff_reward_weight
+                    ),
+                )
+            )
+            fixed_edge_racket_vz_target = jnp.full_like(
+                fixed_time_to_contact,
+                float(self.cfg.fixed_contact_edge_racket_vz_target_m_s),
+            )
+            if bool(
+                self.cfg.fixed_plane_limit_cycle_dynamic_stroke_enabled
+            ):
+                fixed_edge_racket_vz_target = (
+                    self._fixed_plane_limit_cycle_dynamic_racket_vz_target_m_s(
+                        step_start_ball_velocity_m_s[:, 2],
+                        hit_count,
+                    )[1]
+                )
+            (
+                fixed_edge_racket_vz_reward,
+                fixed_edge_racket_vz_score,
+                fixed_edge_racket_vz_active,
+            ) = fixed_contact_edge_racket_vz_target_reward(
+                racket_vz_m_s=fixed_racket_surface_velocity[:, 2],
+                hit_edge=physical_contact_edge,
+                hit_count=hit_count,
+                target_vz_m_s=fixed_edge_racket_vz_target,
+                sigma_vz_m_s=float(
+                    self.cfg.fixed_contact_edge_racket_vz_sigma_m_s
+                ),
+                reward_weight=float(
+                    self.cfg.fixed_contact_edge_racket_vz_target_reward_weight
+                ),
+                min_hit_count=int(
+                    self.cfg.fixed_contact_edge_racket_vz_min_hit_count
+                ),
+            )
+            (
+                fixed_edge_racket_vz_reward,
+                fixed_edge_racket_vz_qz_gate,
+            ) = fixed_contact_gate_event_reward_by_quality(
+                event_reward=fixed_edge_racket_vz_reward,
+                quality_score=fixed_contact_quality.components[:, 0],
+                gate_mix=float(
+                    self.cfg.fixed_contact_edge_racket_vz_qz_gate_mix
+                ),
+            )
+            fixed_impact_edge_racket_vz_target = jnp.zeros_like(
+                fixed_time_to_contact
+            )
+            fixed_impact_edge_vz_score = jnp.zeros_like(
+                fixed_time_to_contact
+            )
+            fixed_impact_edge_vz_qz_gate = jnp.ones_like(
+                fixed_time_to_contact
+            )
+            fixed_impact_edge_vz_active = jnp.zeros_like(
+                fixed_crossing_valid,
+                dtype=jnp.bool_,
+            )
+            fixed_impact_edge_vz_reward = jnp.zeros_like(
+                fixed_time_to_contact
+            )
+            if bool(self.cfg.fixed_contact_impact_consistent_stroke_enabled):
+                fixed_impact_edge_racket_vz_target = (
+                    fixed_contact_impact_consistent_racket_vz_target(
+                        incoming_ball_vz_m_s=(
+                            step_start_ball_velocity_m_s[:, 2]
+                        ),
+                        contact_surface_z_m=float(
+                            self.cfg.fixed_contact_surface_z_m
+                        ),
+                        ball_radius_m=float(
+                            self.mj_model.geom_size[self.ball_geom_id, 0]
+                        ),
+                        target_apex_z_m=float(
+                            self.fixed_contact_target_cfg.target_apex_z_m
+                        ),
+                        gravity_m_s2=float(
+                            self.fixed_contact_target_cfg.gravity_m_s2
+                        ),
+                        effective_restitution=float(
+                            self.cfg.fixed_contact_impact_effective_restitution
+                        ),
+                        min_racket_vz_m_s=float(
+                            self.cfg.fixed_contact_impact_min_racket_vz_m_s
+                        ),
+                        max_racket_vz_m_s=float(
+                            self.cfg.fixed_contact_impact_max_racket_vz_m_s
+                        ),
+                    )
+                )
+                fixed_impact_edge_vz_error = (
+                    fixed_racket_surface_velocity[:, 2]
+                    - fixed_impact_edge_racket_vz_target
+                ) / float(self.cfg.fixed_contact_impact_edge_vz_sigma_m_s)
+                fixed_impact_edge_vz_score = jnp.exp(
+                    -0.5
+                    * fixed_impact_edge_vz_error
+                    * fixed_impact_edge_vz_error
+                )
+                fixed_impact_edge_vz_active = (
+                    physical_contact_edge
+                    & (
+                        hit_count
+                        >= int(
+                            self.cfg.fixed_contact_phase_stroke_min_hit_count
+                        )
+                    )
+                )
+                fixed_impact_edge_vz_qz_gate = (
+                    fixed_contact_quality.components[:, 0]
+                )
+                fixed_impact_edge_vz_reward = (
+                    float(self.cfg.fixed_contact_impact_edge_vz_reward_weight)
+                    * fixed_impact_edge_vz_score
+                    * fixed_impact_edge_vz_qz_gate
+                    * fixed_impact_edge_vz_active.astype(jnp.float32)
+                )
+            fixed_phase_stroke_z_penalty = (
+                -float(self.cfg.fixed_contact_phase_stroke_z_penalty_weight)
+                * fixed_phase_stroke_z_cost
+                * self.dt
+            )
+            (
+                fixed_pending_hit_retract_vz_reward,
+                fixed_pending_hit_retract_vz_score,
+                fixed_pending_hit_retract_vz_active,
+            ) = fixed_contact_pending_hit_retract_vz_reward(
+                racket_vz_m_s=fixed_racket_surface_velocity[:, 2],
+                pending_hit=pending_hit,
+                pending_hit_steps=pending_hit_steps,
+                hit_count=hit_count,
+                target_retract_vz_m_s=float(
+                    self.cfg.fixed_contact_pending_hit_retract_vz_target_m_s
+                ),
+                active_window_s=float(
+                    self.cfg.fixed_contact_pending_hit_retract_vz_window_s
+                ),
+                reward_weight=float(
+                    self.cfg.fixed_contact_pending_hit_retract_vz_reward_weight
+                ),
+                dt_s=self.dt,
+                all_confirmed_hits=bool(
+                    self.cfg.fixed_contact_pending_hit_retract_all_hits
+                ),
+            )
+            (
+                fixed_pending_hit_retract_command_vz_reward,
+                fixed_pending_hit_retract_command_vz_score,
+                fixed_pending_hit_retract_command_vz_active,
+            ) = fixed_contact_pending_hit_retract_vz_reward(
+                racket_vz_m_s=fixed_pre_hit_launch_command_vz,
+                pending_hit=pending_hit,
+                pending_hit_steps=pending_hit_steps,
+                hit_count=hit_count,
+                target_retract_vz_m_s=float(
+                    self.cfg.fixed_contact_pending_hit_retract_vz_target_m_s
+                ),
+                active_window_s=float(
+                    self.cfg.fixed_contact_pending_hit_retract_vz_window_s
+                ),
+                reward_weight=float(
+                    self.cfg.fixed_contact_pending_hit_retract_command_vz_reward_weight
+                ),
+                dt_s=self.dt,
+                all_confirmed_hits=bool(
+                    self.cfg.fixed_contact_pending_hit_retract_all_hits
+                ),
+            )
+            (
+                fixed_pre_hit_launch_command_vz_reward,
+                fixed_pre_hit_launch_command_vz_score,
+                fixed_pre_hit_launch_command_vz_active,
+            ) = fixed_contact_pre_hit_launch_vz_reward(
+                racket_vz_m_s=fixed_pre_hit_launch_command_vz,
+                hit_count=hit_count,
+                episode_time_s=episode_time_s,
+                target_vz_m_s=float(
+                    self.cfg.fixed_contact_pre_hit_launch_vz_target_m_s
+                ),
+                active_window_s=float(
+                    self.cfg.fixed_contact_pre_hit_launch_vz_window_s
+                ),
+                reward_weight=float(
+                    self.cfg.fixed_contact_pre_hit_launch_command_vz_reward_weight
+                ),
+                dt_s=self.dt,
+            )
+            (
+                fixed_pre_hit_launch_vz_reward,
+                fixed_pre_hit_launch_vz_active,
+            ) = fixed_contact_pre_hit_launch_pending_mask(
+                launch_reward=fixed_pre_hit_launch_vz_reward,
+                launch_active=fixed_pre_hit_launch_vz_active,
+                pending_hit=pending_hit,
+                enabled=bool(
+                    self.cfg.fixed_contact_pre_hit_launch_reward_stops_on_pending_hit
+                ),
+            )
+            (
+                fixed_pre_hit_launch_command_vz_reward,
+                fixed_pre_hit_launch_command_vz_active,
+            ) = fixed_contact_pre_hit_launch_pending_mask(
+                launch_reward=fixed_pre_hit_launch_command_vz_reward,
+                launch_active=fixed_pre_hit_launch_command_vz_active,
+                pending_hit=pending_hit,
+                enabled=bool(
+                    self.cfg.fixed_contact_pre_hit_launch_reward_stops_on_pending_hit
+                ),
+            )
+            fixed_s0_component_active = (
+                fixed_s0_reward_active.astype(jnp.float32) * self.dt
+            )
+            post_hit_s0_window_s = float(getattr(
+                self.cfg,
+                'fixed_contact_post_hit_s0_window_s',
+                float('inf'),
+            ))
+            if math.isfinite(post_hit_s0_window_s):
+                post_hit_approach_active = (
+                    (hit_count <= 0)
+                    | (
+                        fixed_crossing_valid
+                        & (fixed_time_to_contact > 0.0)
+                        & (fixed_time_to_contact <= post_hit_s0_window_s)
+                    )
+                )
+                fixed_s0_component_active = (
+                    fixed_s0_component_active
+                    * post_hit_approach_active.astype(jnp.float32)
+                )
+            fixed_s0_final_component_active = (
+                (final_window & fixed_s0_reward_active).astype(jnp.float32)
+                * self.dt
+            )
+            if float(self.cfg.fixed_contact_s0_settle_lead_s) > 0.0:
+                fixed_s0_final_component_active = (
+                    fixed_crossing_valid
+                    & fixed_s0_reward_active
+                    & (fixed_time_to_contact <= (
+                        final_window_s + float(self.cfg.fixed_contact_s0_settle_lead_s)
+                    ))
+                ).astype(jnp.float32) * self.dt
+            fixed_s0_motion_component_active = (
+                fixed_contact_post_hit_motion_active_dt(
+                    reward_active=fixed_s0_reward_active,
+                    final_window_active=(
+                        fixed_s0_final_component_active > 0.0
+                    ),
+                    hit_count=hit_count,
+                    dense_post_hit_recovery_enabled=bool(getattr(
+                        self.cfg,
+                        "fixed_contact_post_hit_recovery_dense_motion_enabled",
+                        False,
+                    )),
+                    control_dt_s=self.dt,
+                )
+            )
+            if self.cfg.fixed_plane_rapid_steady_preimpact_motion_lead_s > 0.0:
+                rapid_preimpact_motion_dt = rapid_steady_preimpact_motion_dt(
+                    crossing_valid=fixed_crossing_valid,
+                    reward_active=fixed_s0_reward_active,
+                    confirmed_hit_count=hit_count,
+                    time_to_contact_s=fixed_time_to_contact,
+                    tracking_xy_error_m=current_tracking_error,
+                    lead_s=(
+                        self.cfg.fixed_plane_rapid_steady_preimpact_motion_lead_s
+                    ),
+                    control_dt_s=self.dt,
+                )
+                fixed_s0_motion_component_active = jnp.where(
+                    hit_count >= 2,
+                    rapid_preimpact_motion_dt,
+                    fixed_s0_motion_component_active,
+                )
+            (
+                fixed_s0_qualified_low_action_reward,
+                fixed_low_action_gate_eligible,
+                fixed_low_action_score,
+            ) = fixed_contact_gate_qualified_low_action_reward(
+                action=action,
+                component_scores=fixed_s0_gate_scores,
+                minimum_component_scores=(
+                    self.cfg.fixed_contact_s0_action_penalty_min_gate_scores
+                ),
+                reward_weight=float(
+                    self.cfg.fixed_contact_s0_qualified_low_action_reward_weight
+                ),
+                active_dt=fixed_s0_motion_component_active,
+            )
+            fixed_s0_xy_reward = (
+                float(self.cfg.fixed_contact_s0_xy_reward_weight)
+                * fixed_s0_reward_scores[:, 0]
+                * fixed_s0_component_active
+            )
+            fixed_s0_z_reward = (
+                float(self.cfg.fixed_contact_s0_z_reward_weight)
+                * fixed_s0_reward_scores[:, 1]
+                * fixed_s0_component_active
+            )
+            fixed_s0_pose_reward = (
+                float(self.cfg.fixed_contact_s0_pose_reward_weight)
+                * fixed_s0_reward_scores[:, 2]
+                * fixed_s0_component_active
+            )
+            fixed_s0_vxy_reward = (
+                float(self.cfg.fixed_contact_s0_vxy_reward_weight)
+                * fixed_s0_reward_scores[:, 3]
+                * fixed_s0_motion_component_active
+            )
+            fixed_s0_omega_reward = (
+                float(self.cfg.fixed_contact_s0_omega_reward_weight)
+                * fixed_s0_reward_scores[:, 4]
+                * fixed_s0_motion_component_active
+            )
+            fixed_s0_final_xy_reward = (
+                float(self.cfg.fixed_contact_s0_final_xy_reward_weight)
+                * fixed_s0_final_scores[:, 0]
+                * fixed_s0_final_component_active
+            )
+            fixed_s0_final_z_reward = (
+                float(self.cfg.fixed_contact_s0_final_z_reward_weight)
+                * fixed_s0_final_scores[:, 1]
+                * fixed_s0_final_component_active
+            )
+            fixed_s0_final_pose_reward = (
+                float(self.cfg.fixed_contact_s0_final_pose_reward_weight)
+                * fixed_s0_final_scores[:, 2]
+                * fixed_s0_final_component_active
+            )
+            fixed_s0_readiness_reward = (
+                float(self.cfg.fixed_contact_s0_readiness_bonus_weight)
+                * fixed_s0_ready.astype(jnp.float32)
+                * fixed_s0_motion_component_active
+            )
+            fixed_s0_gate_aligned_position_penalty = (
+                -float(
+                    self.cfg.fixed_contact_s0_gate_aligned_position_weight
+                )
+                * jnp.sum(fixed_s0_gate_aligned_costs[:, :3], axis=-1)
+                * fixed_s0_component_active
+            )
+            if bool(getattr(
+                self.cfg,
+                'fixed_contact_s0_suppress_z_during_launch',
+                False,
+            )):
+                launch_active_f = (
+                    fixed_pre_hit_launch_vz_active
+                    | fixed_recurrent_launch_vz_active
+                    | fixed_smooth_stroke_vz_active
+                ).astype(jnp.float32)
+                keep_z = 1.0 - launch_active_f
+                fixed_s0_z_reward = fixed_s0_z_reward * keep_z
+                fixed_s0_final_z_reward = fixed_s0_final_z_reward * keep_z
+                # Preserve XY and pose constraint costs while removing only
+                # the surface-Z term that opposes the intended up-stroke.
+                fixed_s0_gate_aligned_position_penalty = (
+                    -float(
+                        self.cfg.fixed_contact_s0_gate_aligned_position_weight
+                    )
+                    * (
+                        fixed_s0_gate_aligned_costs[:, 0]
+                        + fixed_s0_gate_aligned_costs[:, 2]
+                        + keep_z * fixed_s0_gate_aligned_costs[:, 1]
+                    )
+                    * fixed_s0_component_active
+                )
+            fixed_s0_gate_aligned_motion_penalty = (
+                -float(
+                    self.cfg.fixed_contact_s0_gate_aligned_motion_weight
+                )
+                * jnp.sum(fixed_s0_gate_aligned_costs[:, 3:], axis=-1)
+                * fixed_s0_motion_component_active
+            )
+            fixed_s0_arrival_worst_constraint_violation = (
+                fixed_contact_s0_worst_normalized_violation(
+                    tracking_xy_error_m=current_tracking_error,
+                    surface_z_error_m=fixed_surface_z_error,
+                    pose_error_rad=current_pose_error,
+                    racket_vxy_m_s=fixed_racket_vxy,
+                    racket_omega_rad_s=racket_full_angular_speed,
+                    max_xy_error_m=float(
+                        self.cfg.fixed_contact_s0_ready_max_xy_error_m
+                    ),
+                    max_z_error_m=float(
+                        self.cfg.fixed_contact_s0_ready_max_z_error_m
+                    ),
+                    max_pose_error_rad=float(
+                        self.cfg.fixed_contact_s0_ready_max_pose_error_rad
+                    ),
+                    max_vxy_m_s=float(
+                        self.cfg.fixed_contact_s0_ready_max_vxy_m_s
+                    ),
+                    max_omega_rad_s=float(
+                        self.cfg.fixed_contact_s0_ready_max_omega_rad_s
+                    ),
+                )
+            )
+            fixed_s0_arrival_worst_constraint_penalty = (
+                -float(
+                    self.cfg.fixed_contact_s0_arrival_worst_constraint_penalty_weight
+                )
+                * fixed_s0_arrival_worst_constraint_violation
+                * (
+                    fixed_s0_arrival_window & fixed_s0_reward_active
+                ).astype(jnp.float32)
+                * self.dt
+            )
+            fixed_post_hit_recovery_worst_constraint_penalty = (
+                -float(getattr(
+                    self.cfg,
+                    "fixed_contact_post_hit_recovery_worst_constraint_penalty_weight",
+                    0.0,
+                ))
+                * fixed_s0_arrival_worst_constraint_violation
+                * (
+                    fixed_s0_reward_active & (hit_count > 0)
+                ).astype(jnp.float32)
+                * self.dt
+            )
+            fixed_post_hit_recovery_joint_constraint_penalty = (
+                fixed_contact_post_hit_recovery_joint_constraint_penalty(
+                    racket_z_error_m=fixed_surface_z_error,
+                    racket_pose_error_rad=current_pose_error,
+                    racket_xy_error_m=current_tracking_error,
+                    racket_vxy_m_s=fixed_racket_vxy,
+                    racket_omega_rad_s=racket_full_angular_speed,
+                    racket_vz_m_s=fixed_racket_surface_velocity[:, 2],
+                    max_racket_z_error_m=float(
+                        getattr(
+                            self.cfg,
+                            "fixed_contact_post_hit_recovery_max_racket_z_error_m",
+                            0.025,
+                        )
+                    ),
+                    max_racket_pose_error_rad=float(
+                        getattr(
+                            self.cfg,
+                            "fixed_contact_post_hit_recovery_max_pose_error_rad",
+                            math.radians(3.0),
+                        )
+                    ),
+                    max_racket_xy_error_m=float(
+                        self.cfg.fixed_contact_s0_ready_max_xy_error_m
+                    ),
+                    max_racket_vxy_m_s=float(
+                        self.cfg.fixed_contact_s0_ready_max_vxy_m_s
+                    ),
+                    max_racket_omega_rad_s=float(
+                        self.cfg.fixed_contact_s0_ready_max_omega_rad_s
+                    ),
+                    max_racket_vz_m_s=float(getattr(
+                        self.cfg,
+                        "fixed_contact_post_hit_recovery_max_vz_m_s",
+                        0.080,
+                    )),
+                    include_full_readiness=bool(getattr(
+                        self.cfg,
+                        "fixed_contact_post_hit_recovery_require_full_readiness",
+                        False,
+                    )),
+                    include_vertical_stability=bool(getattr(
+                        self.cfg,
+                        "fixed_contact_post_hit_recovery_require_vertical_stability",
+                        False,
+                    )),
+                    active=(fixed_s0_reward_active & (hit_count > 0)),
+                    weight=float(getattr(
+                        self.cfg,
+                        "fixed_contact_post_hit_recovery_joint_constraint_penalty_weight",
+                        0.0,
+                    )),
+                    control_dt_s=self.dt,
+                )
+            )
+            (
+                fixed_s0_ready_deadline_reward,
+                fixed_s0_ready_deadline_event,
+            ) = fixed_contact_ready_deadline_reward(
+                ready=fixed_s0_ready,
+                worst_normalized_violation=(
+                    fixed_s0_arrival_worst_constraint_violation
+                ),
+                time_to_contact_s=fixed_time_to_contact,
+                crossing_valid=fixed_crossing_valid,
+                deadline_s=float(
+                    getattr(
+                        self.cfg,
+                        "fixed_contact_ready_deadline_s",
+                        0.100,
+                    )
+                ),
+                control_dt_s=self.dt,
+                success_weight=float(
+                    getattr(
+                        self.cfg,
+                        "fixed_contact_ready_deadline_success_weight",
+                        0.0,
+                    )
+                ),
+                miss_weight=float(
+                    getattr(
+                        self.cfg,
+                        "fixed_contact_ready_deadline_miss_weight",
+                        0.0,
+                    )
+                ),
+            )
+            fixed_s0_component_reward = (
+                fixed_s0_xy_reward
+                + fixed_s0_z_reward
+                + fixed_s0_pose_reward
+                + fixed_s0_vxy_reward
+                + fixed_s0_omega_reward
+                + fixed_s0_final_xy_reward
+                + fixed_s0_final_z_reward
+                + fixed_s0_final_pose_reward
+                + fixed_s0_readiness_reward
+                + fixed_s0_gate_aligned_position_penalty
+                + fixed_s0_gate_aligned_motion_penalty
+                + fixed_s0_arrival_worst_constraint_penalty
+                + fixed_post_hit_recovery_worst_constraint_penalty
+                + fixed_post_hit_recovery_joint_constraint_penalty
+                + fixed_s0_ready_deadline_reward
+                + fixed_s0_qualified_low_action_reward
+                + fixed_pre_hit_launch_vz_reward
+                + fixed_pre_hit_launch_command_vz_reward
+                + fixed_recurrent_launch_vz_reward
+                + fixed_fast_arrival_vz_penalty
+                + fixed_smooth_stroke_vz_penalty
+                + fixed_smooth_stroke_vz_reward
+                + fixed_post_second_hit_handoff_reward
+                + fixed_edge_racket_vz_reward
+                + fixed_phase_stroke_z_penalty
+                + fixed_phase_stroke_command_vz_penalty
+                + fixed_impact_task_twist_penalty
+                + fixed_impact_edge_vz_reward
+                + fixed_pending_hit_retract_vz_reward
+                + fixed_pending_hit_retract_command_vz_reward
+                + fixed_workspace_z_barrier_penalty
+            )
+            fixed_task_aligned_dense_reward = (
+                (
+                    term_post_hit_survival
+                    + term_post_first_hit_alive
+                    + term_post_hit_joint_apex_lift_reward
+                    + term_racket_z_penalty
+                    + term_racket_tilt_angular_speed_penalty
+                    + term_racket_stability_angular_speed_penalty
+                    + term_racket_flatness_penalty
+                    + term_post_hit_racket_retreat_penalty
+                    + term_racket_cycle_vxy_penalty
+                )
+                * self.dt
+                + term_post_hit_overdue_penalty
+            )
+            if self.cfg.fixed_plane_v109_include_acceleration_usage_penalty:
+                fixed_task_aligned_dense_reward = (
+                    fixed_task_aligned_dense_reward
+                    + term_arm_acceleration_usage_penalty * self.dt
+                )
+            if float(self.cfg.fixed_plane_v110_qacc_soft_penalty_weight) > 0.0:
+                from fixed_plane_v110 import soft_joint_acceleration_margin_penalty
+
+                fixed_plane_v110_qacc_soft_penalty = (
+                    soft_joint_acceleration_margin_penalty(
+                        arm_acc_ratio,
+                        margin_ratio=float(
+                            self.cfg.fixed_plane_v110_qacc_soft_margin_ratio
+                        ),
+                        weight=float(
+                            self.cfg.fixed_plane_v110_qacc_soft_penalty_weight
+                        ),
+                        control_dt_s=self.dt,
+                    )
+                )
+                fixed_task_aligned_dense_reward += fixed_plane_v110_qacc_soft_penalty
+            else:
+                fixed_plane_v110_qacc_soft_penalty = jnp.zeros_like(
+                    fixed_task_aligned_dense_reward
+                )
+            fixed_task_aligned_hit_event_reward = (
+                term_hit_cadence_reward
+                + term_hit_min_interval_penalty
+                + term_hit_max_interval_penalty
+                + term_hit_vxy_penalty
+                + term_hit_vxy_zero_reward
+                + term_hit_racket_vxy_penalty
+                + term_hit_racket_angular_speed_penalty
+            )
+            if self.cfg.fixed_contact_include_hit_contact_center_excess_penalty:
+                fixed_task_aligned_hit_event_reward += (
+                    term_hit_contact_center_excess_penalty
+                )
+            if self.cfg.fixed_plane_v110_include_hit_flatness_penalty:
+                fixed_task_aligned_hit_event_reward += (
+                    term_hit_flatness_excess_penalty
+                )
+            if bool(
+                self.cfg.fixed_contact_include_adaptive_event_penalties
+            ):
+                fixed_task_aligned_hit_event_reward = (
+                    fixed_task_aligned_hit_event_reward
+                    + term_hit_adaptive_reflected_velocity_penalty
+                    + term_hit_next_contact_anchor_penalty
+                )
+            fixed_task_aligned_auxiliary_reward = (
+                fixed_task_aligned_dense_reward
+                + fixed_task_aligned_hit_event_reward
+            )
+            fixed_combo_credit = compose_hit_bonus_jax(
+                hit_motion_quality_score,
+                hit_quality,
+                hit_count_credit,
+                hit_reward_base=0.0,
+                combo_quality_independent=bool(
+                    self.cfg.hit_combo_quality_independent
+                ),
+                combo_motion_quality_independent=bool(
+                    self.cfg.hit_combo_motion_quality_independent
+                ),
+            )
+            fixed_recurrent_hit_event_reward = (
+                jnp.where(hit_reward_mask, fixed_combo_credit, 0.0)
+                + term_hit_count_floor_reward
+            )
+            if float(self.cfg.fixed_contact_event_joint_quality_gate_mix) > 0.0:
+                fixed_recurrent_hit_event_reward = (
+                    fixed_recurrent_hit_event_reward
+                    * fixed_event_joint_quality_gate
+                )
+            fixed_recurrent_event_reward = (
+                fixed_recurrent_hit_event_reward
+                + term_low_survival_hit_reward
+            )
+            fixed_raw_hit_event_reward = (
+                fixed_hit_reward
+                + jnp.where(
+                    bool(
+                        self.cfg.fixed_contact_include_task_aligned_auxiliary_reward
+                    ),
+                    fixed_task_aligned_hit_event_reward,
+                    0.0,
+                )
+                + jnp.where(
+                    bool(self.cfg.fixed_contact_include_recurrent_event_reward),
+                    fixed_recurrent_hit_event_reward,
+                    0.0,
+                )
+            )
+            fixed_bounded_hit_event_reward = (
+                bound_fixed_contact_hit_event_reward(
+                    fixed_raw_hit_event_reward,
+                    positive_hit_reference=jnp.where(
+                        hit_reward_mask,
+                        fixed_positive_hit_reward,
+                        0.0,
+                    ),
+                    penalty_budget_fraction=float(
+                        self.cfg.fixed_contact_hit_event_penalty_budget_fraction
+                    ),
+                    unbudgeted_event_penalty=(
+                        term_hit_contact_center_excess_penalty
+                        if (self.cfg.fixed_contact_hit_center_penalty_outside_budget
+                            and self.cfg.fixed_contact_include_hit_contact_center_excess_penalty
+                            and self.cfg.fixed_contact_include_task_aligned_auxiliary_reward)
+                        else None
+                    ),
+                )
+            )
+            fixed_hit_event_budget_correction = (
+                fixed_bounded_hit_event_reward - fixed_raw_hit_event_reward
+            )
+            quiet_motion_penalty = jnp.zeros_like(fixed_hit_reward)
+            quiet_motion_active = jnp.zeros_like(fixed_hit_reward)
+            weak_launch_credit = jnp.zeros_like(fixed_hit_reward)
+            weak_apex_floor_penalty = jnp.zeros_like(fixed_hit_reward)
+            late_physical_apex_reward = jnp.zeros_like(fixed_hit_reward)
+            adjacent_apex_expansion_penalty = jnp.zeros_like(fixed_hit_reward)
+            high_apex_penalty = jnp.zeros_like(fixed_hit_reward)
+            v80_height_reward = jnp.zeros_like(fixed_hit_reward)
+            v80_absolute_reward = jnp.zeros_like(fixed_hit_reward)
+            v80_adjacent_jump_m = jnp.zeros_like(fixed_hit_reward)
+            v92_height_reward = jnp.zeros_like(fixed_hit_reward)
+            v92_height_absolute = jnp.zeros_like(fixed_hit_reward)
+            v92_height_adjacent = jnp.zeros_like(fixed_hit_reward)
+            v92_height_unresolved = jnp.zeros_like(fixed_hit_reward)
+            v92_height_eligible = jnp.zeros_like(fixed_hit_reward, dtype=bool)
+            v92_height_below = jnp.zeros_like(fixed_hit_reward, dtype=bool)
+            v92_height_in_band = jnp.zeros_like(fixed_hit_reward, dtype=bool)
+            v92_height_above = jnp.zeros_like(fixed_hit_reward, dtype=bool)
+            physical_outcome_reward = jnp.zeros_like(fixed_hit_reward)
+            resolved_motion_penalty = jnp.zeros_like(fixed_hit_reward)
+            v128_early_xy_penalty = jnp.zeros_like(fixed_hit_reward)
+            v132_early_ball_xy_penalty = jnp.zeros_like(fixed_hit_reward)
+            v134_late_xy_anchor_penalty = jnp.zeros_like(fixed_hit_reward)
+            v146_ball_anchor_xy_penalty = jnp.zeros_like(fixed_hit_reward)
+            if self.fixed_contact_plane_training_enabled:
+                reward = fixed_contact_reward_sum(
+                    hit_reward=fixed_hit_reward,
+                    survival_reward=fixed_survival_reward,
+                    tracking_potential=fixed_tracking_potential,
+                    final_brake_reward=fixed_final_brake_reward,
+                    s0_component_reward=fixed_s0_component_reward,
+                    action_penalty=fixed_effective_action_penalty,
+                    action_delta_penalty=term_action_delta_penalty * self.dt,
+                    stick_penalty=term_stick_penalty * self.dt,
+                    include_stick_penalty=bool(
+                        self.cfg.fixed_contact_include_stick_penalty
+                    ),
+                    task_aligned_auxiliary_reward=(
+                        fixed_task_aligned_auxiliary_reward
+                    ),
+                    include_task_aligned_auxiliary_reward=bool(
+                        self.cfg.fixed_contact_include_task_aligned_auxiliary_reward
+                    ),
+                    recurrent_event_reward=fixed_recurrent_event_reward,
+                    include_recurrent_event_reward=bool(
+                        self.cfg.fixed_contact_include_recurrent_event_reward
+                    ),
+                )
+                reward = reward + fixed_hit_event_budget_correction
+                if self.cfg.fixed_plane_v128_early_xy_motion_weight > 0.0:
+                    v128_early_xy_penalty = early_racket_xy_motion_penalty(
+                        hit_count=hit_count,
+                        racket_vxy_m_s=fixed_racket_vxy,
+                        control_dt_s=self.dt,
+                        weight=self.cfg.fixed_plane_v128_early_xy_motion_weight,
+                    )
+                    reward = reward + v128_early_xy_penalty
+                if self.cfg.fixed_contact_include_early_racket_xy_anchor_penalty:
+                    reward = reward + term_early_racket_xy_anchor_penalty * self.dt
+                if self.cfg.fixed_plane_v134_late_xy_anchor_penalty_weight > 0.0:
+                    v134_late_xy_anchor_penalty = late_racket_xy_anchor_penalty(
+                        hit_count=hit_count,
+                        racket_xy_error_m=racket_xy_dist,
+                        control_dt_s=self.dt,
+                        weight=self.cfg.fixed_plane_v134_late_xy_anchor_penalty_weight,
+                    )
+                    reward = reward + v134_late_xy_anchor_penalty
+                if self.cfg.fixed_plane_v146_ball_anchor_xy_penalty_weight > 0.0:
+                    from fixed_contact_plane_training import ball_racket_anchor_xy_penalty
+
+                    v146_ball_anchor_xy_penalty = ball_racket_anchor_xy_penalty(
+                        bpos, racket_anchor, control_dt_s=self.dt,
+                        weight=self.cfg.fixed_plane_v146_ball_anchor_xy_penalty_weight,
+                    )
+                    reward = reward + v146_ball_anchor_xy_penalty
+                if self.cfg.fixed_plane_v132_early_ball_xy_motion_weight > 0.0:
+                    v132_early_ball_xy_penalty = early_ball_xy_motion_penalty(
+                        hit_count=hit_count,
+                        ball_velocity_m_s=bvel,
+                        control_dt_s=self.dt,
+                        weight=self.cfg.fixed_plane_v132_early_ball_xy_motion_weight,
+                        deadband_m_s=self.cfg.fixed_plane_v138_early_ball_xy_deadband_m_s,
+                        scale_m_s=self.cfg.fixed_plane_v138_early_ball_xy_scale_m_s,
+                    )
+                    reward = reward + v132_early_ball_xy_penalty
+                if self.cfg.fixed_contact_include_action_clip_excess_penalty:
+                    reward = reward + term_action_clip_excess_penalty * self.dt
+                if self.cfg.fixed_plane_v34_quiet_motion_weight > 0.0:
+                    quiet_motion_penalty, quiet_motion_active = (
+                        noncontact_motion_penalty(
+                            hit_count=hit_count,
+                            crossing_valid=fixed_crossing_valid,
+                            time_to_contact_s=fixed_time_to_contact,
+                            pending_hit=pending_hit,
+                            resolved_impact=(
+                                new_hit | low_survival_launch
+                                | subfloor_launch | failed_hit
+                            ),
+                            action_delta_norm=jnp.linalg.norm(da, axis=-1),
+                            racket_vxy_m_s=fixed_racket_vxy,
+                            racket_omega_rad_s=racket_full_angular_speed,
+                            racket_vz_m_s=fixed_racket_surface_velocity[:, 2],
+                            lead_s=self.cfg.fixed_plane_v34_quiet_motion_lead_s,
+                            control_dt_s=self.dt,
+                        )
+                    )
+                    quiet_motion_penalty *= self.cfg.fixed_plane_v34_quiet_motion_weight
+                    reward = reward + quiet_motion_penalty
+                if self.cfg.fixed_plane_v34_weak_launch_weight > 0.0:
+                    weak_launch_credit = weak_launch_lift_credit(
+                        event=(low_survival_launch | subfloor_launch)
+                        & (
+                            (hit_count < 3)
+                            | (not self.cfg.fixed_plane_v54_late_weak_credit_disabled)
+                        ),
+                        apex_z_m=predicted_apex_z,
+                        contact_center_z_m=(
+                            float(self.cfg.fixed_contact_surface_z_m)
+                            + ball_radius_m
+                        ),
+                        target_apex_z_m=fixed_contact_reward_target_apex_z_m,
+                        weight=self.cfg.fixed_plane_v34_weak_launch_weight,
+                    )
+                    reward = reward + weak_launch_credit
+                if self.cfg.fixed_plane_v36_weak_floor_penalty_weight > 0.0:
+                    weak_apex_floor_penalty = weak_launch_apex_floor_penalty(
+                        event=(low_survival_launch | subfloor_launch),
+                        apex_z_m=predicted_apex_z,
+                        target_apex_z_m=fixed_contact_reward_target_apex_z_m,
+                        margin_m=self.cfg.fixed_plane_v36_weak_floor_margin_m,
+                        gap_scale_m=(
+                            self.cfg.fixed_plane_v36_weak_floor_gap_scale_m
+                        ),
+                        weight=self.cfg.fixed_plane_v36_weak_floor_penalty_weight,
+                    )
+                    if self.cfg.fixed_plane_v51_late_weak_floor_multiplier > 1.0:
+                        weak_apex_floor_penalty = late_weak_floor_penalty(
+                            base_penalty=weak_apex_floor_penalty,
+                            confirmed_hits_before_event=hit_count,
+                            late_multiplier=(
+                                self.cfg.fixed_plane_v51_late_weak_floor_multiplier
+                            ),
+                        )
+                    reward = reward + weak_apex_floor_penalty
+                if self.cfg.fixed_plane_v54_late_apex_score_weight > 0.0:
+                    late_physical_apex_reward = late_physical_apex_score(
+                        event=(new_hit | ignored_fast_hit | low_survival_launch | subfloor_launch),
+                        confirmed_hits_before_event=(
+                            hit_count - new_hit.astype(jnp.int32)
+                        ),
+                        apex_z_m=predicted_apex_z,
+                        target_apex_z_m=fixed_contact_reward_target_apex_z_m,
+                        floor_z_m=1.400,
+                        weight=float(self.cfg.fixed_plane_v54_late_apex_score_weight),
+                    )
+                    reward = reward + late_physical_apex_reward
+                if self.cfg.fixed_plane_v80_steady_height_weight > 0.0:
+                    from fixed_plane_v80 import steady_height_score
+
+                    (
+                        v80_height_reward,
+                        v80_absolute_reward,
+                        v80_adjacent_jump_m,
+                    ) = steady_height_score(
+                        event=(new_hit | ignored_fast_hit | low_survival_launch | subfloor_launch),
+                        confirmed_hits_before_event=(
+                            hit_count - new_hit.astype(jnp.int32)
+                        ),
+                        apex_z_m=predicted_apex_z,
+                        previous_signed_error_m=previous_late_apex_signed_error_m,
+                        previous_valid=previous_late_apex_valid,
+                        weight=float(self.cfg.fixed_plane_v80_steady_height_weight),
+                        high_start_z_m=float(self.cfg.fixed_plane_v80_high_start_z_m),
+                        high_cost_weight=float(self.cfg.fixed_plane_v80_high_cost_weight),
+                        pair_cost_weight=float(self.cfg.fixed_plane_v80_pair_cost_weight),
+                    )
+                    reward = reward + v80_height_reward
+                if self.cfg.fixed_plane_v88_positive_height_weight > 0.0:
+                    late_physical_event = (
+                        new_hit | ignored_fast_hit | low_survival_launch | subfloor_launch
+                    )
+                    confirmed_before_event = hit_count - new_hit.astype(jnp.int32)
+                    if self.cfg.fixed_plane_v90_smooth_height_enabled:
+                        from fixed_plane_v90 import smooth_steady_height_credit
+
+                        v90_smooth_height_reward = smooth_steady_height_credit(
+                            event=late_physical_event,
+                            confirmed_hits_before_event=confirmed_before_event,
+                            apex_z_m=predicted_apex_z,
+                            weight=float(self.cfg.fixed_plane_v88_positive_height_weight),
+                        )
+                        reward = reward - v80_height_reward + v90_smooth_height_reward
+                        if self.cfg.fixed_plane_v92_signed_height_enabled:
+                            v92_height = signed_steady_height_reward(
+                                resolved_event=late_physical_event,
+                                unresolved_contact=failed_hit,
+                                confirmed_hits_before_event=confirmed_before_event,
+                                apex_z_m=predicted_apex_z,
+                                previous_apex_z_m=(
+                                    float(self.cfg.fixed_plane_limit_cycle_steady_apex_z_m)
+                                    + previous_late_apex_signed_error_m
+                                ),
+                                previous_valid=previous_late_apex_valid,
+                            )
+                            v92_height = scale_signed_height_reward(
+                                v92_height,
+                                scale=self.cfg.fixed_plane_v92_signed_height_reward_scale,
+                                adjacent_multiplier=getattr(self.cfg,
+                                    'fixed_plane_v156_adjacent_height_penalty_multiplier', 1.0),
+                                adjacent_linear=getattr(self.cfg,
+                                    'fixed_plane_v159_adjacent_height_linear', False),
+                            )
+                            v92_height_reward = v92_height.total
+                            v92_height_absolute = v92_height.absolute
+                            v92_height_adjacent = v92_height.adjacent_penalty
+                            v92_height_unresolved = v92_height.unresolved_penalty
+                            v92_height_eligible = v92_height.eligible
+                            v92_height_below = v92_height.below_floor
+                            v92_height_in_band = v92_height.in_band
+                            v92_height_above = v92_height.above_ceiling
+                            reward = reward - v90_smooth_height_reward + v92_height_reward
+                    else:
+                        from fixed_plane_v88 import positive_steady_height_credit
+
+                        v88_positive_height_reward = positive_steady_height_credit(
+                            event=late_physical_event,
+                            confirmed_hits_before_event=confirmed_before_event,
+                            apex_z_m=predicted_apex_z,
+                            previous_signed_error_m=previous_late_apex_signed_error_m,
+                            previous_valid=previous_late_apex_valid,
+                            weight=float(self.cfg.fixed_plane_v88_positive_height_weight),
+                        )
+                        reward = reward - v80_height_reward + v88_positive_height_reward
+                if self.cfg.fixed_plane_v58_apex_error_expansion_weight > 0.0:
+                    from fixed_plane_v58 import late_apex_error_expansion_penalty
+
+                    late_pair_event = (
+                        (new_hit | ignored_fast_hit | low_survival_launch | subfloor_launch)
+                        & ((hit_count - new_hit.astype(jnp.int32)) >= 3)
+                    )
+                    adjacent_apex_expansion_penalty = (
+                        late_apex_error_expansion_penalty(
+                            event=late_pair_event,
+                            previous_valid=previous_late_apex_valid,
+                            previous_error_m=previous_late_apex_error_m,
+                            current_apex_z_m=predicted_apex_z,
+                            target_apex_z_m=fixed_contact_reward_target_apex_z_m,
+                            deadband_m=0.010,
+                            scale_m=0.050,
+                            weight=float(
+                                self.cfg.fixed_plane_v58_apex_error_expansion_weight
+                            ),
+                        )
+                    )
+                    reward = reward + adjacent_apex_expansion_penalty
+                if self.cfg.fixed_plane_v59_high_apex_penalty_weight > 0.0:
+                    from fixed_plane_v59 import late_high_apex_penalty
+
+                    high_apex_penalty = late_high_apex_penalty(
+                        event=(
+                            new_hit | ignored_fast_hit
+                            | low_survival_launch | subfloor_launch
+                        ),
+                        confirmed_hits_before_event=(
+                            hit_count - new_hit.astype(jnp.int32)
+                        ),
+                        apex_z_m=predicted_apex_z,
+                        start_z_m=1.440,
+                        scale_m=0.025,
+                        weight=float(
+                            self.cfg.fixed_plane_v59_high_apex_penalty_weight
+                        ),
+                    )
+                    reward = reward + high_apex_penalty
+                if self.cfg.fixed_plane_v41_outcome_credit_weight > 0.0:
+                    resolved_physical_launch = (
+                        new_hit | low_survival_launch | subfloor_launch
+                    )
+                    physical_outcome_reward = physical_outcome_credit(
+                        event=resolved_physical_launch,
+                        landing_error_m=jnp.linalg.norm(
+                            predicted_next_contact_xy - hit_next_contact_target_xy,
+                            axis=-1,
+                        ),
+                        outgoing_vxy_m_s=hit_vxy,
+                        apex_error_m=jnp.abs(
+                            predicted_apex_z - fixed_contact_reward_target_apex_z_m
+                        ),
+                        contact_height_error_m=jnp.abs(
+                            hit_ball_z_at_contact - ball_radius_m
+                            - float(self.cfg.fixed_contact_surface_z_m)
+                        ),
+                        weight=self.cfg.fixed_plane_v41_outcome_credit_weight,
+                    )
+                    reward = reward + physical_outcome_reward
+                if (
+                    self.cfg.fixed_plane_v46_resolved_motion_vxy_weight > 0.0
+                    or self.cfg.fixed_plane_v46_resolved_motion_omega_weight > 0.0
+                ):
+                    resolved_motion_penalty = resolved_impact_motion_penalty(
+                        event=(new_hit | low_survival_launch | subfloor_launch),
+                        racket_vxy_m_s=hit_racket_vxy_at_contact,
+                        racket_omega_rad_s=(
+                            hit_racket_full_angular_speed_at_contact
+                        ),
+                        vxy_limit_m_s=0.0739,
+                        omega_limit_rad_s=0.40,
+                        vxy_scale_m_s=0.10,
+                        omega_scale_rad_s=0.40,
+                        vxy_weight=(
+                            self.cfg.fixed_plane_v46_resolved_motion_vxy_weight
+                        ),
+                        omega_weight=(
+                            self.cfg.fixed_plane_v46_resolved_motion_omega_weight
+                        ),
+                        nonsaturating_tail=(
+                            self.cfg.fixed_plane_v47_nonsaturating_motion_tail
+                        ),
+                    )
+                    reward = reward + resolved_motion_penalty
+                if (
+                    self.cfg.fixed_plane_rapid_steady_launch_hold_vxy_weight > 0.0
+                    or self.cfg.fixed_plane_rapid_steady_launch_hold_omega_weight > 0.0
+                ):
+                    rapid_hold_motion_penalty = (
+                        rapid_steady_launch_hold_motion_penalty(
+                            hold_active=racket_launch_hold_active,
+                            racket_vxy_m_s=jnp.linalg.norm(
+                                fixed_racket_surface_velocity[:, :2],
+                                axis=-1,
+                            ),
+                            racket_omega_rad_s=racket_full_angular_speed,
+                            vxy_weight=(
+                                self.cfg.fixed_plane_rapid_steady_launch_hold_vxy_weight
+                            ),
+                            omega_weight=(
+                                self.cfg.fixed_plane_rapid_steady_launch_hold_omega_weight
+                            ),
+                            control_dt_s=self.dt,
+                        )
+                    )
+                    reward = reward + rapid_hold_motion_penalty
+                if bool(
+                    getattr(
+                        self.cfg,
+                        "fixed_plane_rapid_steady_apex_event_reward_enabled",
+                        False,
+                    )
+                ):
+                    (
+                        rapid_apex_reward,
+                        rapid_apex_positive,
+                        rapid_apex_upper_penalty,
+                    ) = rapid_steady_apex_event_reward(
+                        event=(new_hit | low_survival_launch) & (
+                            (not self.cfg.fixed_plane_v92_signed_height_enabled)
+                            | ((hit_count - new_hit.astype(jnp.int32)) < 3)
+                        ),
+                        predicted_apex_z_m=predicted_apex_z,
+                        scheduled_apex_z_m=(
+                            fixed_contact_reward_target_apex_z_m
+                        ),
+                    )
+                    reward = reward + rapid_apex_reward
+                    if bool(getattr(
+                        self.cfg,
+                        "fixed_plane_rapid_steady_subfloor_bridge_enabled",
+                        False,
+                    )):
+                        rapid_subfloor_bridge = (
+                            rapid_steady_subfloor_bridge_reward(
+                                event=subfloor_launch,
+                                predicted_apex_z_m=predicted_apex_z,
+                                scheduled_apex_z_m=(
+                                    fixed_contact_reward_target_apex_z_m
+                                ),
+                                contact_ball_center_z_m=(
+                                    float(self.cfg.fixed_contact_surface_z_m)
+                                    + ball_radius_m
+                                ),
+                                survival_margin_m=float(
+                                    self.cfg.fixed_plane_limit_cycle_hit_survival_apex_margin_m
+                                ),
+                            )
+                        )
+                        if (
+                            self.cfg.fixed_plane_rapid_steady_subfloor_bridge_weight
+                            != 1.0
+                        ):
+                            rapid_subfloor_bridge = (
+                                rapid_subfloor_bridge
+                                * float(
+                                    self.cfg.fixed_plane_rapid_steady_subfloor_bridge_weight
+                                )
+                            )
+                        reward = reward + rapid_subfloor_bridge
+                    if (
+                        self.cfg.fixed_plane_rapid_steady_late_motion_vxy_weight > 0.0
+                        or self.cfg.fixed_plane_rapid_steady_late_motion_omega_weight > 0.0
+                    ):
+                        rapid_motion_bonus = rapid_steady_late_motion_bonus(
+                            event=new_hit,
+                            confirmed_hit_count=hit_count,
+                            racket_vxy_m_s=hit_racket_vxy_at_contact,
+                            racket_omega_rad_s=(
+                                hit_racket_full_angular_speed_at_contact
+                            ),
+                            vxy_weight=(
+                                self.cfg.fixed_plane_rapid_steady_late_motion_vxy_weight
+                            ),
+                            omega_weight=(
+                                self.cfg.fixed_plane_rapid_steady_late_motion_omega_weight
+                            ),
+                        )
+                        reward = reward + rapid_motion_bonus
+                if bool(getattr(
+                    self.cfg,
+                    "fixed_contact_include_failed_hit_penalty",
+                    False,
+                )):
+                    reward = reward + term_failed_hit_penalty
+        if (getattr(self.cfg,'fixed_plane_v158_late_squared_vxy_weight',0.)>0.
+                or getattr(self.cfg,'fixed_plane_v158_late_squared_omega_weight',0.)>0.):
+            from fixed_plane_v158_gpu1 import late_impact_squared_motion_penalties
+            v158_vxy_penalty,v158_omega_penalty=late_impact_squared_motion_penalties(
+                event=new_hit,hit_count=hit_count,vxy_m_s=hit_racket_vxy_at_contact,
+                omega_rad_s=hit_racket_full_angular_speed_at_contact,
+                vxy_weight=self.cfg.fixed_plane_v158_late_squared_vxy_weight,
+                omega_weight=self.cfg.fixed_plane_v158_late_squared_omega_weight)
+            reward=reward+v158_vxy_penalty+v158_omega_penalty
+        if getattr(self.cfg,'fixed_plane_v159_mean_center_penalty_weight',0.)>0.:
+            from fixed_plane_v159_gpu1 import mean_center_penalty
+            v159_center_penalty=mean_center_penalty(event=new_hit,
+                distance_m=contact_center_dist,
+                weight=self.cfg.fixed_plane_v159_mean_center_penalty_weight)
+            reward=reward+v159_center_penalty
+        if (getattr(self.cfg, 'fixed_plane_v164_dense_ball_xy_anchor_weight', 0.) != 0.
+                or getattr(self.cfg, 'fixed_plane_v164_dense_racket_xy_anchor_weight', 0.) != 0.):
+            from fixed_plane_v164_dense_anchor_reward import dense_anchor_xy_penalties
+            v164_ball_xy_penalty, v164_racket_xy_penalty = dense_anchor_xy_penalties(
+                bpos, rpos, racket_anchor, control_dt_s=self.dt,
+                ball_weight=self.cfg.fixed_plane_v164_dense_ball_xy_anchor_weight,
+                racket_weight=self.cfg.fixed_plane_v164_dense_racket_xy_anchor_weight)
+            reward = reward + v164_ball_xy_penalty + v164_racket_xy_penalty
+        if getattr(self.cfg, 'fixed_plane_v165_steady_band_violation_weight', 0.) != 0.:
+            from fixed_plane_v165_band_reward import steady_band_violation_penalty
+            v165_band_penalty = steady_band_violation_penalty(
+                eligible=v92_height_eligible, in_band=v92_height_in_band,
+                weight=self.cfg.fixed_plane_v165_steady_band_violation_weight)
+            reward = reward + v165_band_penalty
+        if getattr(self.cfg, 'fixed_plane_v166_physical_ball_xy_weight', 0.) != 0.:
+            from fixed_plane_v166_ball_xy_reward import physical_ball_xy_penalty
+            v166_ball_xy_penalty = physical_ball_xy_penalty(
+                event=new_hit, vxy_m_s=hit_vxy,
+                weight=self.cfg.fixed_plane_v166_physical_ball_xy_weight)
+            reward = reward + v166_ball_xy_penalty
         terms = {
             "total": reward,
             "dense_scaled": dense_reward * self.dt,
@@ -14316,6 +25649,18 @@ class MjxJuggleEnv:
             "arm_limiter_penalty": term_arm_limiter_penalty * self.dt,
             "arm_velocity_usage_penalty": term_arm_velocity_usage_penalty * self.dt,
             "arm_acceleration_usage_penalty": term_arm_acceleration_usage_penalty * self.dt,
+            "fixed_plane_v110_qacc_soft_penalty": (
+                -float(self.cfg.fixed_plane_v110_qacc_soft_penalty_weight)
+                * self.dt
+                * jnp.mean(
+                    jnp.maximum(
+                        arm_acc_ratio
+                        - float(self.cfg.fixed_plane_v110_qacc_soft_margin_ratio),
+                        0.0,
+                    ),
+                    axis=-1,
+                )
+            ),
             # These control-rate measurements remain meaningful when every
             # downstream limiter/governor is disabled.  In that configuration
             # the older arm_actual_* limiter diagnostics stay at zero by
@@ -14333,6 +25678,15 @@ class MjxJuggleEnv:
             "hit_count_floor_reward": term_hit_count_floor_reward,
             "low_survival_hit_reward": term_low_survival_hit_reward,
             "center_flat_hit": term_center_flat_hit,
+            **({
+                "metric/physical_center_penalty_event_count": center_penalty_event.astype(jnp.float32),
+                "metric/physical_center_penalty_distance_sum_m": jnp.where(
+                    center_penalty_event, contact_center_dist, 0.0),
+                "metric/weak_physical_center_event_count": (
+                    center_penalty_event & ~recoverability_hit_reward_mask).astype(jnp.float32),
+                "metric/weak_physical_center_distance_sum_m": jnp.where(
+                    center_penalty_event & ~recoverability_hit_reward_mask, contact_center_dist, 0.0),
+            } if self.cfg.fixed_contact_center_penalty_all_physical_outcomes else {}),
             "hit_flatness_excess_penalty": term_hit_flatness_excess_penalty,
             "hit_contact_center_excess_penalty": (
                 term_hit_contact_center_excess_penalty
@@ -14599,11 +25953,1002 @@ class MjxJuggleEnv:
                 * max(1e-6, float(self.cfg.hit_next_contact_anchor_sigma_m)),
                 0.0,
             ),
+            "metric/recurrent_hit_event_count": (
+                hit_reward_mask & (hit_count >= 2)
+            ).astype(jnp.float32),
+            "metric/recurrent_hit_next_contact_anchor_err_sum": jnp.where(
+                hit_reward_mask & (hit_count >= 2),
+                jnp.sqrt(jnp.maximum(hit_next_contact_anchor_pen, 0.0))
+                * max(1e-6, float(self.cfg.hit_next_contact_anchor_sigma_m)),
+                0.0,
+            ),
             "low_hit_penalty": term_low_hit_penalty,
             "failed_hit_penalty": term_failed_hit_penalty,
             "fast_hit_penalty": term_fast_hit_penalty,
         }
+        if self.cfg.fixed_plane_v34_resolve_weak_launch:
+            # Event-level vectors are kept separate from counted-hit averages
+            # so a weak fourth/fifth physical rebound cannot disappear from
+            # the contraction and survival audit.
+            terms["metric/v34_impact_ordinal"] = jnp.where(
+                new_hit, hit_count, 0
+            ).astype(jnp.float32)
+            terms["metric/v34_landing_error_m"] = jnp.where(
+                new_hit,
+                jnp.sqrt(jnp.maximum(hit_next_contact_anchor_pen, 0.0))
+                * float(self.cfg.hit_next_contact_anchor_sigma_m),
+                0.0,
+            )
+            terms["metric/v34_outgoing_vxy_m_s"] = jnp.where(
+                new_hit, jnp.linalg.norm(bvel[:, :2], axis=-1), 0.0
+            )
+            terms["metric/v34_apex_error_m"] = jnp.where(
+                new_hit,
+                jnp.abs(predicted_apex_z - fixed_contact_reward_target_apex_z_m),
+                0.0,
+            )
+            terms["metric/v34_confirmed_apex_z_m"] = jnp.where(
+                new_hit, predicted_apex_z, 0.0
+            )
+            terms["metric/v34_contact_height_error_m"] = jnp.where(
+                new_hit,
+                jnp.abs(
+                    hit_ball_z_at_contact - ball_radius_m
+                    - float(self.cfg.fixed_contact_surface_z_m)
+                ),
+                0.0,
+            )
+            terms["metric/v34_weak_launch_ordinal"] = jnp.where(
+                low_survival_launch | subfloor_launch,
+                hit_count + 1,
+                0,
+            ).astype(jnp.float32)
+            weak_event = low_survival_launch | subfloor_launch
+            terms["metric/v34_weak_apex_z_m"] = jnp.where(
+                weak_event, predicted_apex_z, 0.0
+            )
+            terms["metric/v34_weak_outgoing_vxy_m_s"] = jnp.where(
+                weak_event, jnp.linalg.norm(bvel[:, :2], axis=-1), 0.0
+            )
+            terms["metric/v34_weak_contact_height_error_m"] = jnp.where(
+                weak_event,
+                jnp.abs(
+                    hit_ball_z_at_contact - ball_radius_m
+                    - float(self.cfg.fixed_contact_surface_z_m)
+                ), 0.0,
+            )
+        if self.cfg.fixed_plane_v134_late_xy_anchor_penalty_weight > 0.0:
+            terms["fixed_plane_v134_late_xy_anchor_penalty"] = (
+                v134_late_xy_anchor_penalty
+            )
+        if self.cfg.fixed_plane_v146_ball_anchor_xy_penalty_weight > 0.0:
+            terms["ball_racket_anchor_xy_penalty"] = v146_ball_anchor_xy_penalty
+            terms["metric/ball_racket_anchor_xy_dist_m"] = jnp.linalg.norm(
+                bpos[:, :2] - racket_anchor[:, :2], axis=-1,
+            )
+        if self.cfg.fixed_plane_v132_early_ball_xy_motion_weight > 0.0:
+            terms["fixed_plane_v132_early_ball_xy_motion_penalty"] = (
+                v132_early_ball_xy_penalty
+            )
+            terms["metric/v132_early_ball_vxy_m_s"] = jnp.where(
+                hit_count < 3, jnp.linalg.norm(bvel[:, :2], axis=-1), 0.0
+            )
+        if self.cfg.fixed_plane_v128_early_xy_motion_weight > 0.0:
+            early_active = hit_count < 3
+            terms["fixed_plane_v128_early_xy_motion_penalty"] = (
+                v128_early_xy_penalty
+            )
+            terms["metric/v128_early_racket_vxy_m_s"] = jnp.where(
+                early_active, fixed_racket_vxy, 0.0
+            )
+            terms["metric/v128_early_racket_xy_error_m"] = jnp.where(
+                early_active, racket_xy_dist, 0.0
+            )
+            terms["metric/v128_early_racket_active"] = early_active.astype(
+                jnp.float32
+            )
+        if self.cfg.fixed_plane_v34_quiet_motion_weight > 0.0:
+            terms["fixed_plane_v34_quiet_motion_penalty"] = quiet_motion_penalty
+            terms["metric/fixed_plane_v34_quiet_active"] = (
+                quiet_motion_active.astype(jnp.float32)
+            )
+        if self.cfg.fixed_plane_v34_weak_launch_weight > 0.0:
+            terms["fixed_plane_v34_weak_launch_credit"] = weak_launch_credit
+        if self.cfg.fixed_plane_v36_weak_floor_penalty_weight > 0.0:
+            terms["fixed_plane_v36_weak_floor_penalty"] = weak_apex_floor_penalty
+        if self.cfg.fixed_plane_v59_high_apex_penalty_weight > 0.0:
+            high_event = (
+                (new_hit | ignored_fast_hit | low_survival_launch | subfloor_launch)
+                & ((hit_count - new_hit.astype(jnp.int32)) >= 3)
+                & (predicted_apex_z > 1.440)
+            )
+            terms["fixed_plane_v59_high_apex_penalty"] = high_apex_penalty
+            terms["metric/v59_late_high_apex_event"] = high_event.astype(jnp.float32)
+        if self.cfg.fixed_plane_v58_apex_error_expansion_weight > 0.0:
+            pair_event = (
+                (new_hit | ignored_fast_hit | low_survival_launch | subfloor_launch)
+                & ((hit_count - new_hit.astype(jnp.int32)) >= 3)
+                & previous_late_apex_valid
+            )
+            terms["fixed_plane_v58_adjacent_apex_expansion_penalty"] = (
+                adjacent_apex_expansion_penalty
+            )
+            terms["metric/v58_late_pair_event"] = pair_event.astype(jnp.float32)
+            terms["metric/v58_late_apex_error_expansion_sum_m"] = jnp.where(
+                pair_event,
+                jnp.maximum(
+                    0.0,
+                    jnp.abs(predicted_apex_z - fixed_contact_reward_target_apex_z_m)
+                    - previous_late_apex_error_m,
+                ),
+                0.0,
+            )
+        if self.cfg.fixed_plane_v54_late_apex_score_weight > 0.0:
+            late_physical_event = (
+                (new_hit | ignored_fast_hit | low_survival_launch | subfloor_launch)
+                & ((hit_count - new_hit.astype(jnp.int32)) >= 3)
+            )
+            terms["fixed_plane_v54_late_apex_score"] = late_physical_apex_reward
+            terms["metric/v54_late_physical_event"] = late_physical_event.astype(jnp.float32)
+            terms["metric/v54_late_below_floor_event"] = (
+                late_physical_event & (predicted_apex_z < 1.400)
+            ).astype(jnp.float32)
+            terms["metric/v54_late_apex_z_sum_m"] = jnp.where(
+                late_physical_event, predicted_apex_z, 0.0
+            )
+        if self.cfg.fixed_plane_v80_steady_height_weight > 0.0:
+            v80_event = (
+                (new_hit | ignored_fast_hit | low_survival_launch | subfloor_launch)
+                & ((hit_count - new_hit.astype(jnp.int32)) >= 3)
+            )
+            terms["fixed_plane_v80_steady_height_reward"] = v80_height_reward
+            terms["metric/v80_late_event"] = v80_event.astype(jnp.float32)
+            terms["metric/v80_late_weak_event"] = (
+                v80_event & (low_survival_launch | subfloor_launch)
+            ).astype(jnp.float32)
+            terms["metric/v80_late_below_floor_event"] = (
+                v80_event & (predicted_apex_z < 1.400)
+            ).astype(jnp.float32)
+            terms["metric/v80_late_above_ceiling_event"] = (
+                v80_event & (predicted_apex_z > 1.450)
+            ).astype(jnp.float32)
+            terms["metric/v80_late_in_band_event"] = (
+                v80_event & (predicted_apex_z >= 1.400)
+                & (predicted_apex_z <= 1.450)
+            ).astype(jnp.float32)
+            v80_pair_event = v80_event & previous_late_apex_valid
+            terms["metric/v80_late_pair_event"] = (
+                v80_pair_event.astype(jnp.float32)
+            )
+            terms["metric/v80_late_pair_jump_sum_m"] = jnp.where(
+                v80_pair_event, v80_adjacent_jump_m, 0.0
+            )
+            terms["metric/v80_late_apex_z_sum_m"] = jnp.where(
+                v80_event, predicted_apex_z, 0.0
+            )
+            terms["metric/v80_late_absolute_reward"] = v80_absolute_reward
+            terms["metric/v80_adjacent_jump_m"] = v80_adjacent_jump_m
+        elif self.fixed_plane_v92_history_obs_enabled:
+            # PPO steady-band focus reads these keys at every course stage.
+            # Stages 1--3 have no late-height lesson yet, so they emit an
+            # explicit empty event set instead of an absent metric contract.
+            empty_late_metric = jnp.zeros_like(hit_count, dtype=jnp.float32)
+            for key in (
+                "v80_late_event", "v80_late_weak_event",
+                "v80_late_below_floor_event",
+                "v80_late_above_ceiling_event",
+                "v80_late_in_band_event", "v80_late_pair_event",
+                "v80_late_pair_jump_sum_m", "v80_late_apex_z_sum_m",
+                "v80_late_absolute_reward", "v80_adjacent_jump_m",
+            ):
+                terms[f"metric/{key}"] = empty_late_metric
+        if self.cfg.fixed_plane_v88_positive_height_weight > 0.0:
+            terms["fixed_plane_v88_v80_reward_reversal"] = -v80_height_reward
+            if self.cfg.fixed_plane_v90_smooth_height_enabled:
+                terms["fixed_plane_v90_smooth_height_reward"] = v90_smooth_height_reward
+                if self.cfg.fixed_plane_v92_signed_height_enabled:
+                    terms["fixed_plane_v92_v90_reward_reversal"] = -v90_smooth_height_reward
+                    terms["fixed_plane_v92_signed_height_reward"] = v92_height_reward
+                    terms["metric/v92_absolute_height_reward"] = v92_height_absolute
+                    terms["metric/v92_adjacent_height_penalty"] = v92_height_adjacent
+                    terms["metric/v92_unresolved_contact_penalty"] = v92_height_unresolved
+                    terms["metric/v92_late_contact_event"] = v92_height_eligible.astype(jnp.float32)
+                    terms["metric/v92_below_1p4_event"] = v92_height_below.astype(jnp.float32)
+                    terms["metric/v92_in_1p4_1p45_event"] = v92_height_in_band.astype(jnp.float32)
+                    terms["metric/v92_above_1p45_event"] = v92_height_above.astype(jnp.float32)
+            else:
+                terms["fixed_plane_v88_positive_height_reward"] = v88_positive_height_reward
+        if self.cfg.fixed_plane_v41_outcome_credit_weight > 0.0:
+            terms["fixed_plane_v41_physical_outcome_credit"] = physical_outcome_reward
+        if (
+            self.cfg.fixed_plane_v46_resolved_motion_vxy_weight > 0.0
+            or self.cfg.fixed_plane_v46_resolved_motion_omega_weight > 0.0
+        ):
+            terms["fixed_plane_v46_resolved_motion_penalty"] = (
+                resolved_motion_penalty
+            )
+        if bool(getattr(
+            self.cfg,
+            "fixed_plane_rapid_steady_apex_event_reward_enabled",
+            False,
+        )):
+            terms.update({
+                "rapid_steady_apex_event_reward": rapid_apex_reward,
+                "rapid_steady_apex_positive_reward": rapid_apex_positive,
+                "rapid_steady_apex_upper_penalty": (
+                    rapid_apex_upper_penalty
+                ),
+            })
+        if bool(getattr(
+            self.cfg,
+            "fixed_plane_rapid_steady_subfloor_bridge_enabled",
+            False,
+        )):
+            terms["rapid_steady_subfloor_bridge_reward"] = (
+                rapid_subfloor_bridge
+            )
+        if (
+            self.cfg.fixed_plane_rapid_steady_late_motion_vxy_weight > 0.0
+            or self.cfg.fixed_plane_rapid_steady_late_motion_omega_weight > 0.0
+        ):
+            terms["rapid_steady_late_motion_bonus"] = rapid_motion_bonus
+        if (getattr(self.cfg,'fixed_plane_v158_late_squared_vxy_weight',0.)>0.
+                or getattr(self.cfg,'fixed_plane_v158_late_squared_omega_weight',0.)>0.):
+            terms['fixed_plane_v158_late_squared_vxy_penalty']=v158_vxy_penalty
+            terms['fixed_plane_v158_late_squared_omega_penalty']=v158_omega_penalty
+        if getattr(self.cfg,'fixed_plane_v159_mean_center_penalty_weight',0.)>0.:
+            terms['fixed_plane_v159_mean_center_penalty']=v159_center_penalty
+        if (getattr(self.cfg, 'fixed_plane_v164_dense_ball_xy_anchor_weight', 0.) != 0.
+                or getattr(self.cfg, 'fixed_plane_v164_dense_racket_xy_anchor_weight', 0.) != 0.):
+            terms['fixed_plane_v164_dense_ball_xy_penalty'] = v164_ball_xy_penalty
+            terms['fixed_plane_v164_dense_racket_xy_penalty'] = v164_racket_xy_penalty
+        if getattr(self.cfg, 'fixed_plane_v165_steady_band_violation_weight', 0.) != 0.:
+            terms['fixed_plane_v165_steady_band_violation_penalty'] = v165_band_penalty
+        if getattr(self.cfg, 'fixed_plane_v166_physical_ball_xy_weight', 0.) != 0.:
+            terms['fixed_plane_v166_physical_ball_xy_penalty'] = v166_ball_xy_penalty
+        if (
+            self.cfg.fixed_plane_rapid_steady_launch_hold_vxy_weight > 0.0
+            or self.cfg.fixed_plane_rapid_steady_launch_hold_omega_weight > 0.0
+        ):
+            terms["rapid_steady_launch_hold_motion_penalty"] = (
+                rapid_hold_motion_penalty
+            )
+        if getattr(
+            self.cfg,
+            "fixed_plane_limit_cycle_apex_schedule_z_m",
+            (),
+        ):
+            terms.update(per_hit_apex_event_metrics(
+                counted_hit=new_hit,
+                hit_count=hit_count,
+                predicted_apex_z_m=predicted_apex_z,
+                contact_surface_z_m=(
+                    hit_ball_z_at_contact
+                    - float(self.mj_model.geom_size[self.ball_geom_id, 0])
+                ),
+                target_surface_z_m=float(self.cfg.fixed_contact_surface_z_m),
+                racket_vxy_m_s=hit_racket_vxy_at_contact,
+                racket_omega_rad_s=(
+                    hit_racket_full_angular_speed_at_contact
+                ),
+            ))
+        if self.fixed_contact_plane_training_enabled:
+            predictive_metric_scale = float(
+                getattr(
+                    self.cfg,
+                    "fixed_contact_ttc_phase_schedule_enabled",
+                    False,
+                )
+            )
+            terms.update(
+                {
+                "metric/fixed_contact_limit_cycle_target_apex_z_m": (
+                    fixed_contact_reward_target_apex_z_m
+                ),
+                "metric/fixed_contact_limit_cycle_apex_progress": (
+                    fixed_contact_limit_cycle_apex_progress
+                ),
+                "fixed_contact_hit_reward": fixed_hit_reward,
+                "fixed_contact_vxy_event_bonus": (
+                    fixed_contact_vxy_event_bonus
+                ),
+                "fixed_contact_hit_event_budget_correction": (
+                    fixed_hit_event_budget_correction
+                ),
+                "metric/fixed_contact_raw_hit_event_reward": (
+                    fixed_raw_hit_event_reward
+                ),
+                "metric/fixed_contact_bounded_hit_event_reward": (
+                    fixed_bounded_hit_event_reward
+                ),
+                "fixed_contact_outcome_constraint_penalty": (
+                    fixed_outcome_constraint_penalty
+                ),
+                "fixed_contact_outcome_constraint_bonus": (
+                    fixed_outcome_constraint_bonus
+                ),
+                "fixed_contact_apex_error_penalty": (
+                    fixed_apex_error_penalty
+                ),
+                "metric/fixed_contact_event_joint_quality_gate_sum": (
+                    jnp.where(
+                        new_hit,
+                        fixed_event_joint_quality_gate,
+                        0.0,
+                    )
+                ),
+                "fixed_contact_survival_reward": fixed_survival_reward,
+                "fixed_contact_workspace_z_barrier_penalty": (
+                    fixed_workspace_z_barrier_penalty
+                ),
+                "metric/fixed_contact_workspace_z_barrier_cost": (
+                    fixed_workspace_z_barrier_cost
+                ),
+                "fixed_contact_tracking_potential": fixed_tracking_potential,
+                "fixed_contact_final_brake_reward": fixed_final_brake_reward,
+                "fixed_contact_s0_component_reward": (
+                    fixed_s0_component_reward
+                ),
+                "fixed_contact_recurrent_event_reward": (
+                    fixed_recurrent_event_reward
+                    if self.cfg.fixed_contact_include_recurrent_event_reward
+                    else jnp.zeros_like(fixed_recurrent_event_reward)
+                ),
+                "fixed_contact_effective_action_penalty": (
+                    fixed_effective_action_penalty
+                ),
+                "fixed_contact_s0_qualified_low_action_reward": (
+                    fixed_s0_qualified_low_action_reward
+                ),
+                "metric/fixed_contact_action_penalty_gate_eligible": (
+                    fixed_action_penalty_gate_eligible.astype(jnp.float32)
+                ),
+                "metric/fixed_contact_low_action_gate_eligible": (
+                    fixed_low_action_gate_eligible.astype(jnp.float32)
+                ),
+                "metric/fixed_contact_low_action_score": fixed_low_action_score,
+                "fixed_contact_s0_xy_reward": fixed_s0_xy_reward,
+                "fixed_contact_s0_z_reward": fixed_s0_z_reward,
+                "fixed_contact_s0_pose_reward": fixed_s0_pose_reward,
+                "fixed_contact_s0_vxy_reward": fixed_s0_vxy_reward,
+                "fixed_contact_s0_omega_reward": fixed_s0_omega_reward,
+                "fixed_contact_s0_final_xy_reward": (
+                    fixed_s0_final_xy_reward
+                ),
+                "fixed_contact_s0_final_z_reward": fixed_s0_final_z_reward,
+                "fixed_contact_s0_final_pose_reward": (
+                    fixed_s0_final_pose_reward
+                ),
+                "fixed_contact_s0_readiness_reward": (
+                    fixed_s0_readiness_reward
+                ),
+                "fixed_contact_s0_gate_aligned_position_penalty": (
+                    fixed_s0_gate_aligned_position_penalty
+                ),
+                "fixed_contact_s0_gate_aligned_motion_penalty": (
+                    fixed_s0_gate_aligned_motion_penalty
+                ),
+                "fixed_contact_s0_arrival_worst_constraint_penalty": (
+                    fixed_s0_arrival_worst_constraint_penalty
+                ),
+                "fixed_contact_s0_ready_deadline_reward": (
+                    fixed_s0_ready_deadline_reward
+                ),
+                "metric/fixed_contact_s0_ready_deadline_event": (
+                    fixed_s0_ready_deadline_event.astype(jnp.float32)
+                ),
+                "metric/fixed_contact_s0_arrival_worst_constraint_violation": (
+                    fixed_s0_arrival_worst_constraint_violation
+                ),
+                "fixed_contact_pre_hit_launch_vz_reward": (
+                    fixed_pre_hit_launch_vz_reward
+                ),
+                "metric/fixed_contact_pre_hit_launch_vz_score": (
+                    fixed_pre_hit_launch_vz_score
+                ),
+                "metric/fixed_contact_pre_hit_launch_vz_active": (
+                    fixed_pre_hit_launch_vz_active.astype(jnp.float32)
+                ),
+                "fixed_contact_pre_hit_launch_command_vz_reward": (
+                    fixed_pre_hit_launch_command_vz_reward
+                ),
+                "metric/fixed_contact_pre_hit_launch_command_vz_m_s": (
+                    fixed_pre_hit_launch_command_vz
+                ),
+                "metric/fixed_contact_pre_hit_launch_command_vz_score": (
+                    fixed_pre_hit_launch_command_vz_score
+                ),
+                "metric/fixed_contact_pre_hit_launch_command_vz_active": (
+                    fixed_pre_hit_launch_command_vz_active.astype(jnp.float32)
+                ),
+                "fixed_contact_recurrent_launch_vz_reward": (
+                    fixed_recurrent_launch_vz_reward
+                ),
+                "metric/fixed_contact_recurrent_launch_vz_score": (
+                    fixed_recurrent_launch_vz_score
+                ),
+                "metric/fixed_contact_recurrent_launch_vz_active": (
+                    fixed_recurrent_launch_vz_active.astype(jnp.float32)
+                ),
+                "fixed_plane_v53_fast_arrival_vz_penalty": (
+                    fixed_fast_arrival_vz_penalty
+                ),
+                "metric/fixed_plane_v53_fast_arrival_vz_target_m_s": (
+                    fixed_fast_arrival_vz_target
+                ),
+                "metric/fixed_plane_v53_fast_arrival_vz_active": (
+                    fixed_fast_arrival_vz_active.astype(jnp.float32)
+                ),
+                "fixed_contact_smooth_stroke_vz_penalty": (
+                    fixed_smooth_stroke_vz_penalty
+                ),
+                "metric/fixed_contact_smooth_stroke_vz_cost": (
+                    fixed_smooth_stroke_vz_cost
+                ),
+                "metric/fixed_contact_smooth_stroke_vz_target_m_s": (
+                    fixed_smooth_stroke_vz_target
+                ),
+                "metric/fixed_contact_smooth_stroke_vz_active": (
+                    fixed_smooth_stroke_vz_active.astype(jnp.float32)
+                ),
+                "fixed_contact_smooth_stroke_vz_reward": (
+                    fixed_smooth_stroke_vz_reward
+                ),
+                "metric/fixed_contact_smooth_stroke_vz_reward_score": (
+                    fixed_smooth_stroke_vz_reward_score
+                ),
+                "metric/fixed_contact_smooth_stroke_vz_reward_active": (
+                    fixed_smooth_stroke_vz_reward_active.astype(jnp.float32)
+                ),
+                "fixed_contact_post_second_hit_handoff_reward": (
+                    fixed_post_second_hit_handoff_reward
+                ),
+                "fixed_contact_edge_racket_vz_target_reward": (
+                    fixed_edge_racket_vz_reward
+                ),
+                "metric/fixed_contact_edge_racket_vz_target_score": (
+                    fixed_edge_racket_vz_score
+                ),
+                "metric/fixed_contact_edge_racket_vz_target_active": (
+                    fixed_edge_racket_vz_active.astype(jnp.float32)
+                ),
+                "metric/fixed_contact_edge_racket_vz_qz_gate": (
+                    fixed_edge_racket_vz_qz_gate
+                ),
+                "fixed_contact_phase_stroke_z_penalty": (
+                    fixed_phase_stroke_z_penalty
+                ),
+                "metric/fixed_contact_phase_stroke_z_cost": (
+                    fixed_phase_stroke_z_cost
+                ),
+                "metric/fixed_contact_phase_stroke_z_target_m": (
+                    fixed_phase_stroke_z_target
+                ),
+                "metric/fixed_contact_dense_z_target_m": (
+                    fixed_dense_z_target
+                ),
+                "metric/fixed_contact_phase_stroke_z_active": (
+                    fixed_phase_stroke_z_active.astype(jnp.float32)
+                ),
+                "fixed_contact_phase_stroke_command_vz_penalty": (
+                    fixed_phase_stroke_command_vz_penalty
+                ),
+                "metric/fixed_contact_phase_stroke_command_vz_cost": (
+                    fixed_phase_stroke_command_vz_cost
+                ),
+                "metric/fixed_contact_phase_stroke_command_vz_target_m_s": (
+                    fixed_phase_stroke_command_vz_target
+                ),
+                "metric/fixed_contact_phase_stroke_command_vz_active": (
+                    fixed_phase_stroke_command_vz_active.astype(jnp.float32)
+                ),
+                "fixed_contact_pending_hit_retract_vz_reward": (
+                    fixed_pending_hit_retract_vz_reward
+                ),
+                "metric/fixed_contact_pending_hit_retract_vz_score": (
+                    fixed_pending_hit_retract_vz_score
+                ),
+                "metric/fixed_contact_pending_hit_retract_vz_active": (
+                    fixed_pending_hit_retract_vz_active.astype(jnp.float32)
+                ),
+                "fixed_contact_pending_hit_retract_command_vz_reward": (
+                    fixed_pending_hit_retract_command_vz_reward
+                ),
+                "metric/fixed_contact_pending_hit_retract_command_vz_score": (
+                    fixed_pending_hit_retract_command_vz_score
+                ),
+                "metric/fixed_contact_pending_hit_retract_command_vz_active": (
+                    fixed_pending_hit_retract_command_vz_active.astype(
+                        jnp.float32
+                    )
+                ),
+                "metric/fixed_contact_q_z_sum": jnp.where(
+                    hit_reward_mask, fixed_contact_quality.components[:, 0], 0.0
+                ),
+                "metric/fixed_contact_q_pose_sum": jnp.where(
+                    hit_reward_mask, fixed_contact_quality.components[:, 1], 0.0
+                ),
+                "metric/fixed_contact_q_vxy_sum": jnp.where(
+                    hit_reward_mask, fixed_contact_quality.components[:, 2], 0.0
+                ),
+                "metric/fixed_contact_q_omega_sum": jnp.where(
+                    hit_reward_mask, fixed_contact_quality.components[:, 3], 0.0
+                ),
+                "metric/fixed_contact_q_offset_sum": jnp.where(
+                    hit_reward_mask, fixed_contact_quality.components[:, 4], 0.0
+                ),
+                "metric/fixed_contact_q_mean_sum": jnp.where(
+                    hit_reward_mask, fixed_contact_quality.mean, 0.0
+                ),
+                "metric/fixed_contact_q_joint_sum": jnp.where(
+                    hit_reward_mask, fixed_contact_quality.joint, 0.0
+                ),
+                # Immediate physical-edge snapshots for constrained PPO.
+                # The historical *_sum metrics above are emitted only when a
+                # pending contact later resolves as a rewardable hit, which
+                # delayed quality credit by hundreds of milliseconds in the
+                # V175 proof.  These fields are telemetry-only for every
+                # legacy profile and expose the already cached edge state.
+                "metric/contact_edge_fixed_contact_q_z": jnp.where(
+                    physical_contact_edge,
+                    fixed_contact_quality.components[:, 0],
+                    0.0,
+                ),
+                "metric/contact_edge_fixed_contact_q_pose": jnp.where(
+                    physical_contact_edge,
+                    fixed_contact_quality.components[:, 1],
+                    0.0,
+                ),
+                "metric/contact_edge_fixed_contact_q_vxy": jnp.where(
+                    physical_contact_edge,
+                    fixed_contact_quality.components[:, 2],
+                    0.0,
+                ),
+                "metric/contact_edge_fixed_contact_q_omega": jnp.where(
+                    physical_contact_edge,
+                    fixed_contact_quality.components[:, 3],
+                    0.0,
+                ),
+                "metric/contact_edge_fixed_contact_q_offset": jnp.where(
+                    physical_contact_edge,
+                    fixed_contact_quality.components[:, 4],
+                    0.0,
+                ),
+                "metric/fixed_contact_return_quality_sum": jnp.where(
+                    hit_reward_mask, fixed_return_quality.combined, 0.0
+                ),
+                "metric/fixed_contact_return_trajectory_score_sum": jnp.where(
+                    hit_reward_mask, fixed_return_quality.trajectory, 0.0
+                ),
+                    "metric/fixed_contact_return_apex_score_sum": jnp.where(
+                        hit_reward_mask, fixed_return_quality.apex, 0.0
+                    ),
+                    "metric/fixed_contact_apex_error_cost_sum": jnp.where(
+                        hit_reward_mask, fixed_apex_error_cost, 0.0
+                    ),
+                "metric/fixed_contact_return_xy_error_sum": jnp.where(
+                    hit_reward_mask & fixed_outcome_crossing_valid,
+                    fixed_return_quality.trajectory_error_m,
+                    0.0,
+                ),
+                "metric/fixed_contact_return_horizontal_step_sum": jnp.where(
+                    hit_reward_mask & fixed_outcome_crossing_valid,
+                    fixed_return_quality.horizontal_displacement_m,
+                    0.0,
+                ),
+                "metric/fixed_contact_return_center_progress_sum": jnp.where(
+                    hit_reward_mask & fixed_outcome_crossing_valid,
+                    fixed_return_quality.center_progress_m,
+                    0.0,
+                ),
+                "metric/fixed_contact_outcome_constraint_cost_sum": jnp.where(
+                    hit_reward_mask,
+                    fixed_outcome_constraint_cost,
+                    0.0,
+                ),
+                "metric/fixed_contact_outcome_all_ready_sum": jnp.where(
+                    hit_reward_mask,
+                    fixed_outcome_all_ready.astype(jnp.float32),
+                    0.0,
+                ),
+                "metric/fixed_contact_recurrent_outcome_all_ready_sum": (
+                    jnp.where(
+                        hit_reward_mask & (hit_count >= 2),
+                        fixed_outcome_all_ready.astype(jnp.float32),
+                        0.0,
+                    )
+                ),
+                    "metric/fixed_contact_tracking_error_m": (
+                        current_tracking_error
+                    ),
+                    "metric/fixed_contact_final_window": (
+                        final_window.astype(jnp.float32)
+                    ),
+                    "metric/fixed_contact_s0_arrival_window": (
+                        fixed_s0_arrival_window.astype(jnp.float32)
+                    ),
+                    "metric/fixed_contact_post_hit_motion_window": (
+                        (
+                            (fixed_s0_motion_component_active > 0.0)
+                            & (hit_count > 0)
+                        ).astype(jnp.float32)
+                    ),
+                    "metric/fixed_contact_post_hit_q_vxy_sum": jnp.where(
+                        (fixed_s0_motion_component_active > 0.0)
+                        & (hit_count > 0),
+                        fixed_s0_gate_scores[:, 3],
+                        0.0,
+                    ),
+                    "metric/fixed_contact_post_hit_q_omega_sum": jnp.where(
+                        (fixed_s0_motion_component_active > 0.0)
+                        & (hit_count > 0),
+                        fixed_s0_gate_scores[:, 4],
+                        0.0,
+                    ),
+                    "metric/fixed_contact_post_hit_q_vz_sum": jnp.where(
+                        (fixed_s0_motion_component_active > 0.0)
+                        & (hit_count > 0),
+                        jnp.exp(
+                            -0.5
+                            * (
+                                fixed_racket_surface_velocity[:, 2]
+                                / float(getattr(
+                                    self.cfg,
+                                    "fixed_contact_post_hit_recovery_max_vz_m_s",
+                                    0.080,
+                                ))
+                            )
+                            ** 2
+                        ),
+                        0.0,
+                    ),
+                    "metric/fixed_contact_post_hit_vz_abs_sum": jnp.where(
+                        (fixed_s0_motion_component_active > 0.0)
+                        & (hit_count > 0),
+                        jnp.abs(fixed_racket_surface_velocity[:, 2]),
+                        0.0,
+                    ),
+                    "metric/fixed_contact_post_hit_ready_sum": jnp.where(
+                        (fixed_s0_motion_component_active > 0.0)
+                        & (hit_count > 0),
+                        fixed_s0_ready.astype(jnp.float32),
+                        0.0,
+                    ),
+                    "metric/fixed_contact_final_brake_score_sum": jnp.where(
+                        final_window, fixed_brake_score, 0.0
+                    ),
+                    "metric/fixed_contact_s0_q_xy_sum": jnp.where(
+                        final_window, fixed_s0_gate_scores[:, 0], 0.0
+                    ),
+                    "metric/fixed_contact_s0_q_z_sum": jnp.where(
+                        final_window, fixed_s0_gate_scores[:, 1], 0.0
+                    ),
+                    "metric/fixed_contact_s0_q_pose_sum": jnp.where(
+                        final_window, fixed_s0_gate_scores[:, 2], 0.0
+                    ),
+                    "metric/fixed_contact_s0_q_vxy_sum": jnp.where(
+                        final_window, fixed_s0_gate_scores[:, 3], 0.0
+                    ),
+                    "metric/fixed_contact_s0_q_omega_sum": jnp.where(
+                        final_window, fixed_s0_gate_scores[:, 4], 0.0
+                    ),
+                    "metric/fixed_contact_s0_ready_sum": jnp.where(
+                        final_window,
+                        fixed_s0_ready.astype(jnp.float32),
+                        0.0,
+                    ),
+                    "metric/fixed_contact_s0_arrival_ready_sum": jnp.where(
+                        fixed_s0_arrival_window,
+                        fixed_s0_ready.astype(jnp.float32),
+                        0.0,
+                    ),
+                    "metric/fixed_contact_ready_100ms_window": (
+                        (
+                            jnp.abs(fixed_time_to_contact - 0.100)
+                            <= 0.5 * self.dt + 1.0e-7
+                        ).astype(jnp.float32) * predictive_metric_scale
+                    ),
+                    "metric/fixed_contact_ready_100ms_sum": jnp.where(
+                        (
+                            jnp.abs(fixed_time_to_contact - 0.100)
+                            <= 0.5 * self.dt + 1.0e-7
+                        )
+                        & (predictive_metric_scale > 0.0),
+                        fixed_s0_ready.astype(jnp.float32),
+                        0.0,
+                    ),
+                    "metric/fixed_contact_ready_80ms_window": (
+                        (
+                            jnp.abs(fixed_time_to_contact - 0.080)
+                            <= 0.5 * self.dt + 1.0e-7
+                        ).astype(jnp.float32) * predictive_metric_scale
+                    ),
+                    "metric/fixed_contact_ready_80ms_sum": jnp.where(
+                        (
+                            jnp.abs(fixed_time_to_contact - 0.080)
+                            <= 0.5 * self.dt + 1.0e-7
+                        )
+                        & (predictive_metric_scale > 0.0),
+                        fixed_s0_ready.astype(jnp.float32),
+                        0.0,
+                    ),
+                    "metric/fixed_contact_ready_60ms_window": (
+                        (
+                            jnp.abs(fixed_time_to_contact - 0.060)
+                            <= 0.5 * self.dt + 1.0e-7
+                        ).astype(jnp.float32) * predictive_metric_scale
+                    ),
+                    "metric/fixed_contact_ready_60ms_sum": jnp.where(
+                        (
+                            jnp.abs(fixed_time_to_contact - 0.060)
+                            <= 0.5 * self.dt + 1.0e-7
+                        )
+                        & (predictive_metric_scale > 0.0),
+                        fixed_s0_ready.astype(jnp.float32),
+                        0.0,
+                    ),
+                    "metric/fixed_contact_ready_hold_window": (
+                        (
+                            (
+                                fixed_time_to_contact
+                                <= max(self.cfg.fixed_contact_ready_hold_window_s)
+                            )
+                            & (
+                                fixed_time_to_contact
+                                >= min(self.cfg.fixed_contact_ready_hold_window_s)
+                            )
+                        ).astype(jnp.float32) * predictive_metric_scale
+                    ),
+                    "metric/fixed_contact_ready_hold_sum": jnp.where(
+                        (
+                            fixed_time_to_contact
+                            <= max(self.cfg.fixed_contact_ready_hold_window_s)
+                        )
+                        & (
+                            fixed_time_to_contact
+                            >= min(self.cfg.fixed_contact_ready_hold_window_s)
+                        )
+                        & (predictive_metric_scale > 0.0),
+                        fixed_s0_ready.astype(jnp.float32),
+                        0.0,
+                    ),
+                    "metric/fixed_contact_s0_xy_error_sum": jnp.where(
+                        final_window, current_tracking_error, 0.0
+                    ),
+                    "metric/fixed_contact_s0_xy_error_sq_sum": jnp.where(
+                        final_window, current_tracking_error**2, 0.0
+                    ),
+                    "metric/fixed_contact_s0_z_error_sum": jnp.where(
+                        final_window, fixed_surface_z_error, 0.0
+                    ),
+                    "metric/fixed_contact_s0_pose_error_sum": jnp.where(
+                        final_window, current_pose_error, 0.0
+                    ),
+                    "metric/fixed_contact_s0_vxy_sum": jnp.where(
+                        final_window, fixed_racket_vxy, 0.0
+                    ),
+                    "metric/fixed_contact_s0_omega_sum": jnp.where(
+                        final_window, racket_full_angular_speed, 0.0
+                    ),
+                    "metric/fixed_contact_time_to_contact_s": (
+                    fixed_time_to_contact
+                ),
+                "metric/fixed_contact_target_position_world_x_m": (
+                    fixed_tracking_target.position_m[:, 0]
+                ),
+                "metric/fixed_contact_target_position_world_y_m": (
+                    fixed_tracking_target.position_m[:, 1]
+                ),
+                "metric/fixed_contact_target_position_world_z_m": (
+                    fixed_tracking_target.position_m[:, 2]
+                ),
+                **{
+                    "metric/fixed_contact_target_rotation_world_"
+                    f"r{row_index}{column_index}": (
+                        fixed_tracking_target.rotation_matrix[
+                            :, row_index, column_index
+                        ]
+                    )
+                    for row_index in range(3)
+                    for column_index in range(3)
+                },
+                "metric/fixed_contact_predicted_ball_contact_world_x_m": (
+                    fixed_tracking_target.predicted_ball_position_at_contact_m[
+                        :, 0
+                    ]
+                ),
+                "metric/fixed_contact_predicted_ball_contact_world_y_m": (
+                    fixed_tracking_target.predicted_ball_position_at_contact_m[
+                        :, 1
+                    ]
+                ),
+                "metric/fixed_contact_predicted_ball_contact_world_z_m": (
+                    fixed_tracking_target.predicted_ball_position_at_contact_m[
+                        :, 2
+                    ]
+                ),
+                "metric/fixed_contact_incoming_ball_velocity_world_x_m_s": (
+                    fixed_tracking_target.incoming_ball_velocity_m_s[:, 0]
+                ),
+                "metric/fixed_contact_incoming_ball_velocity_world_y_m_s": (
+                    fixed_tracking_target.incoming_ball_velocity_m_s[:, 1]
+                ),
+                "metric/fixed_contact_incoming_ball_velocity_world_z_m_s": (
+                    fixed_tracking_target.incoming_ball_velocity_m_s[:, 2]
+                ),
+                "metric/fixed_contact_next_crossing_target_world_x_m": (
+                    fixed_tracking_target.next_crossing_target_xy_m[:, 0]
+                ),
+                "metric/fixed_contact_next_crossing_target_world_y_m": (
+                    fixed_tracking_target.next_crossing_target_xy_m[:, 1]
+                ),
+                "metric/fixed_contact_phase_id": (
+                    fixed_contact_phase.astype(jnp.float32)
+                    * predictive_metric_scale
+                ),
+                "metric/fixed_contact_phase_approach": (
+                    fixed_contact_phase == FIXED_CONTACT_PHASE_APPROACH
+                ).astype(jnp.float32) * predictive_metric_scale,
+                "metric/fixed_contact_phase_arrival_gate": (
+                    fixed_contact_phase == FIXED_CONTACT_PHASE_ARRIVAL_GATE
+                ).astype(jnp.float32) * predictive_metric_scale,
+                "metric/fixed_contact_phase_settle": (
+                    fixed_contact_phase == FIXED_CONTACT_PHASE_SETTLE
+                ).astype(jnp.float32) * predictive_metric_scale,
+                "metric/fixed_contact_phase_strike": (
+                    fixed_contact_phase == FIXED_CONTACT_PHASE_STRIKE
+                ).astype(jnp.float32) * predictive_metric_scale,
+                "metric/fixed_contact_phase_retract": (
+                    fixed_contact_phase == FIXED_CONTACT_PHASE_RETRACT
+                ).astype(jnp.float32) * predictive_metric_scale,
+                "metric/fixed_contact_phase_recover": (
+                    fixed_contact_phase == FIXED_CONTACT_PHASE_RECOVER
+                ).astype(jnp.float32) * predictive_metric_scale,
+                "metric/fixed_contact_crossing_valid": (
+                    fixed_crossing_valid.astype(jnp.float32)
+                ),
+                }
+            )
+            if bool(
+                self.cfg.fixed_plane_limit_cycle_dynamic_stroke_enabled
+            ):
+                terms.update(
+                    {
+                        "metric/fixed_plane_limit_cycle_raw_racket_vz_target_m_s": (
+                            fixed_limit_cycle_raw_racket_vz_target
+                        ),
+                        "metric/fixed_plane_limit_cycle_executable_racket_vz_target_m_s": (
+                            fixed_limit_cycle_racket_vz_target
+                        ),
+                        "metric/fixed_plane_limit_cycle_racket_vz_target_clipped": (
+                            fixed_limit_cycle_racket_vz_clipped.astype(
+                                jnp.float32
+                            )
+                        ),
+                        "metric/fixed_plane_limit_cycle_stroke_z_target_m": (
+                            fixed_limit_cycle_phase_z_target
+                        ),
+                        "metric/fixed_plane_limit_cycle_stroke_vz_target_m_s": (
+                            fixed_limit_cycle_phase_vz_target
+                        ),
+                        "metric/fixed_plane_limit_cycle_stroke_active": (
+                            fixed_limit_cycle_phase_active.astype(jnp.float32)
+                        ),
+                        "metric/fixed_plane_limit_cycle_edge_racket_vz_target_m_s": (
+                            fixed_edge_racket_vz_target
+                        ),
+                    }
+                )
+            if bool(self.cfg.fixed_contact_impact_consistent_stroke_enabled):
+                terms.update(
+                    {
+                        "fixed_contact_impact_task_twist_penalty": (
+                            fixed_impact_task_twist_penalty
+                        ),
+                        "metric/fixed_contact_impact_racket_vz_target_m_s": (
+                            fixed_impact_racket_vz_target
+                        ),
+                        "metric/fixed_contact_impact_phase_vz_target_m_s": (
+                            fixed_impact_phase_vz_target
+                        ),
+                        "metric/fixed_contact_impact_task_twist_active": (
+                            fixed_impact_phase_active.astype(jnp.float32)
+                        ),
+                        "metric/fixed_contact_impact_command_vx_m_s": (
+                            fixed_impact_command_linear_velocity[:, 0]
+                        ),
+                        "metric/fixed_contact_impact_command_vy_m_s": (
+                            fixed_impact_command_linear_velocity[:, 1]
+                        ),
+                        "metric/fixed_contact_impact_command_vz_m_s": (
+                            fixed_impact_command_linear_velocity[:, 2]
+                        ),
+                        "metric/fixed_contact_impact_target_vx_m_s": (
+                            fixed_impact_target_linear_velocity[:, 0]
+                        ),
+                        "metric/fixed_contact_impact_target_vy_m_s": (
+                            fixed_impact_target_linear_velocity[:, 1]
+                        ),
+                        "metric/fixed_contact_impact_target_vz_m_s": (
+                            fixed_impact_target_linear_velocity[:, 2]
+                        ),
+                        "metric/fixed_contact_impact_command_tilt_omega_rad_s": (
+                            jnp.linalg.norm(
+                                fixed_impact_command_angular_velocity[:, :2],
+                                axis=-1,
+                            )
+                        ),
+                        "metric/fixed_contact_impact_task_twist_cost": (
+                            fixed_impact_task_twist_cost
+                        ),
+                        "metric/fixed_contact_impact_task_twist_xy_cost": (
+                            fixed_impact_task_twist_components[:, 0]
+                        ),
+                        "metric/fixed_contact_impact_task_twist_z_cost": (
+                            fixed_impact_task_twist_components[:, 1]
+                        ),
+                        "metric/fixed_contact_impact_task_twist_tilt_cost": (
+                            fixed_impact_task_twist_components[:, 2]
+                        ),
+                        "fixed_contact_impact_edge_vz_reward": (
+                            fixed_impact_edge_vz_reward
+                        ),
+                        "metric/fixed_contact_impact_edge_vz_target_m_s": (
+                            fixed_impact_edge_racket_vz_target
+                        ),
+                        "metric/fixed_contact_impact_edge_vz_score": (
+                            fixed_impact_edge_vz_score
+                        ),
+                        # Event-normalized convergence must divide a masked
+                        # numerator by the matching physical-edge count.  The
+                        # raw score above is intentionally retained for
+                        # per-step diagnostics and legacy output parity.
+                        "metric/fixed_contact_impact_edge_vz_score_sum": (
+                            jnp.where(
+                                fixed_impact_edge_vz_active,
+                                fixed_impact_edge_vz_score,
+                                0.0,
+                            )
+                        ),
+                        "metric/fixed_contact_impact_edge_vz_qz_gate": (
+                            fixed_impact_edge_vz_qz_gate
+                        ),
+                        "metric/fixed_contact_impact_edge_vz_active": (
+                            fixed_impact_edge_vz_active.astype(jnp.float32)
+                        ),
+                    }
+                )
+            if float(getattr(
+                self.cfg,
+                "fixed_contact_post_hit_recovery_worst_constraint_penalty_weight",
+                0.0,
+            )) > 0.0:
+                terms[
+                    "fixed_contact_post_hit_recovery_worst_constraint_penalty"
+                ] = fixed_post_hit_recovery_worst_constraint_penalty
+            if float(getattr(
+                self.cfg,
+                "fixed_contact_post_hit_recovery_joint_constraint_penalty_weight",
+                0.0,
+            )) > 0.0:
+                terms[
+                    "fixed_contact_post_hit_recovery_joint_constraint_penalty"
+                ] = fixed_post_hit_recovery_joint_constraint_penalty
         terms.update({name: value for name, value in camera_terms.items() if name.startswith("metric/")})
+        if any(getattr(self.cfg, 'fixed_plane_v168_quality_weights', (0.,) * 5)):
+            from fixed_plane_v168_mean_quality_reward import mean_quality_rewards, FIELDS
+            quality_statistics = {
+                key: terms['metric/' + key]
+                for _, numerator, denominator, _ in FIELDS
+                for key in (numerator, denominator)
+            }
+            v168_terms = mean_quality_rewards(
+                quality_statistics,
+                weights=self.cfg.fixed_plane_v168_quality_weights,
+                references=self.cfg.fixed_plane_v168_quality_references)
+            reward = reward + sum(v168_terms.values())
+            terms.update(v168_terms)
+            terms['total'] = reward
         return reward, terms
 
     def _virtual_camera_pose(self, data) -> tuple[jax.Array, jax.Array, bool]:
@@ -14879,6 +27224,55 @@ class MjxJuggleEnv:
             "racket_too_high": racket_too_high,
             "racket_too_low": racket_too_low,
         }
+        if self.fixed_contact_plane_training_enabled:
+            x_low, x_high, y_low, y_high = tuple(
+                float(value)
+                for value in self.cfg.fixed_contact_ball_xy_bounds_relative_anchor_m
+            )
+            ball_z_low, ball_z_high = tuple(
+                float(value)
+                for value in self.cfg.fixed_contact_ball_z_bounds_m
+            )
+            racket_x_low, racket_x_high = tuple(
+                float(value)
+                for value in self.cfg.fixed_contact_racket_x_bounds_m
+            )
+            racket_y_low, racket_y_high = tuple(
+                float(value)
+                for value in self.cfg.fixed_contact_racket_y_bounds_m
+            )
+            racket_z_low, racket_z_high = tuple(
+                float(value)
+                for value in self.cfg.fixed_contact_racket_z_bounds_m
+            )
+            relative_ball_x = bpos[:, 0] - racket_anchor[:, 0]
+            relative_ball_y = bpos[:, 1] - racket_anchor[:, 1]
+            terms.update(
+                {
+                    "ball_too_low": bpos[:, 2] < ball_z_low,
+                    "ball_too_high": bpos[:, 2] > ball_z_high,
+                    "ball_x_out_of_bounds": (
+                        (relative_ball_x < x_low)
+                        | (relative_ball_x > x_high)
+                    ),
+                    "ball_y_out_of_bounds": (
+                        (relative_ball_y < y_low)
+                        | (relative_ball_y > y_high)
+                    ),
+                    "racket_x_out_of_bounds": (
+                        (rpos[:, 0] < racket_x_low)
+                        | (rpos[:, 0] > racket_x_high)
+                    ),
+                    "racket_y_out_of_bounds": (
+                        (rpos[:, 1] < racket_y_low)
+                        | (rpos[:, 1] > racket_y_high)
+                    ),
+                    "racket_z_out_of_bounds": (
+                        (rpos[:, 2] < racket_z_low)
+                        | (rpos[:, 2] > racket_z_high)
+                    ),
+                }
+            )
         if not bool(self.cfg.terminate_on_base_stability):
             for key in (
                 "base_z_out_of_bounds",
@@ -14886,9 +27280,22 @@ class MjxJuggleEnv:
                 "base_pitch_out_of_bounds",
             ):
                 terms[key] = jnp.zeros_like(terms[key], dtype=bool)
-        terminated = jnp.zeros_like(terms["ball_too_low"], dtype=bool)
-        for value in terms.values():
-            terminated = terminated | value
+        excluded_keys: tuple[str, ...] = ()
+        if (
+            self.fixed_contact_plane_training_enabled
+            and not bool(
+                self.cfg.fixed_contact_workspace_termination_enabled
+            )
+        ):
+            excluded_keys = (
+                "racket_x_out_of_bounds",
+                "racket_y_out_of_bounds",
+                "racket_z_out_of_bounds",
+            )
+        terminated = aggregate_termination_terms_jax(
+            terms,
+            excluded_keys=excluded_keys,
+        )
         return terminated, terms
 
     def _point_to_base(self, point: jax.Array, base_q: jax.Array) -> jax.Array:
@@ -14898,6 +27305,27 @@ class MjxJuggleEnv:
         c = jnp.cos(yaw)
         s = jnp.sin(yaw)
         return jnp.stack([c * dx + s * dy, -s * dx + c * dy, point[:, 2]], axis=-1)
+
+    def _point_from_base(
+        self, point_base: jax.Array, base_q: jax.Array
+    ) -> jax.Array:
+        """Invert :meth:`_point_to_base` for a registered world-frame point."""
+
+        yaw = base_q[:, 2]
+        c = jnp.cos(yaw)
+        s = jnp.sin(yaw)
+        return jnp.stack(
+            [
+                base_q[:, 0]
+                + c * point_base[:, 0]
+                - s * point_base[:, 1],
+                base_q[:, 1]
+                + s * point_base[:, 0]
+                + c * point_base[:, 1],
+                point_base[:, 2],
+            ],
+            axis=-1,
+        )
 
     def _vel_to_base(self, vel: jax.Array, point: jax.Array, base_q: jax.Array, base_dq: jax.Array) -> jax.Array:
         rel_x = point[:, 0] - base_q[:, 0]
@@ -14909,3 +27337,29 @@ class MjxJuggleEnv:
         c = jnp.cos(yaw)
         s = jnp.sin(yaw)
         return jnp.stack([c * rel_vx + s * rel_vy, -s * rel_vx + c * rel_vy, vel[:, 2]], axis=-1)
+
+    def _vel_from_base(
+        self,
+        vel_base: jax.Array,
+        point_world: jax.Array,
+        base_q: jax.Array,
+        base_dq: jax.Array,
+    ) -> jax.Array:
+        """Invert :meth:`_vel_to_base` at ``point_world``."""
+
+        yaw = base_q[:, 2]
+        c = jnp.cos(yaw)
+        s = jnp.sin(yaw)
+        rel_vx = c * vel_base[:, 0] - s * vel_base[:, 1]
+        rel_vy = s * vel_base[:, 0] + c * vel_base[:, 1]
+        rel_x = point_world[:, 0] - base_q[:, 0]
+        rel_y = point_world[:, 1] - base_q[:, 1]
+        yaw_rate = base_dq[:, 2]
+        return jnp.stack(
+            [
+                rel_vx + base_dq[:, 0] - yaw_rate * rel_y,
+                rel_vy + base_dq[:, 1] + yaw_rate * rel_x,
+                vel_base[:, 2],
+            ],
+            axis=-1,
+        )
