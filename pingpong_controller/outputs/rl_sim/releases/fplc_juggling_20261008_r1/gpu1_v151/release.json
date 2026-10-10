@@ -1,0 +1,31 @@
+{
+  "release_id": "FPLC-GPU1-V151-R1",
+  "status": "user_accepted_releasable_simulation_baseline",
+  "accepted_date": "2026-10-08",
+  "checkpoint": "/home/yangzhe/Project/pingpong_controller/pingpong_controller/outputs/rl_sim/releases/fplc_juggling_20261008_r1/gpu1_v151/policy.pkl",
+  "checkpoint_sha256": "b34d33f66efe579bfc4c42d18226c1a05b3a273f0eec5b2722625b1c4d4b8c5f",
+  "video": "/home/yangzhe/Project/pingpong_controller/pingpong_controller/outputs/rl_sim/releases/fplc_juggling_20261008_r1/gpu1_v151/juggling.mp4",
+  "video_sha256": "4e972c5950093bb7d9925316b3da3c4f28d56388f863292e7d9913e0ab07daa6",
+  "source_checkpoint": "/home/yangzhe/Project/pingpong_controller/pingpong_controller/outputs/rl_sim/fplc_v151_gpu1_survival_formal_20261007_r1/mjx_curriculum_interrupted.pkl",
+  "profile": "fixed_plane_limit_cycle_qvel_rmp_gpu1_v151",
+  "stage": "fplc_v151_gpu1_s4_fourth_entry",
+  "stage_update": 3187,
+  "actor_dim": 72,
+  "action_dim": 7,
+  "action": "measured_qvel_bounded_qref",
+  "physics_dt_s": 0.001,
+  "control_dt_s": 0.005,
+  "contact_version": "ball_racket_contact_real11_static_1ms_v1",
+  "gpu_uuid": "GPU-e74458ec-002a-1bac-e0be-d0a5713b661e",
+  "wandb_run_id": "3mbobuxl",
+  "video_evidence": {
+    "seed": 20263616,
+    "deterministic": true,
+    "hits": 13,
+    "duration_s": 6.0,
+    "steady_height_band_rate": 1.0,
+    "steady_apex_mean_z_m": 1.4237830996513368
+  },
+  "dr_trained": false,
+  "scope": "User accepted model/video baseline; exact actor/runtime parity is required for deployment. No hardware or DR coverage claim."
+}

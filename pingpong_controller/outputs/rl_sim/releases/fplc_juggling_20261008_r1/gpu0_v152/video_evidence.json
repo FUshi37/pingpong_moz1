@@ -1,0 +1,43 @@
+{
+  "checkpoint": "/home/yangzhe/Project/pingpong_controller/pingpong_controller/outputs/rl_sim/fplc_v152_gpu0_progression_dr_20261007_r1/mjx_curriculum_interrupted.pkl",
+  "checkpoint_sha256": "5b98879f9a6f16e61ce2f32a3c5ac2164e9433afc2050fc4293e5c2e25277ffe",
+  "profile": "fixed_plane_limit_cycle_qvel_rmp_gpu0_v152",
+  "stage": "fplc_v152_gpu0_s5_steady_quality",
+  "update": 2786,
+  "seed": 20263616,
+  "deterministic": true,
+  "physics_dt_s": 0.001,
+  "control_dt_s": 0.005,
+  "actor_dim": 156,
+  "steps": 1200,
+  "duration_s": 6.0,
+  "hits": 13,
+  "episode_return": 1069.0329228483897,
+  "done_causes": {},
+  "metrics": {
+    "hit_event_count": 13.0,
+    "hit_contact_center_dist_sum": 0.03803060740028741,
+    "hit_racket_vxy_sum": 0.6823520833277144,
+    "hit_vxy_sum": 0.12657667964231223,
+    "rapid_steady_steady_events": 10.0,
+    "rapid_steady_steady_apex_sum_z_m": 14.207985520362854,
+    "rapid_steady_steady_band_events": 10.0
+  },
+  "racket_site_id": 0,
+  "gpu_uuid": "GPU-91f9b105-f5c8-b00e-de70-39d3ee1ce7b4",
+  "recording": "initialization serialized without modification; original MJX env.step and deterministic action; render only qpos/qvel/ctrl by mj_forward, no physics resimulation",
+  "video": "/home/yangzhe/Project/pingpong_controller/pingpong_controller/outputs/rl_sim/videos/v152_gpu0_u2786_20261008_104837/v152_gpu0_u2786_juggling.mp4",
+  "video_sha256": "2cddb8bd171e036fdb169734f1c1ce22bc2d908fb074a9add7e8176fc3211d4f",
+  "frames": 180,
+  "video_fps": 30,
+  "camera": {
+    "lookat": [
+      -0.050300452627592064,
+      -0.40978042397135644,
+      1.2
+    ],
+    "distance": 1.9,
+    "azimuth": 90.0,
+    "elevation": -18.0
+  }
+}

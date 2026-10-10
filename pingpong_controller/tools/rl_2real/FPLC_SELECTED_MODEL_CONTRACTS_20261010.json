@@ -1,0 +1,438 @@
+{
+  "review_date": "2026-10-10",
+  "hardware_runtime_status": "72-D and 156-D FPLC parity adapter still requires separate implementation and tests.",
+  "models": [
+    {
+      "label": "FPLC-GPU0-V152-R1",
+      "path": "pingpong_controller/outputs/rl_sim/releases/fplc_juggling_20261008_r1/gpu0_v152/policy.pkl",
+      "sha256": "5b98879f9a6f16e61ce2f32a3c5ac2164e9433afc2050fc4293e5c2e25277ffe",
+      "size_bytes": 4894588,
+      "profile": "fixed_plane_limit_cycle_qvel_rmp_gpu0_v152",
+      "stage_name": "fplc_v152_gpu0_s5_steady_quality",
+      "stage_update": 2786,
+      "true_step": 2112880640,
+      "actor_dim": 156,
+      "critic_dim": 477,
+      "action_dim": 7,
+      "preserves_actor_critic_adam": true,
+      "adam_t": 336130,
+      "saved_nominal_domain": {
+        "ball_obs_pos_noise_std": 0.0,
+        "ball_obs_vel_noise_std": 0.0,
+        "dr_randomize_ball_obs_frame": false,
+        "dr_randomize_pd": false,
+        "dr_randomize_recovered_rmp": false,
+        "dr_ball_mass_range": [
+          0.004,
+          0.004
+        ],
+        "dr_rmp_target_update_hold_probability": 0.0,
+        "fixed_contact_actor_observation_schema": "fixed_plane_v99_contiguous_history_contact_geometry_156d"
+      },
+      "selection_basis": "User-accepted frozen release",
+      "scope": "Simulation artifact; not a new hardware deployment authorization",
+      "release_metadata": "pingpong_controller/outputs/rl_sim/releases/fplc_juggling_20261008_r1/gpu0_v152/release.json",
+      "runtime_configuration_from_checkpoint": {
+        "action_command_mode": "velocity",
+        "action_filter_tau_ms": 0.0,
+        "action_velocity_scale": 1.0,
+        "actor_previous_action_scale": 1.0,
+        "arm_action_limiter": true,
+        "arm_vel_limit_deg_s": [
+          210.0,
+          210.0,
+          240.0,
+          240.0,
+          300.0,
+          300.0,
+          300.0
+        ],
+        "ball_racket_pair_solimp": [
+          0.04,
+          0.7,
+          0.014298,
+          0.04,
+          8.021856
+        ],
+        "ball_racket_pair_solref": [
+          0.006836,
+          0.228086
+        ],
+        "cartesian_pose_orientation_cbf_gain_s": 20.0,
+        "cartesian_pose_orientation_margin_deg": 0.1,
+        "cartesian_pose_pitch_limit_deg": 2.0,
+        "cartesian_pose_position_cbf_gain_s": 20.0,
+        "cartesian_pose_position_lower_m": [
+          -0.348,
+          -0.7,
+          1.0
+        ],
+        "cartesian_pose_position_margin_m": 0.0005,
+        "cartesian_pose_position_upper_m": [
+          0.348,
+          -0.28,
+          1.15
+        ],
+        "cartesian_pose_projection_enabled": true,
+        "cartesian_pose_projection_penalty_weight": 0.01,
+        "cartesian_pose_projection_sweeps": 24,
+        "cartesian_pose_projection_tolerance": 2e-05,
+        "cartesian_pose_require_reset_reference_safe": false,
+        "cartesian_pose_roll_limit_deg": 2.0,
+        "cartesian_pose_rpy_axis_enabled": [
+          true,
+          true,
+          false
+        ],
+        "fixed_contact_actor_observation_schema": "fixed_plane_v99_contiguous_history_contact_geometry_156d",
+        "fixed_contact_racket_surface_size_axis": 0,
+        "fixed_plane_v98_coarse_contact": true,
+        "frame_skip": 5,
+        "recovered_rmp_bounded_qvel_reference": true,
+        "recovered_rmp_qvel_reference_error_horizon_s": 0.0,
+        "recovered_rmp_qvel_reference_error_horizon_s_per_joint": [
+          10.0,
+          10.0,
+          10.0,
+          10.0,
+          10.0,
+          10.0,
+          10.0
+        ]
+      },
+      "collision_version": "ball_racket_contact_real11_static_1ms_v1"
+    },
+    {
+      "label": "FPLC-GPU1-V151-R1",
+      "path": "pingpong_controller/outputs/rl_sim/releases/fplc_juggling_20261008_r1/gpu1_v151/policy.pkl",
+      "sha256": "b34d33f66efe579bfc4c42d18226c1a05b3a273f0eec5b2722625b1c4d4b8c5f",
+      "size_bytes": 4206496,
+      "profile": "fixed_plane_limit_cycle_qvel_rmp_gpu1_v151",
+      "stage_name": "fplc_v151_gpu1_s4_fourth_entry",
+      "stage_update": 3187,
+      "true_step": 883949568,
+      "actor_dim": 72,
+      "critic_dim": 393,
+      "action_dim": 7,
+      "preserves_actor_critic_adam": true,
+      "adam_t": 228001,
+      "saved_nominal_domain": {
+        "ball_obs_pos_noise_std": 0.0,
+        "ball_obs_vel_noise_std": 0.0,
+        "dr_randomize_ball_obs_frame": false,
+        "dr_randomize_pd": false,
+        "dr_randomize_recovered_rmp": false,
+        "dr_ball_mass_range": [
+          0.004,
+          0.004
+        ],
+        "dr_rmp_target_update_hold_probability": 0.0,
+        "fixed_contact_actor_observation_schema": "fixed_plane_v149_position_only_contiguous_72d"
+      },
+      "selection_basis": "User-accepted frozen release",
+      "scope": "Simulation artifact; not a new hardware deployment authorization",
+      "release_metadata": "pingpong_controller/outputs/rl_sim/releases/fplc_juggling_20261008_r1/gpu1_v151/release.json",
+      "runtime_configuration_from_checkpoint": {
+        "action_command_mode": "velocity",
+        "action_filter_tau_ms": 0.0,
+        "action_velocity_scale": 1.0,
+        "actor_previous_action_scale": 1.0,
+        "arm_action_limiter": true,
+        "arm_vel_limit_deg_s": [
+          210.0,
+          210.0,
+          240.0,
+          240.0,
+          300.0,
+          300.0,
+          300.0
+        ],
+        "ball_racket_pair_solimp": [
+          0.04,
+          0.7,
+          0.014298,
+          0.04,
+          8.021856
+        ],
+        "ball_racket_pair_solref": [
+          0.006836,
+          0.228086
+        ],
+        "cartesian_pose_orientation_cbf_gain_s": 20.0,
+        "cartesian_pose_orientation_margin_deg": 0.1,
+        "cartesian_pose_pitch_limit_deg": 2.0,
+        "cartesian_pose_position_cbf_gain_s": 20.0,
+        "cartesian_pose_position_lower_m": [
+          -0.348,
+          -0.7,
+          1.0
+        ],
+        "cartesian_pose_position_margin_m": 0.0005,
+        "cartesian_pose_position_upper_m": [
+          0.348,
+          -0.28,
+          1.15
+        ],
+        "cartesian_pose_projection_enabled": true,
+        "cartesian_pose_projection_penalty_weight": 0.01,
+        "cartesian_pose_projection_sweeps": 24,
+        "cartesian_pose_projection_tolerance": 2e-05,
+        "cartesian_pose_require_reset_reference_safe": false,
+        "cartesian_pose_roll_limit_deg": 2.0,
+        "cartesian_pose_rpy_axis_enabled": [
+          true,
+          true,
+          false
+        ],
+        "fixed_contact_actor_observation_schema": "fixed_plane_v149_position_only_contiguous_72d",
+        "fixed_contact_racket_surface_size_axis": 0,
+        "fixed_plane_v98_coarse_contact": true,
+        "frame_skip": 5,
+        "recovered_rmp_bounded_qvel_reference": true,
+        "recovered_rmp_qvel_reference_error_horizon_s": 0.0,
+        "recovered_rmp_qvel_reference_error_horizon_s_per_joint": [
+          10.0,
+          10.0,
+          10.0,
+          10.0,
+          10.0,
+          10.0,
+          10.0
+        ]
+      },
+      "collision_version": "ball_racket_contact_real11_static_1ms_v1"
+    },
+    {
+      "label": "GPU0-V161-pre-DR",
+      "path": "pingpong_controller/outputs/rl_sim/fplc_v161_gpu0_mean_quality_formal_20261009_r1/07_fplc_v161_gpu0_s7_clean_stability.pkl",
+      "sha256": "27a2ac3c0ecf5cc5b0ff66353e8a1f46d8771164c2128d30820f5b986e37b559",
+      "size_bytes": 15280103,
+      "profile": "fixed_plane_limit_cycle_qvel_rmp_gpu0_v161",
+      "stage_name": "fplc_v161_gpu0_s7_clean_stability",
+      "stage_update": 331,
+      "true_step": 2297167872,
+      "actor_dim": 156,
+      "critic_dim": 477,
+      "action_dim": 7,
+      "preserves_actor_critic_adam": true,
+      "adam_t": 403566,
+      "saved_nominal_domain": {
+        "ball_obs_pos_noise_std": 0.0,
+        "ball_obs_vel_noise_std": 0.0,
+        "dr_randomize_ball_obs_frame": false,
+        "dr_randomize_pd": false,
+        "dr_randomize_recovered_rmp": false,
+        "dr_ball_mass_range": [
+          0.004,
+          0.004
+        ],
+        "dr_rmp_target_update_hold_probability": 0.0,
+        "fixed_contact_actor_observation_schema": "fixed_plane_v99_contiguous_history_contact_geometry_156d"
+      },
+      "selection_basis": "Latest fully passed clean-stage archive before any DR optimizer updates",
+      "scope": "Simulation artifact; not a new hardware deployment authorization",
+      "first_dr_stage_1_based": 8,
+      "saved_stage_1_based": 7,
+      "progress_csv_sha256": "b48b061a0c8d8055977d71b7e63cb7ca8e07e87883f9c5143cbd50371d8350af",
+      "excluded_generic_best": {
+        "path": "pingpong_controller/outputs/rl_sim/fplc_v161_gpu0_mean_quality_formal_20261009_r1/mjx_curriculum_best.pkl",
+        "stage_name": "fplc_v161_gpu0_s8_obs_bridge_2mm",
+        "stage_update": 681,
+        "reason": "Already trained on observation DR"
+      },
+      "runtime_configuration_from_checkpoint": {
+        "action_command_mode": "velocity",
+        "action_filter_tau_ms": 0.0,
+        "action_velocity_scale": 1.0,
+        "actor_previous_action_scale": 1.0,
+        "arm_action_limiter": true,
+        "arm_vel_limit_deg_s": [
+          210.0,
+          210.0,
+          240.0,
+          240.0,
+          300.0,
+          300.0,
+          300.0
+        ],
+        "ball_racket_pair_solimp": [
+          0.04,
+          0.7,
+          0.014298,
+          0.04,
+          8.021856
+        ],
+        "ball_racket_pair_solref": [
+          0.006836,
+          0.228086
+        ],
+        "cartesian_pose_orientation_cbf_gain_s": 20.0,
+        "cartesian_pose_orientation_margin_deg": 0.1,
+        "cartesian_pose_pitch_limit_deg": 2.0,
+        "cartesian_pose_position_cbf_gain_s": 20.0,
+        "cartesian_pose_position_lower_m": [
+          -0.348,
+          -0.7,
+          1.0
+        ],
+        "cartesian_pose_position_margin_m": 0.0005,
+        "cartesian_pose_position_upper_m": [
+          0.348,
+          -0.28,
+          1.15
+        ],
+        "cartesian_pose_projection_enabled": true,
+        "cartesian_pose_projection_penalty_weight": 0.01,
+        "cartesian_pose_projection_sweeps": 24,
+        "cartesian_pose_projection_tolerance": 2e-05,
+        "cartesian_pose_require_reset_reference_safe": false,
+        "cartesian_pose_roll_limit_deg": 2.0,
+        "cartesian_pose_rpy_axis_enabled": [
+          true,
+          true,
+          false
+        ],
+        "fixed_contact_actor_observation_schema": "fixed_plane_v99_contiguous_history_contact_geometry_156d",
+        "fixed_contact_racket_surface_size_axis": 0,
+        "fixed_plane_v98_coarse_contact": true,
+        "frame_skip": 5,
+        "recovered_rmp_bounded_qvel_reference": true,
+        "recovered_rmp_qvel_reference_error_horizon_s": 0.0,
+        "recovered_rmp_qvel_reference_error_horizon_s_per_joint": [
+          10.0,
+          10.0,
+          10.0,
+          10.0,
+          10.0,
+          10.0,
+          10.0
+        ]
+      },
+      "collision_version": "ball_racket_contact_real11_static_1ms_v1"
+    },
+    {
+      "label": "GPU1-V172-pre-DR",
+      "path": "pingpong_controller/outputs/rl_sim/fplc_v172_gpu1_quality_gates_formal_20261009_r1/10_fplc_v159_gpu1_s10_clean_commit.pkl",
+      "sha256": "96c9b8349fa700402a62d1c34e5f8ed2b968bab47cf2b9d3957a1db6cfccba4a",
+      "size_bytes": 14591790,
+      "profile": "fixed_plane_limit_cycle_qvel_rmp_gpu1_v172",
+      "stage_name": "fplc_v159_gpu1_s10_clean_commit",
+      "stage_update": 314,
+      "true_step": 1334837248,
+      "actor_dim": 72,
+      "critic_dim": 393,
+      "action_dim": 7,
+      "preserves_actor_critic_adam": true,
+      "adam_t": 335771,
+      "saved_nominal_domain": {
+        "ball_obs_pos_noise_std": 0.0,
+        "ball_obs_vel_noise_std": 0.0,
+        "dr_randomize_ball_obs_frame": false,
+        "dr_randomize_pd": false,
+        "dr_randomize_recovered_rmp": false,
+        "dr_ball_mass_range": [
+          0.004,
+          0.004
+        ],
+        "dr_rmp_target_update_hold_probability": 0.0,
+        "fixed_contact_actor_observation_schema": "fixed_plane_v149_position_only_contiguous_72d"
+      },
+      "selection_basis": "Latest fully passed clean-stage archive before any DR optimizer updates",
+      "scope": "Simulation artifact; not a new hardware deployment authorization",
+      "first_dr_stage_1_based": 11,
+      "saved_stage_1_based": 10,
+      "progress_csv_sha256": "95b783ecc9883de81a1f946b5cc1baf610ac0086dd895677a52480c5d5bafe2c",
+      "excluded_generic_best": {
+        "path": "pingpong_controller/outputs/rl_sim/fplc_v172_gpu1_quality_gates_formal_20261009_r1/mjx_curriculum_best.pkl",
+        "stage_name": "fplc_v159_gpu1_s11_obs_bridge_2mm",
+        "stage_update": 569,
+        "reason": "Already trained on observation DR"
+      },
+      "runtime_configuration_from_checkpoint": {
+        "action_command_mode": "velocity",
+        "action_filter_tau_ms": 0.0,
+        "action_velocity_scale": 1.0,
+        "actor_previous_action_scale": 1.0,
+        "arm_action_limiter": true,
+        "arm_vel_limit_deg_s": [
+          210.0,
+          210.0,
+          240.0,
+          240.0,
+          300.0,
+          300.0,
+          300.0
+        ],
+        "ball_racket_pair_solimp": [
+          0.04,
+          0.7,
+          0.014298,
+          0.04,
+          8.021856
+        ],
+        "ball_racket_pair_solref": [
+          0.006836,
+          0.228086
+        ],
+        "cartesian_pose_orientation_cbf_gain_s": 20.0,
+        "cartesian_pose_orientation_margin_deg": 0.1,
+        "cartesian_pose_pitch_limit_deg": 2.0,
+        "cartesian_pose_position_cbf_gain_s": 20.0,
+        "cartesian_pose_position_lower_m": [
+          -0.348,
+          -0.7,
+          1.0
+        ],
+        "cartesian_pose_position_margin_m": 0.0005,
+        "cartesian_pose_position_upper_m": [
+          0.348,
+          -0.28,
+          1.15
+        ],
+        "cartesian_pose_projection_enabled": true,
+        "cartesian_pose_projection_penalty_weight": 0.01,
+        "cartesian_pose_projection_sweeps": 24,
+        "cartesian_pose_projection_tolerance": 2e-05,
+        "cartesian_pose_require_reset_reference_safe": false,
+        "cartesian_pose_roll_limit_deg": 2.0,
+        "cartesian_pose_rpy_axis_enabled": [
+          true,
+          true,
+          false
+        ],
+        "fixed_contact_actor_observation_schema": "fixed_plane_v149_position_only_contiguous_72d",
+        "fixed_contact_racket_surface_size_axis": 0,
+        "fixed_plane_v98_coarse_contact": true,
+        "frame_skip": 5,
+        "recovered_rmp_bounded_qvel_reference": true,
+        "recovered_rmp_qvel_reference_error_horizon_s": 0.0,
+        "recovered_rmp_qvel_reference_error_horizon_s_per_joint": [
+          10.0,
+          10.0,
+          10.0,
+          10.0,
+          10.0,
+          10.0,
+          10.0
+        ]
+      },
+      "collision_version": "ball_racket_contact_real11_static_1ms_v1"
+    }
+  ],
+  "lineage_summary": {
+    "GPU0": [
+      "V152 released S5u2786",
+      "V154 clean S7u501",
+      "V161 clean S7u331"
+    ],
+    "GPU1": [
+      "V151 released S4u3187",
+      "V155 clean S8u153",
+      "V156 clean S8u48",
+      "V158 clean S8u128",
+      "V159 clean S9u1820",
+      "V172 clean S10u314"
+    ]
+  },
+  "best_claim_limit": "These are the strongest archived checkpoints supported by complete clean-stage admission evidence, not an exhaustive new paired replay ranking of every historical actor."
+}
