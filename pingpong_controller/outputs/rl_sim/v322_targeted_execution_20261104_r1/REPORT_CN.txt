@@ -1,0 +1,94 @@
+V322 定点执行优化 v2：实际完整训练验证
+日期：2026-11-04；GPU1 UUID GPU-e74458ec-002a-1bac-e0be-d0a5713b661e。
+
+结果
+相对已经启用 chunk5_v1 的当前基线，完整 collect 耗时再降低约36--37%，整轮更新再降低约35--36%。
+2026110371 | 10.281213 -> 6.521134 s | -36.572% | 整轮 10.616698 -> 6.862241 s
+2026110472 | 10.292494 -> 6.464117 s | -37.196% | 整轮 10.621087 -> 6.795248 s
+两种子均值：collect 10.286853 -> 6.492625 秒；
+整轮 10.618893 -> 6.828744 秒。
+这是实际1024环境×128步完整采样和完整PPO的墙钟测量，不是从组件时间外推。
+
+严格保持训练数值
+源模型：/home/yangzhe/Project/pingpong_controller/pingpong_controller/outputs/rl_sim/fplc_v322_gpu1_late_center_precision_20261103_r1/training_qualified_inherited1200s.pkl
+SHA-256：d35ea68508cbdfbaddfb3766f21c3f4e82f6f127e3caab8262d9e69a9ad307bc
+源更新31361、true step8238268416、Adam2020766，源阶段fplc_v322_s4_1200s。
+配置：V322 late_center_precision / anchor1 / deployment_groups；actor72/critic393/action7。
+物理1ms、每控制步5个物理/RMP ticks、solver100/line-search50、1024×128、每更新32Adam、
+全部1050指标、DR、观测、动作、安全限制、奖励、reset、终止、课程和门槛均未修改。
+两种子各13次真实更新、各416Adam；每轮全部1603数值叶子 shape/dtype/原始字节SHA完全相同。
+累计26次更新/832Adam，与原chunk5及legacy的既有参考保持一致；首个差异即停止的门槛未放宽。
+其中包括采样、reset/termination、奖励、观测、actor/critic参数和Adam一二阶矩，不只比较平均return。
+数据见每个full_*/SIGNATURE_*.json与result.json。
+
+最终实际入口
+真实trainer.main --smoke --mjx-execution-mode topology_v2，使用最终交付源码，完成3轮/96Adam，
+全部1603叶逐字节一致。每次PPO调用前原始MuJoCo函数均已恢复。
+随后复用同一最终可执行程序，对晚期无reset u11做3次完整collect、对reset丰富的u6做1次，
+每次全部1503个collector叶与参考逐字节一致；数据见actual_main_evidence/ACTUAL_MAIN_AUDIT.json。
+保存最终优化HLO和序列化程序作为诊断证据，不作为训练或部署检查点。
+两种子与最终入口源码快照分别归档。最后仅补齐AST克隆源行号及外部补丁标记保护，
+算术变换保持不变；最终源码由上述实际入口及u6/u11重放再次核对。
+最终HLO不再包含350迭代的拓扑掩码while；检查不是只看Python源码。
+
+保留的三个定点改动
+1. support.make_m 的布尔拓扑掩码在追踪时由静态dof_parentid生成，只缓存为常量。
+   原dot、对角加法、mask乘法、三角对称化的浮点运算保持原顺序。GPU运行时不再重复350次scatter。
+2. _update_constraint中3处、_LSPoint.create中1处索引更新，在静态contact布局先通过证明后标注
+   unique_indices=True。验证每个contact区域合法、在界内、互不重叠；不满足时拒绝。
+   当前14个3-D contact的efc地址为34,37,...,73，总nefc76。
+   线搜索中故意重复的efc_con索引仍使用原生实现，不加唯一性提示，不重排其浮点累加。
+3. 安全投影fori_loop只设置unroll=24。两个循环仍各自执行576次约束投影，保留顺序、
+   correction状态、24轮扫描和约束集合。所有控制与安全输出接受上述完整逐字节比较。
+三者与既有chunk5 line-search调度组合。全局XLA编译选项保持原样，PPO不采用新的编译选项。
+
+隔离与默认行为
+新模式默认关闭，旧legacy和chunk5_v1继续可用；resume不会自动继承优化选项。
+新CLI：--mjx-execution-mode topology_v2；不能与--mjx-line-search-schedule chunk5_v1叠加。
+仅限已经验证的V322预设三元组、JAX0.10.1、MuJoCo3.8.1，以及验证过的solver/support/projection源码SHA。
+collector追踪/调用期间临时替换Python函数，finally恢复；不修改安装库或814份冻结M11源码。
+初始reset、独立evaluation保持原始路径；采样内reset使用优化执行并已包含在完整逐字节检查中。
+CPU静态缓存不执行动态物理求解；动态仿真、RMP等数值计算保持在GPU。
+仅用于当前primal PPO采样，不推广到可微分仿真。
+
+基线与计时方法
+两种子均重新测量当前基线。复用已经验证的chunk5序列化采样程序及真实u1后状态，实际执行
+u2--u13 collect和每轮全部32Adam；全部1603叶也与参考逐字节一致。
+新候选各从原checkpoint和相同seed真实初始化执行u1--u13。两臂统一比较实际u6--u13共8轮，
+剔除u1--u5的编译/预热。新鲜基线与既有10.25--10.27秒结果接近，降低频率/历史计时混淆。
+普通perf_counter+block_until_ready计时，不挂CUDA/NVTX追踪；包含正常指标和host统计。
+W&B为disabled，计时不含正式网络写入及周期checkpoint持久化成本。
+基线Python诊断窗口从恢复的u1之后建立，采样/PPO数值包完全等同；窗口不进入优化器。
+不将微基准时间直接加总或外推为整轮收益。
+
+负结果，全部保留且未交付
+- 线搜索重复索引重排：5个连续物理tick后85个Data叶有多处原始字节差异，立即排除；
+  数学上看似等价不能替代实际浮点顺序检查。失败源码保存在components/FAILED_ORDERED_SOURCE.py。
+- Context摩擦布局增加unique提示：数值通过但五步组件从约52.6ms变为57.1ms，排除。
+- 优化后再尝试GPU WHILE/CONDITIONAL command buffer：同一五步Data逐字节通过，但组件从
+  52.62ms变为61.59ms，约慢17%，排除。该实验仅覆盖组件，不声称整轮GPU图调度也已测过。
+- 投影unroll24在16组GPU随机输入逐字节通过，随后通过两种子完整训练与实际入口。
+所有组件结果、源码和命令在components*/、probe_*.py与launch_*.sh。
+
+验证范围和限制
+364项适用CPU回归通过；新旧调度、预设门槛、默认legacy、错误恢复、索引证明、密集质量矩阵、
+CLI冲突与源位置均有覆盖。最终所有非main的trainer函数AST、814份冻结父源码保持不变。
+这是两种子26次完整更新，加最终入口和晚期重放的执行等价证据；没有重新跑完整收敛课程或
+重复1200秒资格测试，不将其当成新的策略发布、硬件覆盖或部署证书。
+当前三处优化不修改学习/物理契约；本次实验没有写入正式模型、没有重启正式训练、没有W&B写入。
+GPU0仅读取状态；所有计算在GPU1隔离执行。memory.high10GiB、max11GiB、主动停机9.7GiB、
+host保留6GiB、cgroup swap0、无预分配/编译缓存、单编译并行和78C检查均保留，未提高预算。
+守卫原始日志与资源摘要保存在guard_evidence/和MEMORY_AUDIT.json。
+
+使用入口
+pingpong_controller/tools/rl_sim/run_gpu1_fixed_plane_v322_execution_v2.sh
+它选择已验证三元组并委托原通用启动器，仍要求原参数、唯一run ID、明确resume模型，以及
+正式运行的pp_gpu1会话/资源检查。原通用启动器也支持V322_MJX_EXECUTION_MODE=topology_v2。
+不自动重启已经结束的训练；默认旧路径保持可选。
+
+主要证据
+SUMMARY.json / PAIRED_TIMINGS.csv / SPEEDUP.png / SHIPPING_SOURCE_HASHES.json
+full_2026110371_project/与full_2026110472_project/：完整13轮与每轮数值签名。
+fresh_baseline_*/：同次会话中的完整基线重放和实际PPO更新。
+actual_main_evidence/：最终正常入口、冻结输入晚期检查、最终HLO与序列化可执行程序。
+CPU_TESTS_FINAL.log / TEST_COMMANDS.json / SOURCE_INVARIANTS.json。

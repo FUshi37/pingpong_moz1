@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "default": "legacy",
+  "versions": {
+    "mjx_topology_execution_v2": {
+      "display_name": "MJX训练加速V2",
+      "selector": "topology_v2",
+      "manifest": "mjx_topology_execution_v2/manifest.json",
+      "manifest_sha256": "2cc5730b85e46f4da56a688df445fa963529efe6f033e3b37bd905d2e9bb9a47"
+    }
+  }
+}

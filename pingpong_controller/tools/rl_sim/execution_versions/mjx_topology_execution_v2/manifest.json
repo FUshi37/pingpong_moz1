@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "version": "mjx_topology_execution_v2",
+  "display_name": "MJX训练加速V2",
+  "selector": "topology_v2",
+  "preserved_on": "2026-11-04",
+  "default_enabled": false,
+  "auto_enable_on_resume": false,
+  "recipe": {
+    "factory": "mjx_topology_execution.make_collect",
+    "kwargs": {
+      "mode": "project"
+    },
+    "components": [
+      "constant_dense_mass_topology_mask",
+      "certified_unique_contact_scatter",
+      "ordered_projection_unroll24",
+      "line_search_chunk5"
+    ],
+    "excluded": [
+      "duplicate_index_line_search_reordering",
+      "friction_layout_hint",
+      "new_GPU_graph_compile_options"
+    ]
+  },
+  "selection": {
+    "enable": {
+      "V322_MJX_EXECUTION_MODE": "topology_v2",
+      "V322_MJX_LINE_SEARCH_SCHEDULE": "legacy"
+    },
+    "disable": {
+      "V322_MJX_EXECUTION_MODE": "legacy",
+      "V322_MJX_LINE_SEARCH_SCHEDULE": "legacy"
+    },
+    "previous_v1": {
+      "V322_MJX_EXECUTION_MODE": "legacy",
+      "V322_MJX_LINE_SEARCH_SCHEDULE": "chunk5_v1"
+    }
+  },
+  "validated_scope": {
+    "profile": "fixed_plane_limit_cycle_qvel_rmp_gpu1_v322",
+    "reward_preset": "late_center_precision",
+    "loss_preset": "anchor1",
+    "gate_preset": "deployment_groups",
+    "actor_critic_action": [
+      72,
+      393,
+      7
+    ],
+    "n_envs": 1024,
+    "n_steps": 128,
+    "physics_timestep_s": 0.001,
+    "physics_ticks_per_control_step": 5,
+    "solver_caps": [
+      100,
+      50
+    ],
+    "adam_minibatches_per_update": 32,
+    "gpu_uuid": "GPU-e74458ec-002a-1bac-e0be-d0a5713b661e",
+    "future_profiles": "Require compatibility/paired numerical and complete GPU workload validation before wiring; do not broaden the existing V322 preset validator."
+  },
+  "dependencies": {
+    "packages": {
+      "jax": "0.10.1",
+      "jaxlib": "0.10.1",
+      "mujoco": "3.8.1"
+    },
+    "native_sources": [
+      {
+        "package": "mujoco",
+        "path": "mujoco/mjx/_src/solver.py",
+        "sha256": "ad9c611bb8fe4116b0bba10f66b3473a958fe770fa82f9080a0f66a206d299ab"
+      },
+      {
+        "package": "mujoco",
+        "path": "mujoco/mjx/_src/support.py",
+        "sha256": "103b6ac154ab716df46057b03800851c63971a47938a8b97923824a25b668c59"
+      }
+    ]
+  },
+  "files": [
+    {
+      "repository": "pingpong_controller/tools/rl_sim/mjx_topology_execution.py",
+      "snapshot": "mjx_topology_execution.py",
+      "sha256": "3d1bed370804d4ec5c2a07bffbdadbb7c250b91f67ebda1d0801e122b2d416f0",
+      "role": "core"
+    },
+    {
+      "repository": "pingpong_controller/tools/rl_sim/mjx_line_search_schedule.py",
+      "snapshot": "mjx_line_search_schedule.py",
+      "sha256": "07a53511bb493eb559adb40d5d5ca46023eb9d7d26df9da97c6c0bed802e69dd",
+      "role": "core"
+    },
+    {
+      "repository": "pingpong_controller/tools/rl_sim/cartesian_pose_action_projection_jax.py",
+      "snapshot": "cartesian_pose_action_projection_jax.py",
+      "sha256": "0f43f1f4d05a410f3fd066d7776980bb075a97f74566f00249aaadbea553929e",
+      "role": "core"
+    },
+    {
+      "repository": "pingpong_controller/tools/rl_sim/train_fixed_plane_v322.py",
+      "snapshot": "integration/train_fixed_plane_v322.py",
+      "sha256": "0bfcedb567199709f94c5b12eaf5b0746dd91367e8c9b397613f1f2571513d4f",
+      "role": "validated_integration_reference"
+    },
+    {
+      "repository": "pingpong_controller/tools/rl_sim/run_gpu1_fixed_plane_v322_execution_v2.sh",
+      "snapshot": "integration/run_gpu1_fixed_plane_v322_execution_v2.sh",
+      "sha256": "93f52b5c8f5c344457dd3937c6ddfb3d52418d60769d21d24882f4e083babbce",
+      "role": "validated_integration_reference"
+    },
+    {
+      "repository": "pingpong_controller/tools/rl_sim/run_gpu1_fixed_plane_v322_long_episode.sh",
+      "snapshot": "integration/run_gpu1_fixed_plane_v322_long_episode.sh",
+      "sha256": "05979d6cff9a2cfb706bb5ffc7de53b17662fd195b1d4d4401f9066981df90d7",
+      "role": "validated_integration_reference"
+    }
+  ],
+  "evidence": {
+    "directory": "pingpong_controller/outputs/rl_sim/v322_targeted_execution_20261104_r1",
+    "report_sha256": "bfc61a1cb3ee7c38067c925cc1c38ef66b4db8c8476935a8243b45eb13bf441b",
+    "summary_sha256": "ad6f765ad1f97a8c2cd4f4a99b65e62bbb21913dc8cd26a23fc803b2a85aecaa",
+    "source_checkpoint_sha256": "d35ea68508cbdfbaddfb3766f21c3f4e82f6f127e3caab8262d9e69a9ad307bc",
+    "seeds": [
+      2026110371,
+      2026110472
+    ],
+    "candidate_real_updates": 26,
+    "candidate_Adam_steps": 832,
+    "numeric_leaves_per_update": 1603,
+    "numeric_gate": "exact shape/dtype/raw bytes",
+    "shipping_cli_smoke_updates": 3,
+    "shipping_cli_Adam_steps": 96,
+    "cpu_tests": 364,
+    "repeated_1200s_qualification": false
+  },
+  "measured_performance": {
+    "baseline": "chunk5_v1",
+    "mean_collect_before_s": 10.286853360943496,
+    "mean_collect_after_s": 6.492625495477114,
+    "collect_time_reduction_pct": 36.88424178254623,
+    "mean_update_before_s": 10.61889253393747,
+    "mean_update_after_s": 6.828744114784058,
+    "timing_scope": "actual updates6--13 per seed, W&B disabled"
+  },
+  "preservation_rule": "Freeze this version ID, recipe and source bytes. Preserve v2 when adding successors with new IDs. Archive files are evidence; use the reviewed active launcher, not integration snapshots."
+}
