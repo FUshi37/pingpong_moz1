@@ -9,6 +9,7 @@ damping, armature, gravity, and racket mount geometry per episode.
 
 from __future__ import annotations
 
+from collections import namedtuple
 from dataclasses import dataclass
 import hashlib
 from pathlib import Path
@@ -2944,6 +2945,10 @@ class MjxFixedContactPlaneVisionConfig(MjxBallRacketContactPairConfig):
     fixed_contact_return_reward_weight: float = 0.0
     fixed_contact_survival_reward_weight: float = 0.02
     fixed_contact_tracking_potential_weight: float = 0.0
+    # User-authorized V320 repair. Reward-only post-third recovery guidance;
+    # zero preserves all released and historical environment paths exactly.
+    fixed_plane_v320_recurrent_guidance_weight_per_s: float = 0.0
+    fixed_plane_v320_third_apex_weight: float = 0.0
     fixed_contact_final_brake_weight: float = 0.0
     fixed_contact_final_window_s: float = 0.080
     fixed_contact_reward_mode: str = "fixed_contact_positive_v1"
@@ -3544,6 +3549,58 @@ class MjxFixedPlaneV168RewardConfig(MjxFixedPlaneV167RewardConfig):
 
 
 @dataclass(frozen=True)
+class MjxFixedPlaneV184RewardConfig(MjxFixedPlaneV159RewardConfig):
+    """Default-off upper-height costs without changes to lower/early impacts."""
+
+    fixed_plane_v184_upper_event_weight: float = 0.0
+    fixed_plane_v184_upper_shoulder_weight: float = 0.0
+
+
+@dataclass(frozen=True)
+class MjxFixedPlaneV190RewardConfig(MjxFixedPlaneV159RewardConfig):
+    """Isolate the existing symmetric band cost without other new reward fields."""
+
+    fixed_plane_v165_steady_band_violation_weight: float = 0.0
+
+
+@dataclass(frozen=True)
+class MjxFixedPlaneV191RewardConfig(MjxFixedPlaneV159RewardConfig):
+    """Default-identity absolute reweighting and default-off bilateral margin."""
+
+    fixed_plane_v191_absolute_height_multiplier: float = 1.0
+    fixed_plane_v191_margin_weight: float = 0.0
+
+
+@dataclass(frozen=True)
+class MjxFixedPlaneV211RewardConfig(MjxFixedPlaneV191RewardConfig):
+    """Default-off bounded event penalty; preserve every legacy config schema."""
+
+    fixed_plane_v211_late_weak_penalty_weight: float = 0.0
+
+
+@dataclass(frozen=True)
+class MjxFixedPlaneV194RewardConfig(MjxFixedPlaneV159RewardConfig):
+    """Default-off damping-conditioned late-height reward only."""
+
+    fixed_plane_v194_damping_focus_margin_weight: float = 0.0
+
+
+@dataclass(frozen=True)
+class MjxFixedPlaneV195RewardConfig(MjxFixedPlaneV191RewardConfig):
+    """Default-off compensation for absolute-height reward tradeoffs."""
+
+    fixed_plane_v194_damping_focus_margin_weight: float = 0.0
+    fixed_plane_v195_late_vxy_excess_weight: float = 0.0
+
+
+@dataclass(frozen=True)
+class MjxFixedPlaneV196RewardConfig(MjxFixedPlaneV159RewardConfig):
+    """Default-off dense action-variation cost after confirmed launch."""
+
+    fixed_plane_v196_late_action_variation_weight: float = 0.0
+
+
+@dataclass(frozen=True)
 class MjxPlantAwareFixedPlaneV1Config(MjxPredictiveContactCurriculumConfig):
     """Independent analytic-nominal plus bounded-residual fixed-plane V1."""
 
@@ -4083,6 +4140,40 @@ class EnvState(NamedTuple):
     collision_outcome_pending_contact_time_s: jax.Array
 
 
+# V223 alone extends runtime state. Legacy EnvState fields/tree stay exact;
+# this episode latent is neither a physical parameter nor an actor feature.
+RacketAttitudeObservationEnvState = namedtuple(
+    "RacketAttitudeObservationEnvState",
+    (*EnvState._fields, "racket_attitude_observation_bias_rad"),
+)
+
+
+CameraPositionNoiseEnvState = namedtuple(
+    "CameraPositionNoiseEnvState",
+    (*EnvState._fields, "ball_position_noise_epsilon_m"),
+)
+
+
+V256WorkspaceForceEnvState = namedtuple(
+    "V256WorkspaceForceEnvState",
+    (*CameraPositionNoiseEnvState._fields, "v256_previous_contact",
+     "v256_rebound_cooldown_ticks"),
+)
+
+
+V224HistoryRecoveryEnvState = namedtuple(
+    "V224HistoryRecoveryEnvState",
+    (*RacketAttitudeObservationEnvState._fields, "v224_observation_history",
+     "v224_impulse_scheduled_step", "v224_impulse_applied"),
+)
+
+V225NearSideRecoveryEnvState = namedtuple(
+    "V225NearSideRecoveryEnvState",
+    (*EnvState._fields, "v225_group", "v225_reset_y_offset_m",
+     "v225_target_vy_m_s", "v225_scheduled_step", "v225_momentum_applied"),
+)
+
+
 # Actual sampled/random-event fields which can change an environment's
 # transition, observation, reward target, or truncation distribution.  Keep
 # this registry independent from the critic layout so regression tests can
@@ -4511,6 +4602,132 @@ class MjxJuggleEnv:
         self.xml_path = Path(xml_path).resolve()
         self.n_envs = int(n_envs)
         self.cfg = cfg
+        if hasattr(cfg, 'v239_release_apex_weight'):
+            from fixed_plane_v239_release_apex import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v240_extra_ball_xy_weight'):
+            from fixed_plane_v240_release_balance import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v241_physical_apex_huber_weight'):
+            from fixed_plane_v241_physical_outcome import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v284_reference_prepare_weight_per_s'):
+            from fixed_plane_v284_reference_prepare import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v286_reference_velocity_weight_per_s'):
+            from fixed_plane_v286_vertical_intent import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v287_startup_contact_center_radius_m'):
+            from fixed_plane_v287_startup_center import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v310_qualified_acquisition_enabled'):
+            from fixed_plane_v310_qualified_acquisition import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v317_late_ball_xy_margin_gain_enabled'):
+            from fixed_plane_v317_late_ball_margin_gain import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v316_late_ball_xy_margin_enabled'):
+            from fixed_plane_v316_late_ball_margin import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v315_late_ball_xy_tail_gain_enabled'):
+            from fixed_plane_v315_late_ball_tail_gain import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v314_late_ball_xy_tail_enabled'):
+            from fixed_plane_v314_late_ball_tail import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v311_clean_preimpact_enabled'):
+            from fixed_plane_v311_clean_preimpact import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v309_clean_startup_reward_enabled'):
+            from fixed_plane_v309_clean_startup import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v308_first_push_weight_per_s'):
+            from fixed_plane_v308_first_push import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v307_first_launch_low_sigma_m'):
+            from fixed_plane_v307_launch_gradient import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v306_near_first_launch_credit'):
+            from fixed_plane_v306_first_launch_reserve import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v305_reference_preparation_scale'):
+            from fixed_plane_v305_reference_price import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v304_timing_envelope_reward'):
+            from fixed_plane_v304_timing_envelope import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v303_late_action_label_fade'):
+            from fixed_plane_v303_preimpact_timing import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v301_center_return_full_hits'):
+            from fixed_plane_v301_launch_center import validate_config
+            validate_config(cfg)
+        if bool(getattr(cfg, 'v299_reward_backoff_enabled', False)):
+            from fixed_plane_v299_safe_reward_backoff import validate_config
+            validate_config(cfg)
+        elif hasattr(cfg, 'v298_early_xy_huber_transition_m_s'):
+            from fixed_plane_v298_practical_dr_completion import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v297_feasible_reward_multiplier'):
+            from fixed_plane_v297_feasible_reward_gain import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v296_action_prepare_weight_per_s'):
+            from fixed_plane_v296_feasible_startup import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v295_mid_near_preparation_scale'):
+            from fixed_plane_v295_mid_near_preimpact import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v294_critical_preparation_scale'):
+            from fixed_plane_v294_effective_preimpact import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v293_monotone_preimpact_enabled'):
+            from fixed_plane_v293_monotone_preimpact import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v292_critical_startup_extra_scale'):
+            from fixed_plane_v292_critical_startup import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v291_near_acquisition_credit'):
+            from fixed_plane_v291_acquisition_success import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v290_startup_potential_weight'):
+            from fixed_plane_v290_startup_potential import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v289_coordinated_stroke_weight_per_s'):
+            from fixed_plane_v289_coordinated_stroke import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v288_raw_stroke_weight_per_s'):
+            from fixed_plane_v288_safe_stroke import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v279_energy_progress_weight'):
+            from fixed_plane_v279_energy_progress import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v242_startup_vz_outcome_only'):
+            from fixed_plane_v242_startup_objectives import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v245_second_apex_reward_margin_m'):
+            from fixed_plane_v245_startup_apex_margin import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v247_startup_physical_weak_penalty_weight'):
+            from fixed_plane_v247_physical_risk import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v249_first_apex_reward_margin_m'):
+            from fixed_plane_v249_bootstrap_energy import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v251_startup_energy_band_enabled'):
+            from fixed_plane_v251_startup_energy_band import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v252_second_energy_band_margin_m'):
+            from fixed_plane_v252_energy_reserve import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v253_preimpact_energy_weight_per_s'):
+            from fixed_plane_v253_preimpact import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v255_near_preparation_gain'):
+            from fixed_plane_v255_corner import validate_config
+            validate_config(cfg)
+        if hasattr(cfg, 'v276_second_prepare_weight_per_s'):
+            from fixed_plane_v276_second_launch import validate_config
+            validate_config(cfg)
         if (
             not math.isfinite(float(cfg.hit_racket_contact_edge_distance_m))
             or not 0.0 <= float(cfg.hit_racket_contact_edge_distance_m) <= 0.002
@@ -4530,7 +4747,30 @@ class MjxJuggleEnv:
             raise ValueError(
                 "fixed_plane_v51_late_weak_floor_multiplier must be finite and >= 1"
             )
+        late_weak_weight = float(getattr(cfg, "fixed_plane_v211_late_weak_penalty_weight", 0.))
+        if not math.isfinite(late_weak_weight) or late_weak_weight < 0.:
+            raise ValueError("Late weak penalty weight must be finite and nonnegative")
+        if late_weak_weight > 0. and not (
+            cfg.fixed_contact_plane_training_enabled
+            and cfg.fixed_plane_v92_signed_height_enabled
+            and cfg.fixed_plane_v34_resolve_weak_launch
+        ):
+            raise ValueError("Late weak cost requires fixed-plane signed-height weak resolution")
         cfg_values = getattr(cfg, "__dict__", {})
+        if getattr(cfg, "fplc_v221_episode_weighted_convergence", False):
+            impulse = float(cfg.fplc_v221_flight_impulse_xy_max_m_s)
+            if not math.isfinite(impulse) or not 0. <= impulse <= .02:
+                raise ValueError("V221 flight impulse must be finite and within0--0.02m/s")
+            if (cfg.fplc_v221_flight_impulse_min_hits < 3
+                    or cfg.fplc_v221_contact_dr_min_hits < 3
+                    or cfg.fplc_v221_flight_impulse_clearance_m < .05):
+                raise ValueError("V221 physical DR must exclude launch and near-contact flight")
+            if cfg.fplc_v221_camera_dropout_frames:
+                if (not cfg.ball_obs_fractional_rate or cfg.ball_obs_rate_hz != 90.
+                        or cfg.fixed_contact_high_ball_predictor_enabled
+                        or cfg.fplc_v221_camera_dropout_min_hits < 3
+                        or not .0 < cfg.fplc_v221_short_gap_prediction_max_s <= .04):
+                    raise ValueError("V221 camera DR requires90Hz,late-only,bounded single predictor")
         self.fixed_plane_v97_calibrated_contact = bool(getattr(
             cfg, "fixed_plane_v97_calibrated_contact", False
         ))
@@ -4589,7 +4829,7 @@ class MjxJuggleEnv:
             or self.ball_racket_collision_geometry != "finite_mesh16"
             or not bool(getattr(cfg, "ball_racket_pair_override_enabled", False))
             or not str(getattr(cfg, "fixed_contact_training_phase", "")).startswith(
-                ("fplc_v99_", "fplc_v100_", "fplc_v101_", "fplc_v102_", "fplc_v103_", "fplc_v104_", "fplc_v105_", "fplc_v106_", "fplc_v107_", "fplc_v108_", "fplc_v109_", "fplc_v110_", "fplc_v111_", "fplc_v112_", "fplc_v113_", "fplc_v114_", "fplc_v115_", "fplc_v116_", "fplc_v117_", "fplc_v118_", "fplc_v119_", "fplc_v120_", "fplc_v121_", "fplc_v122_", "fplc_v123_", "fplc_v124_", "fplc_v125_", "fplc_v126_", "fplc_v127_", "fplc_v128_", "fplc_v129_", "fplc_v130_", "fplc_v131_", "fplc_v132_", "fplc_v133_", "fplc_v134_", "fplc_v135_", "fplc_v136_", "fplc_v137_", "fplc_v138_", "fplc_v139_", "fplc_v140_", "fplc_v141_", "fplc_v142_", "fplc_v143_", "fplc_v144_", "fplc_v145_", "fplc_v146_", "fplc_v147_", "fplc_v148_", "fplc_v149_", "fplc_v150_gpu1_", "fplc_v151_gpu1_", "fplc_v152_gpu0_", "fplc_v153_gpu0_", "fplc_v153_gpu1_", "fplc_v154_gpu0_", "fplc_v154_gpu1_", "fplc_v155_gpu1_", "fplc_v156_gpu1_", "fplc_v157_gpu1_", "fplc_v158_gpu1_", "fplc_v159_gpu1_", "fplc_v160_gpu0_", "fplc_v161_gpu0_", "fplc_v162_gpu0_", "fplc_v163_gpu0_", "fplc_v164_gpu0_", "fplc_v165_gpu0_", "fplc_v166_gpu0_", "fplc_v167_gpu0_", "fplc_v168_gpu0_", "fplc_v169_gpu0_", "fplc_v170_gpu0_") if bool(getattr(
+                ("fplc_v99_", "fplc_v100_", "fplc_v101_", "fplc_v102_", "fplc_v103_", "fplc_v104_", "fplc_v105_", "fplc_v106_", "fplc_v107_", "fplc_v108_", "fplc_v109_", "fplc_v110_", "fplc_v111_", "fplc_v112_", "fplc_v113_", "fplc_v114_", "fplc_v115_", "fplc_v116_", "fplc_v117_", "fplc_v118_", "fplc_v119_", "fplc_v120_", "fplc_v121_", "fplc_v122_", "fplc_v123_", "fplc_v124_", "fplc_v125_", "fplc_v126_", "fplc_v127_", "fplc_v128_", "fplc_v129_", "fplc_v130_", "fplc_v131_", "fplc_v132_", "fplc_v133_", "fplc_v134_", "fplc_v135_", "fplc_v136_", "fplc_v137_", "fplc_v138_", "fplc_v139_", "fplc_v140_", "fplc_v141_", "fplc_v142_", "fplc_v143_", "fplc_v144_", "fplc_v145_", "fplc_v146_", "fplc_v147_", "fplc_v148_", "fplc_v149_", "fplc_v150_gpu1_", "fplc_v151_gpu1_", "fplc_v152_gpu0_", "fplc_v153_gpu0_", "fplc_v153_gpu1_", "fplc_v154_gpu0_", "fplc_v154_gpu1_", "fplc_v155_gpu1_", "fplc_v156_gpu1_", "fplc_v157_gpu1_", "fplc_v158_gpu1_", "fplc_v159_gpu1_", "fplc_v160_gpu0_", "fplc_v161_gpu0_", "fplc_v162_gpu0_", "fplc_v163_gpu0_", "fplc_v164_gpu0_", "fplc_v165_gpu0_", "fplc_v166_gpu0_", "fplc_v167_gpu0_", "fplc_v168_gpu0_", "fplc_v169_gpu0_", "fplc_v170_gpu0_", "fplc_v221_gpu1_", "fplc_v254_") if bool(getattr(
                     cfg, "fixed_plane_v99_contiguous_history_obs_enabled", False
                 )) else "fplc_v98_"
             )
@@ -5537,6 +5777,103 @@ class MjxJuggleEnv:
         self.fixed_plane_v149_simple_obs_enabled = bool(
             getattr(cfg, "fixed_plane_v149_simple_obs_enabled", False)
         )
+        self.racket_attitude_observation_dr_enabled = bool(getattr(
+            cfg, "racket_attitude_observation_dr_enabled", False))
+        self.camera_position_noise_schema = hasattr(cfg, "ball_position_noise_ar1_enabled")
+        self.ball_position_noise_ar1_enabled = bool(getattr(
+            cfg, "ball_position_noise_ar1_enabled", False))
+        self.v256_enabled = bool(getattr(cfg, "v256_enabled", False))
+        self.v258_enabled = bool(getattr(cfg, "v258_enabled", False))
+        if bool(getattr(cfg, "v272_enabled", False)):
+            from fixed_plane_v272_height_margin import validate_config
+            validate_config(cfg)
+        elif bool(getattr(cfg, "v270_enabled", False)):
+            from fixed_plane_v270_angular_relaxation import validate_config
+            validate_config(cfg)
+        elif bool(getattr(cfg, "v269_enabled", False)):
+            from fixed_plane_v269_conditional_quality import validate_config
+            validate_config(cfg)
+        elif bool(getattr(cfg, "v268_enabled", False)):
+            from fixed_plane_v268_temporal_balance import validate_config
+            validate_config(cfg)
+        elif bool(getattr(cfg, "v267_enabled", False)):
+            from fixed_plane_v267_motion_alignment import validate_config
+            validate_config(cfg)
+        elif bool(getattr(cfg, "v266_enabled", False)):
+            from fixed_plane_v266_value_scale import validate_config
+            validate_config(cfg)
+        elif bool(getattr(cfg, "v265_enabled", False)):
+            from fixed_plane_v265_mild_variation import validate_config
+            validate_config(cfg)
+        elif bool(getattr(cfg, "v264_enabled", False)):
+            from fixed_plane_v264_variance_balance import validate_config
+            validate_config(cfg)
+        elif bool(getattr(cfg, "v263_enabled", False)):
+            from fixed_plane_v263_tail_cost import validate_config
+            validate_config(cfg)
+        elif bool(getattr(cfg, "v262_enabled", False)):
+            from fixed_plane_v262_correction_balance import validate_config
+            validate_config(cfg)
+        elif bool(getattr(cfg, "v261_enabled", False)):
+            from fixed_plane_v261_reward_balance import validate_config
+            validate_config(cfg)
+        elif bool(getattr(cfg, "v259_enabled", False)):
+            from fixed_plane_v259_reward_tuning import validate_config
+            validate_config(cfg)
+        elif hasattr(cfg, "v258_enabled"):
+            from fixed_plane_v258_gaussian_force import validate_config
+            validate_config(cfg)
+        elif self.v256_enabled:
+            from fixed_plane_v256_workspace_force import validate_config
+            validate_config(cfg)
+        if self.camera_position_noise_schema:
+            from fixed_plane_v254_camera_noise import validate_noise_config
+            validate_noise_config(cfg)
+            if self.racket_attitude_observation_dr_enabled:
+                raise ValueError("V254 camera noise cannot stack with attitude observation DR")
+        self.v224_history_enabled = bool(getattr(cfg, "v224_history_enabled", False))
+        self.v225_enabled = bool(getattr(cfg, "v225_enabled", False))
+        self.v226_enabled = bool(getattr(cfg, "v226_enabled", False))
+        if bool(getattr(cfg, "v231_nominal_reward_parity", False)) and not self.v226_enabled:
+            raise ValueError("V231 reward cohort selection requires the V226 recovery schema")
+        if self.v226_enabled:
+            from fixed_plane_v226_stability_recovery import validate_return_speed
+            validate_return_speed(cfg.v226_anchor_return_speed_m_s)
+            if (not self.v225_enabled
+                    or not cfg.fixed_contact_include_early_racket_xy_anchor_penalty
+                    or not math.isfinite(cfg.fixed_plane_v166_physical_ball_xy_weight)
+                    or not 0. <= cfg.fixed_plane_v166_physical_ball_xy_weight <= 4.):
+                raise ValueError("V226 requires unchanged V225 schema and bounded reward-only recovery")
+        if self.v225_enabled:
+            if (not self.fixed_plane_v149_simple_obs_enabled
+                    or self.racket_attitude_observation_dr_enabled or self.v224_history_enabled
+                    or cfg.high_latency_obs or cfg.enable_delay_conditioning
+                    or cfg.critic_fixed_plane_task_context
+                    or not 0. <= cfg.v225_near_y_max_m <= .10
+                    or not 0. <= cfg.v225_momentum_delta_limit_m_s <= .08
+                    or not 0. <= cfg.v225_nominal_fraction <= 1.
+                    or not 0. <= cfg.v225_mirror_fraction <= 1.-cfg.v225_nominal_fraction
+                    or tuple(cfg.fixed_contact_workspace_center_xy_m) != (0., -.49)
+                    or not cfg.racket_launch_racket_follow_episode_target_xy
+                    or cfg.racket_launch_hold_time_s != 0.):
+                raise ValueError("V225 requires unchanged72-D native coherent launch and bounded recovery")
+        if self.v224_history_enabled:
+            from fixed_plane_v224_history_context import SCHEMA
+            impulse = float(cfg.v224_flight_impulse_xy_max_m_s)
+            if (not self.racket_attitude_observation_dr_enabled
+                    or cfg.v224_actor_schema != SCHEMA
+                    or cfg.high_latency_obs or cfg.enable_delay_conditioning
+                    or cfg.critic_fixed_plane_task_context
+                    or not math.isfinite(impulse) or not 0. <= impulse <= .04):
+                raise ValueError("V224 requires its observed72+45 history and bounded impulse")
+        if self.racket_attitude_observation_dr_enabled:
+            angle = float(cfg.racket_attitude_observation_max_angle_deg)
+            fraction = float(cfg.racket_attitude_observation_nominal_fraction)
+            if (not self.fixed_plane_v149_simple_obs_enabled
+                    or not np.isfinite(angle) or not 0. <= angle <= 1.
+                    or not np.isfinite(fraction) or not 0. <= fraction <= 1.
+                    or cfg.dr_randomize_racket_mount):
+                raise ValueError("V223 requires72-D,<=1degree observation-only tilt")
         if self.fixed_plane_v149_simple_obs_enabled:
             from fixed_plane_v149 import validate_simple_observation_contract
             validate_simple_observation_contract(
@@ -6647,6 +6984,14 @@ class MjxJuggleEnv:
                 raise ValueError(
                     "fixed_contact_recurrent_launch_min_hit_count must be >= 0"
                 )
+            v320_guidance_weight = float(cfg.fixed_plane_v320_recurrent_guidance_weight_per_s)
+            if not math.isfinite(v320_guidance_weight) or v320_guidance_weight < 0.:
+                raise ValueError('V320 recurrent guidance weight must be finite and nonnegative')
+            if v320_guidance_weight > 0. and not cfg.fixed_plane_limit_cycle_dynamic_stroke_enabled:
+                raise ValueError('V320 recurrent guidance requires the dynamic stroke reference')
+            v320_apex_weight = float(cfg.fixed_plane_v320_third_apex_weight)
+            if not math.isfinite(v320_apex_weight) or v320_apex_weight < 0.:
+                raise ValueError('V320 third apex weight must be finite and nonnegative')
             smooth_stroke_values = (
                 float(cfg.fixed_contact_smooth_stroke_vz_penalty_weight),
                 float(cfg.fixed_contact_smooth_stroke_peak_m_s),
@@ -6971,6 +7316,9 @@ class MjxJuggleEnv:
             if bool(cfg.use_delay_embedding):
                 self.delay_extra_dim += max(0, int(cfg.delay_embedding_dim))
         self.obs_dim = self.base_obs_dim + self.high_latency_extra_dim + self.delay_extra_dim
+        if self.v224_history_enabled:
+            from fixed_plane_v224_history_context import CONTEXT_DIM
+            self.obs_dim += CONTEXT_DIM
 
         edges = np.asarray(tuple(cfg.delay_bin_edges_ms), dtype=np.float32)
         if edges.size < 2:
@@ -7060,6 +7408,8 @@ class MjxJuggleEnv:
         self.model = mjx.put_model(self.mj_model)
 
         self.timestep = float(self.mj_model.opt.timestep)
+        if self.v256_enabled and (abs(self.timestep - .001) > 1e-9 or int(cfg.frame_skip) != 5):
+            raise ValueError("V256 forces require1ms physics and5ms policy ticks")
         self.dt = float(self.timestep * cfg.frame_skip)
         self.recovered_rmp_motion_mode = bool(cfg.recovered_rmp_motion_mode)
         self.recovered_rmp_direct_qvel_target = bool(
@@ -7656,6 +8006,14 @@ class MjxJuggleEnv:
             else 0
         )
         self.critic_obs_dim = self.obs_dim + self.critic_extra_dim
+        if self.camera_position_noise_schema:
+            if self.critic_obs_dim != 393:
+                raise ValueError("V254 requires the preserved72/393 critic prefix")
+            self.critic_extra_dim += 3
+            self.critic_obs_dim += 3
+        if self.v256_enabled:
+            self.critic_extra_dim += 2
+            self.critic_obs_dim += 2
         self.critic_fixed_plane_task_context = bool(
             getattr(cfg, "critic_fixed_plane_task_context", False)
         )
@@ -8846,6 +9204,10 @@ class MjxJuggleEnv:
                 follow_y_count,
                 dtype=np.float64,
             )
+            if self.v225_enabled and cfg.v225_near_y_max_m > 0.:
+                # Preserve an exact native nominal IK node inside the wider
+                # recovery lookup. Nearest-neighbor rounding must not move it.
+                follow_y_offsets = np.unique(np.r_[follow_y_offsets, 0.])
             if expand_cartesian_blend_domain:
                 exact_x_knots = cartesian_reset_blend_ik_axis_knots(
                     blend_target_x_range,
@@ -9888,6 +10250,14 @@ class MjxJuggleEnv:
                 maxval=float(self.cfg.episode_target_y_range_m[1]),
             )
         )(key_episode_target_y)
+        if self.v225_enabled:
+            from fixed_plane_v225_near_side import sample_episode
+            if self.v226_enabled:
+                from fixed_plane_v226_stability_recovery import sample_recovery_episode
+                v225_group, v225_reset_y_offset, v225_target_vy = sample_recovery_episode(keys, self.cfg)
+            else:
+                v225_group, v225_reset_y_offset, v225_target_vy = sample_episode(keys, self.cfg)
+            target_y_offset = v225_reset_y_offset
         target_z_offset = jax.vmap(
             lambda k: jax.random.uniform(
                 k,
@@ -11695,6 +12065,17 @@ class MjxJuggleEnv:
             collision_outcome_episode_restitution_latent = jnp.zeros(
                 (n_envs,), dtype=jnp.float32
             )
+        if self.camera_position_noise_schema:
+            if self.ball_position_noise_ar1_enabled:
+                from ball_position_noise_ar1 import initialize_noise
+                noise_keys = jax.vmap(lambda key: jax.random.fold_in(key, 25401))(next_keys)
+                ball_position_noise_epsilon_m = initialize_noise(
+                    noise_keys, std_m=self.cfg.ball_position_noise_std_m)
+                reset_ball_obs_pos = (
+                    reset_ball_obs_pos + jnp.asarray(self.cfg.ball_position_noise_mean_m)
+                    + ball_position_noise_epsilon_m)
+            else:
+                ball_position_noise_epsilon_m = jnp.zeros((n_envs, 3), dtype=jnp.float32)
         if self.fixed_plane_v92_history_obs_enabled:
             reset_racket_pose = jnp.concatenate((
                 rpos,
@@ -12043,12 +12424,44 @@ class MjxJuggleEnv:
                 (n_envs,), dtype=jnp.float32
             ),
         )
+        if self.camera_position_noise_schema:
+            state = CameraPositionNoiseEnvState(*state, ball_position_noise_epsilon_m)
+        if self.v256_enabled:
+            state = V256WorkspaceForceEnvState(*state,
+                jnp.zeros(n_envs, bool), jnp.zeros(n_envs, jnp.int32))
+        if self.racket_attitude_observation_dr_enabled:
+            from racket_attitude_observation_dr import sample_episode_tilt_rad
+            bias = sample_episode_tilt_rad(
+                key_racket_rot,
+                max_angle_deg=float(self.cfg.racket_attitude_observation_max_angle_deg),
+                nominal_fraction=float(self.cfg.racket_attitude_observation_nominal_fraction),
+            )
+            state = RacketAttitudeObservationEnvState(*state, bias)
+        if self.v225_enabled:
+            # The sampled XY offset places the complete racket/ball/RMP reset
+            # using the existing FK/IK path. It is not a moved task target.
+            if self.cfg.v225_near_y_max_m > 0.:
+                state = state._replace(racket_anchor=state.racket_anchor.at[:, :2].set(
+                    jnp.asarray(self.cfg.fixed_contact_workspace_center_xy_m)))
+            schedule = jax.vmap(lambda k: jax.random.randint(
+                jax.random.fold_in(k, 22503), (), 160, 241))(state.rng)
+            actual_reset_y_offset = (state.data.site_xpos[:, self.racket_site_id, 1]
+                - float(self.cfg.fixed_contact_workspace_center_xy_m[1]))
+            state = V225NearSideRecoveryEnvState(*state, v225_group,
+                actual_reset_y_offset, v225_target_vy, schedule,
+                jnp.zeros((n_envs,), dtype=jnp.bool_))
         base_obs = self._make_obs(
             state,
             state.ball_obs_valid_pos,
             state.ball_obs_valid_vel,
             state.ball_obs_age_seconds,
         )
+        if self.v224_history_enabled:
+            from fixed_plane_v224_history_context import initialize_history
+            schedule = jax.vmap(lambda k: jax.random.randint(
+                jax.random.fold_in(k, 22402), (), 400, 801))(state.rng)
+            state = V224HistoryRecoveryEnvState(*state, initialize_history(base_obs),
+                schedule, jnp.zeros((n_envs,), dtype=jnp.bool_))
         if self.high_latency_obs_prev_frames > 0:
             obs_history = jnp.broadcast_to(
                 base_obs[:, None, :],
@@ -12730,6 +13143,16 @@ class MjxJuggleEnv:
                 ),
                 hit_count=state.hit_count, predicted_contact_context=contact_context,
             )
+        if self.camera_position_noise_schema:
+            # Preserve the complete393-D prefix and expose the AR(1) Markov
+            # state only to the critic, normalized by its stationary sigma.
+            critic_obs = jnp.concatenate((critic_obs,
+                state.ball_position_noise_epsilon_m
+                / jnp.asarray(self.cfg.ball_position_noise_std_m)), axis=-1)
+        if self.v256_enabled:
+            critic_obs = jnp.concatenate((critic_obs,
+                state.v256_previous_contact.astype(jnp.float32)[:, None],
+                state.v256_rebound_cooldown_ticks.astype(jnp.float32)[:, None] / 220.), axis=-1)
         return critic_obs
 
     def _fixed_plane_limit_cycle_apex_progress(
@@ -13448,12 +13871,17 @@ class MjxJuggleEnv:
             )
             if self.fixed_plane_v149_simple_obs_enabled:
                 from fixed_plane_v149 import make_simple_position_observation
+                observed_racket_rotation = racket_rotation
+                if self.racket_attitude_observation_dr_enabled:
+                    from racket_attitude_observation_dr import apply_local_tilt
+                    observed_racket_rotation = apply_local_tilt(
+                        racket_rotation, state.racket_attitude_observation_bias_rad)
                 return make_simple_position_observation(
                     q=q, dq=dq, q_ref_error=state.arm_cmd_q - q,
                     previous_action=state.prev_action,
                     ball_positions=state.actor_ball_position_history,
                     racket_pose_now=jnp.concatenate((
-                        rpos, rotation_matrix_to_6d(racket_rotation)), axis=-1),
+                        rpos, rotation_matrix_to_6d(observed_racket_rotation)), axis=-1),
                     ball_ages=state.actor_ball_age_history,
                     target_xy_m=state.racket_anchor[:, :2],
                     ball_position_valid=state.fixed_contact_ball_observed,
@@ -13826,6 +14254,11 @@ class MjxJuggleEnv:
         return jnp.where(held[:, None], stale, base_obs), held
 
     def _augment_obs(self, state: EnvState, base_obs: jax.Array) -> jax.Array:
+        if self.v224_history_enabled:
+            from fixed_plane_v224_history_context import make_context_jax
+            context = make_context_jax(state.v224_observation_history,
+                state.step_count, masked=bool(self.cfg.v224_history_masked))
+            return jnp.concatenate((base_obs, context), axis=-1)
         obs = self._augment_high_latency_obs(state, base_obs) if self.high_latency_obs else base_obs
         if self.delay_extra_dim <= 0:
             return obs
@@ -14091,6 +14524,24 @@ class MjxJuggleEnv:
         external_arm_q_horizon_ref: jax.Array | None = None,
         external_arm_qdd_horizon_ref: jax.Array | None = None,
     ) -> tuple[EnvState, jax.Array, jax.Array, jax.Array, dict[str, jax.Array]]:
+        if (getattr(self.cfg, "fplc_v221_episode_weighted_convergence", False)
+                and self.cfg.dr_randomize_contact and self.has_ball_racket_pair):
+            from fixed_plane_recovery_dr import contact_pair_values
+            friction,solref_time,solref_damping = contact_pair_values(
+                state.hit_count,sampled_mu=state.dr_racket_friction,
+                sampled_time=state.dr_ball_solref_time,
+                sampled_damping=state.dr_ball_solref_damping,
+                nominal_friction=self.cfg.ball_racket_pair_friction[:2],
+                nominal_solref=self.cfg.ball_racket_pair_solref,
+                min_hits=int(self.cfg.fplc_v221_contact_dr_min_hits))
+            model = state.model.replace(
+                pair_friction=state.model.pair_friction.at[
+                    :, self.ball_racket_pair_ids, 0].set(friction[:, 0:1]).at[
+                    :, self.ball_racket_pair_ids, 1].set(friction[:, 1:2]),
+                pair_solref=state.model.pair_solref.at[
+                    :, self.ball_racket_pair_ids, 0].set(solref_time[:, None]).at[
+                    :, self.ball_racket_pair_ids, 1].set(solref_damping[:, None]))
+            state = state._replace(model=model)
         # Cache the state before any physics substep.  If this control interval
         # contains a new physical contact edge, these are the closest available
         # pre-impact ball quantities and are carried until contact separation.
@@ -14100,19 +14551,29 @@ class MjxJuggleEnv:
         ]
         step_start_contact_target = None
         if self.fixed_contact_plane_training_enabled:
-            step_start_contact_target = self._fixed_contact_policy_target(
-                state.ball_obs_valid_pos,
-                state.ball_obs_valid_vel,
-                state.ball_obs_age_seconds,
-                state.hit_count,
-                already_propagated=state.fixed_contact_ball_predicted,
-            )
-            step_start_contact_target = step_start_contact_target._replace(
-                valid=(
-                    step_start_contact_target.valid
-                    & state.fixed_contact_ball_state_valid
+            if self.camera_position_noise_schema:
+                # V254 sensing noise belongs only to the actor. The legacy
+                # target-based reward/skill gates otherwise inherit camera
+                # noise through ball_obs_valid_pos, even for fixed actions.
+                # _make_obs still computes the actor's target from sensing.
+                step_start_contact_target = self._fixed_contact_policy_target(
+                    step_start_ball_position_m, step_start_ball_velocity_m_s,
+                    jnp.zeros_like(state.ball_obs_age_seconds), state.hit_count,
+                    already_propagated=jnp.zeros_like(state.fixed_contact_ball_predicted))
+            else:
+                step_start_contact_target = self._fixed_contact_policy_target(
+                    state.ball_obs_valid_pos,
+                    state.ball_obs_valid_vel,
+                    state.ball_obs_age_seconds,
+                    state.hit_count,
+                    already_propagated=state.fixed_contact_ball_predicted,
                 )
-            )
+                step_start_contact_target = step_start_contact_target._replace(
+                    valid=(
+                        step_start_contact_target.valid
+                        & state.fixed_contact_ball_state_valid
+                    )
+                )
         raw_policy_action = action
         residual_policy_action = jnp.clip(raw_policy_action, -1.0, 1.0)
         plant_aware_nominal_action = jnp.zeros_like(residual_policy_action)
@@ -16557,6 +17018,14 @@ class MjxJuggleEnv:
                 first_penetration_racket_vz,
             )
 
+        v256_initial_metadata = ()
+        if self.v256_enabled:
+            if self.v258_enabled:
+                from fixed_plane_v258_substeps import initialize_metadata, wrap_substep
+            else:
+                from fixed_plane_v256_substeps import initialize_metadata, wrap_substep
+            v256_initial_metadata = initialize_metadata(state)
+            one_substep = wrap_substep(self, state, one_substep)
         (
             data,
             in_contact,
@@ -16581,6 +17050,7 @@ class MjxJuggleEnv:
             first_penetration_pre_ball_vz,
             first_penetration_post_ball_vz,
             first_penetration_racket_vz,
+            *v256_metadata,
         ) = jax.lax.fori_loop(
             0,
             int(self.cfg.frame_skip),
@@ -16609,7 +17079,7 @@ class MjxJuggleEnv:
                 first_penetration_pre_ball_vz_init,
                 first_penetration_post_ball_vz_init,
                 first_penetration_racket_vz_init,
-            ),
+            ) + v256_initial_metadata,
         )
         if bool(self.cfg.arm_actual_target_tracking_governor):
             # mjx.step starts with mjx.forward, so forwarding after every
@@ -16848,6 +17318,57 @@ class MjxJuggleEnv:
             collision_outcome_saturated = jnp.zeros(
                 (self.n_envs,), dtype=bool
             )
+        v224_impulse_event = jnp.zeros((self.n_envs,), dtype=jnp.bool_)
+        v225_momentum_event = jnp.zeros((self.n_envs,), dtype=jnp.bool_)
+        v225_momentum_delta = jnp.zeros((self.n_envs,), dtype=jnp.float32)
+        if self.v225_enabled and self.cfg.v225_momentum_delta_limit_m_s > 0.:
+            from fixed_plane_v225_near_side import momentum_intervention, select_intervention_rows
+            velocity, v225_momentum_event, v225_momentum_delta = momentum_intervention(
+                data.qvel[:, self.ball_vadr:self.ball_vadr+3], state.v225_target_vy_m_s,
+                group=state.v225_group, already_applied=state.v225_momentum_applied,
+                step=state.step_count+1, scheduled_step=state.v225_scheduled_step,
+                hit_count=state.hit_count, in_contact=in_contact | racket_launch_hold_active,
+                clearance_m=data.xpos[:, self.ball_body_id, 2]-data.site_xpos[:, self.racket_site_id, 2],
+                maximum_delta_m_s=float(self.cfg.v225_momentum_delta_limit_m_s))
+            def apply_v225_momentum(current):
+                candidate = current.replace(qvel=current.qvel.at[
+                    :, self.ball_vadr:self.ball_vadr+3].set(velocity))
+                candidate = self.batched_forward(state.model, candidate)
+                return select_intervention_rows(current, candidate, v225_momentum_event)
+            data = jax.lax.cond(jnp.any(v225_momentum_event),
+                apply_v225_momentum, lambda current: current, data)
+        if self.v224_history_enabled and self.cfg.v224_flight_impulse_xy_max_m_s > 0.:
+            from fixed_plane_v224_history_context import bounded_flight_impulse
+            limit = float(self.cfg.v224_flight_impulse_xy_max_m_s)
+            keys = jax.vmap(lambda k: jax.random.fold_in(k, 22401))(state.rng)
+            delta = jax.vmap(lambda k: jax.random.uniform(
+                k, (2,), minval=-limit, maxval=limit))(keys)
+            velocity, v224_impulse_event = bounded_flight_impulse(
+                data.qvel[:, self.ball_vadr:self.ball_vadr+3], delta,
+                step=state.step_count+1, scheduled_step=state.v224_impulse_scheduled_step,
+                already_applied=state.v224_impulse_applied, hit_count=state.hit_count,
+                in_contact=in_contact | racket_launch_hold_active,
+                clearance_m=data.xpos[:,self.ball_body_id,2]-data.site_xpos[:,self.racket_site_id,2])
+            data = data.replace(qvel=data.qvel.at[
+                :,self.ball_vadr:self.ball_vadr+3].set(velocity))
+            data = self.batched_forward(state.model, data)
+        impulse_limit = float(getattr(self.cfg, "fplc_v221_flight_impulse_xy_max_m_s", 0.))
+        if impulse_limit > 0.:
+            from fixed_plane_recovery_dr import flight_impulse_velocity
+            impulse_keys = jax.vmap(lambda key: jax.random.fold_in(key, 22101))(state.rng)
+            delta_xy = jax.vmap(lambda key: jax.random.uniform(
+                key, (2,), minval=-impulse_limit, maxval=impulse_limit))(impulse_keys)
+            velocity, flight_impulse_applied = flight_impulse_velocity(
+                data.qvel[:, self.ball_vadr:self.ball_vadr+3], delta_xy,
+                step=state.step_count+1, hit_count=state.hit_count,
+                in_contact=in_contact | racket_launch_hold_active,
+                clearance_m=data.xpos[:, self.ball_body_id, 2]-data.site_xpos[:, self.racket_site_id, 2],
+                scheduled_step=int(self.cfg.fplc_v221_flight_impulse_step),
+                min_hits=int(self.cfg.fplc_v221_flight_impulse_min_hits),
+                min_clearance_m=float(self.cfg.fplc_v221_flight_impulse_clearance_m))
+            data = data.replace(qvel=data.qvel.at[
+                :, self.ball_vadr:self.ball_vadr+3].set(velocity))
+            data = self.batched_forward(state.model, data)
         bpos = data.xpos[:, self.ball_body_id]
         rpos = data.site_xpos[:, self.racket_site_id]
         rmat = data.site_xmat[:, self.racket_site_id].reshape((-1, 3, 3))
@@ -17711,7 +18232,89 @@ class MjxJuggleEnv:
             hit_ball_z_at_contact=pending_hit_ball_z,
             hit_racket_z_at_contact=pending_hit_racket_z,
             fixed_contact_policy_target=step_start_contact_target,
+            recovery_group=(state.v225_group if self.v225_enabled else None),
         )
+        if self.v226_enabled:
+            from fixed_plane_v226_stability_recovery import reachable_anchor_penalty
+            original_anchor_cost = reward_terms['early_racket_xy_anchor_penalty']
+            reachable_anchor_cost, reachable_allowance = reachable_anchor_penalty(
+                original_anchor_cost,
+                distance_m=jnp.linalg.norm(rpos[:, :2]-state.racket_anchor[:, :2], axis=-1),
+                initial_y_m=state.v225_reset_y_offset_m,
+                elapsed_s=(state.step_count+1).astype(jnp.float32)*self.dt,
+                group=state.v225_group, hit_count=hit_count, cfg=self.cfg, dt_s=self.dt)
+            anchor_correction = reachable_anchor_cost-original_anchor_cost
+            reward = reward+anchor_correction
+            reward_terms = dict(reward_terms)
+            reward_terms['early_racket_xy_anchor_penalty'] = reachable_anchor_cost
+            reward_terms['dense_scaled'] = reward_terms['dense_scaled']+anchor_correction
+            reward_terms['metric/v226_anchor_allowance_m'] = reachable_allowance
+            reward_terms['v226_anchor_correction'] = anchor_correction
+            reward_terms['total'] = reward
+        if bool(getattr(self.cfg, 'v236_launch_first', False)):
+            from fixed_plane_v236_launch_first import anchor_rewards
+            old_early = reward_terms['early_racket_xy_anchor_penalty']
+            old_late = reward_terms.get('fixed_plane_v134_late_xy_anchor_penalty',
+                                        jnp.zeros_like(reward))
+            new_early, new_late = anchor_rewards(
+                original_early=old_early, original_late=old_late,
+                distance_m=jnp.linalg.norm(rpos[:, :2]-state.racket_anchor[:, :2], axis=-1),
+                initial_y_m=state.v225_reset_y_offset_m, group=state.v225_group,
+                hit_count=hit_count, cfg=self.cfg, dt_s=self.dt)
+            correction = (new_early - old_early) + (new_late - old_late)
+            reward = reward + correction
+            reward_terms = dict(reward_terms)
+            reward_terms['early_racket_xy_anchor_penalty'] = new_early
+            reward_terms['fixed_plane_v134_late_xy_anchor_penalty'] = new_late
+            reward_terms['v236_anchor_correction'] = correction
+            reward_terms['dense_scaled'] = reward_terms['dense_scaled'] + correction
+            reward_terms['total'] = reward
+        if getattr(self.cfg, 'fixed_plane_v194_damping_focus_margin_weight', 0.) != 0.:
+            from fixed_plane_v191_height_reward import damping_focus_margin_penalty
+            v194_margin_penalty = damping_focus_margin_penalty(
+                eligible=(reward_terms['metric/v92_below_1p4_event']
+                    + reward_terms['metric/v92_in_1p4_1p45_event']
+                    + reward_terms['metric/v92_above_1p45_event']) > 0.,
+                apex_z_m=predicted_apex_z,
+                damping_multiplier=jnp.mean(
+                    state.rmp_jnt_kd / self.recovered_rmp_jnt_kd[None, :], axis=-1),
+                damping_range=self.cfg.dr_rmp_jnt_kd_mult_range,
+                weight=self.cfg.fixed_plane_v194_damping_focus_margin_weight)
+            reward = reward + v194_margin_penalty
+            reward_terms = dict(reward_terms)
+            reward_terms['fixed_plane_v194_damping_focus_margin_penalty'] = v194_margin_penalty
+            reward_terms['total'] = reward
+        if getattr(self.cfg, 'fixed_plane_v195_late_vxy_excess_weight', 0.) != 0.:
+            from fixed_plane_v191_height_reward import late_vxy_excess_penalty
+            v195_vxy_penalty = late_vxy_excess_penalty(
+                eligible=(reward_terms['metric/v92_below_1p4_event']
+                    + reward_terms['metric/v92_in_1p4_1p45_event']
+                    + reward_terms['metric/v92_above_1p45_event']) > 0.,
+                racket_vxy_m_s=pending_hit_racket_vxy,
+                weight=self.cfg.fixed_plane_v195_late_vxy_excess_weight)
+            reward = reward + v195_vxy_penalty
+            reward_terms = dict(reward_terms)
+            reward_terms['fixed_plane_v195_late_vxy_excess_penalty'] = v195_vxy_penalty
+            reward_terms['total'] = reward
+        if getattr(self.cfg, 'fixed_plane_v196_late_action_variation_weight', 0.) != 0.:
+            from fixed_plane_v191_height_reward import late_action_variation_penalty
+            v196_variation_penalty = late_action_variation_penalty(
+                action_delta=da, confirmed_hits=state.hit_count,
+                weight=self.cfg.fixed_plane_v196_late_action_variation_weight)
+            reward = reward + v196_variation_penalty
+            reward_terms = dict(reward_terms)
+            reward_terms['fixed_plane_v196_late_action_variation_penalty'] = v196_variation_penalty
+            reward_terms['total'] = reward
+        if getattr(self.cfg, "fixed_plane_v211_late_weak_penalty_weight", 0.) > 0.:
+            from fixed_plane_v211_weak_reward import late_weak_event_penalty
+            v211_weak_penalty = late_weak_event_penalty(
+                weak_resolved_event=(low_survival_launch | subfloor_launch),
+                confirmed_hits_before_event=state.hit_count,
+                weight=self.cfg.fixed_plane_v211_late_weak_penalty_weight)
+            reward = reward + v211_weak_penalty
+            reward_terms = dict(reward_terms)
+            reward_terms["fixed_plane_v211_late_weak_event_penalty"] = v211_weak_penalty
+            reward_terms["total"] = reward
         if self.cfg.fixed_plane_v69_failed_first_peak_vz_reward_weight > 0.0:
             reward = reward + failed_first_peak_vz_credit
             reward_terms = dict(reward_terms)
@@ -17880,6 +18483,387 @@ class MjxJuggleEnv:
                 third_release_active, third_release_score, 0.0
             )
             reward_terms["total"] = reward
+            if float(getattr(self.cfg, 'v237_release_shortfall_weight', 0.)) > 0.:
+                from fixed_plane_v237_release_margin import release_shortfall
+                third_release_shortfall = release_shortfall(
+                    active=third_release_active, score=third_release_score,
+                    group=state.v225_group,
+                    weight=float(self.cfg.v237_release_shortfall_weight))
+                reward = reward + third_release_shortfall
+                reward_terms['fixed_plane_v237_third_release_shortfall'] = third_release_shortfall
+                reward_terms['total'] = reward
+
+        if float(getattr(self.cfg, 'v239_release_apex_weight', 0.)) > 0.:
+            from fixed_plane_v239_release_apex import release_apex_penalty
+            release_apex_cost, release_apex_active, release_apex_shortfall = (
+                release_apex_penalty(
+                    release_event=collision_outcome_release_event,
+                    previous_hit_count=state.hit_count,
+                    group=state.v225_group,
+                    predicted_apex_z_m=predicted_apex_z,
+                    target_apex_z_m=self._fixed_plane_limit_cycle_desired_apex_z_m(state.hit_count),
+                    weight=float(self.cfg.v239_release_apex_weight),
+                    scale_m=float(self.cfg.v239_release_apex_scale_m)))
+            reward = reward + release_apex_cost
+            reward_terms = dict(reward_terms)
+            reward_terms['fixed_plane_v239_release_apex_penalty'] = release_apex_cost
+            reward_terms['metric/v239_release_active'] = release_apex_active.astype(jnp.float32)
+            reward_terms['metric/v239_release_apex_shortfall_m'] = release_apex_shortfall
+            reward_terms['total'] = reward
+
+        if float(getattr(self.cfg, 'v240_extra_ball_xy_weight', 0.)) > 0.:
+            from fixed_plane_v240_release_balance import extra_xy_penalty
+            extra_ball_xy_cost = extra_xy_penalty(
+                existing_cost=reward_terms['fixed_plane_v166_physical_ball_xy_penalty'],
+                group=state.v225_group,
+                base_weight=float(self.cfg.fixed_plane_v166_physical_ball_xy_weight),
+                extra_weight=float(self.cfg.v240_extra_ball_xy_weight))
+            reward = reward + extra_ball_xy_cost
+            reward_terms = dict(reward_terms)
+            reward_terms['fixed_plane_v240_extra_ball_xy_penalty'] = extra_ball_xy_cost
+            reward_terms['total'] = reward
+
+        if bool(getattr(self.cfg, 'v242_startup_vz_outcome_only', False)):
+            from fixed_plane_v242_startup_objectives import startup_stroke_correction
+            startup_vz_correction = startup_stroke_correction(
+                existing_credit=reward_terms['fixed_contact_smooth_stroke_vz_reward'],
+                previous_hit_count=state.hit_count, enabled=True)
+            reward = reward + startup_vz_correction
+            reward_terms = dict(reward_terms)
+            reward_terms['fixed_plane_v242_startup_stroke_correction'] = startup_vz_correction
+            reward_terms['total'] = reward
+        if float(getattr(self.cfg, 'v241_physical_apex_huber_weight', 0.)) > 0.:
+            from fixed_plane_v241_physical_outcome import (
+                physical_apex_huber_penalty, release_goal_hit_count)
+            outcome_goal_count = release_goal_hit_count(
+                confirmed_hit_count=state.hit_count,
+                contact_time_s=state.collision_outcome_pending_contact_time_s,
+                last_counted_hit_time_s=state.last_counted_hit_time)
+            outcome_base_goal = self._fixed_plane_limit_cycle_desired_apex_z_m(outcome_goal_count)
+            outcome_reward_goal = outcome_base_goal
+            startup_apex_reward_margin = (
+                float(getattr(self.cfg, 'v245_second_apex_reward_margin_m', 0.)) != 0.
+                or float(getattr(self.cfg, 'v245_third_apex_reward_margin_m', 0.)) != 0.)
+            if startup_apex_reward_margin:
+                from fixed_plane_v245_startup_apex_margin import reward_apex_target
+                outcome_reward_goal = reward_apex_target(
+                    outcome_base_goal, outcome_goal_count,
+                    second_margin_m=float(self.cfg.v245_second_apex_reward_margin_m),
+                    third_margin_m=float(self.cfg.v245_third_apex_reward_margin_m))
+            outcome_cost, outcome_active, outcome_error = physical_apex_huber_penalty(
+                release_event=collision_outcome_release_event,
+                previous_hit_count=outcome_goal_count,
+                predicted_apex_z_m=predicted_apex_z,
+                target_apex_z_m=outcome_reward_goal,
+                weight_per_m2=float(self.cfg.v241_physical_apex_huber_weight),
+                delta_m=float(self.cfg.v241_physical_apex_huber_delta_m))
+            if bool(getattr(self.cfg, 'v251_startup_energy_band_enabled', False)):
+                from fixed_plane_v251_startup_energy_band import (
+                    STARTUP_APEX_CEILING_M, startup_energy_band_cost)
+                outcome_cost, outcome_error, startup_band_active = startup_energy_band_cost(
+                    existing_cost=outcome_cost, existing_error=outcome_error,
+                    release_event=collision_outcome_release_event,
+                    goal_hit_count=outcome_goal_count,
+                    apex_z_m=predicted_apex_z, base_goal_z_m=outcome_base_goal,
+                    upper_z_m=STARTUP_APEX_CEILING_M,
+                    weight_per_m2=float(self.cfg.v241_physical_apex_huber_weight),
+                    delta_m=float(self.cfg.v241_physical_apex_huber_delta_m))
+            if (float(getattr(self.cfg, 'v252_second_energy_band_margin_m', 0.)) > 0.
+                    or float(getattr(self.cfg, 'v252_third_energy_band_margin_m', 0.)) > 0.):
+                from fixed_plane_v245_startup_apex_margin import reward_apex_target
+                from fixed_plane_v251_startup_energy_band import (
+                    STARTUP_APEX_CEILING_M, startup_energy_band_cost)
+                reserve_band_lower_m = reward_apex_target(
+                    outcome_base_goal, outcome_goal_count,
+                    second_margin_m=float(self.cfg.v252_second_energy_band_margin_m),
+                    third_margin_m=float(self.cfg.v252_third_energy_band_margin_m))
+                outcome_cost, outcome_error, startup_band_active = startup_energy_band_cost(
+                    existing_cost=outcome_cost, existing_error=outcome_error,
+                    release_event=collision_outcome_release_event,
+                    goal_hit_count=outcome_goal_count,
+                    apex_z_m=predicted_apex_z, base_goal_z_m=reserve_band_lower_m,
+                    upper_z_m=STARTUP_APEX_CEILING_M,
+                    weight_per_m2=float(self.cfg.v241_physical_apex_huber_weight),
+                    delta_m=float(self.cfg.v241_physical_apex_huber_delta_m))
+            reward = reward + outcome_cost
+            reward_terms = dict(reward_terms)
+            reward_terms['fixed_plane_v241_physical_apex_huber_penalty'] = outcome_cost
+            reward_terms['metric/v241_physical_release_active'] = outcome_active.astype(jnp.float32)
+            reward_terms['metric/v241_physical_apex_abs_error_m'] = outcome_error
+            reward_terms['metric/v241_physical_goal_hit_count'] = jnp.where(
+                outcome_active, outcome_goal_count.astype(jnp.float32), 0.)
+            if bool(getattr(self.cfg, 'v251_startup_energy_band_enabled', False)):
+                reward_terms['metric/v251_startup_band_active'] = startup_band_active.astype(jnp.float32)
+                reward_terms['metric/v251_startup_band_lower_m'] = jnp.where(
+                    startup_band_active, outcome_base_goal, 0.)
+                reward_terms['metric/v251_startup_band_upper_m'] = jnp.where(
+                    startup_band_active, STARTUP_APEX_CEILING_M, 0.)
+            if (float(getattr(self.cfg, 'v252_second_energy_band_margin_m', 0.)) > 0.
+                    or float(getattr(self.cfg, 'v252_third_energy_band_margin_m', 0.)) > 0.):
+                reward_terms['metric/v251_startup_band_lower_m'] = jnp.where(
+                    startup_band_active, reserve_band_lower_m, 0.)
+            if startup_apex_reward_margin:
+                reward_terms['metric/v245_base_apex_goal_m'] = jnp.where(
+                    outcome_active, outcome_base_goal, 0.)
+                reward_terms['metric/v245_reward_apex_goal_m'] = jnp.where(
+                    outcome_active, outcome_reward_goal, 0.)
+            if (float(getattr(self.cfg, 'v247_startup_physical_weak_penalty_weight', 0.)) > 0.
+                    or float(getattr(self.cfg, 'v247_late_physical_band_penalty_weight', 0.)) > 0.):
+                from fixed_plane_v247_physical_risk import physical_outcome_risk_penalties
+                _, risk_quality_floor = limit_cycle_hit_apex_thresholds_m(
+                    outcome_base_goal,
+                    contact_ball_center_z_m=(
+                        float(self.cfg.fixed_contact_surface_z_m)
+                        + state.model.geom_size[:, self.ball_geom_id, 0]),
+                    quality_margin_m=float(self.cfg.fixed_plane_limit_cycle_hit_quality_apex_margin_m),
+                    survival_margin_m=float(self.cfg.fixed_plane_limit_cycle_hit_survival_apex_margin_m))
+                # This is the existing V80/V54 resolved gate-event mask.
+                # Startup release and late resolution must keep separate clocks.
+                risk_late_resolved = (
+                    (launched_upward | ignored_fast_hit | low_survival_launch | subfloor_launch)
+                    & (state.hit_count >= 3))
+                risk_startup_cost, risk_late_cost = physical_outcome_risk_penalties(
+                    release_event=collision_outcome_release_event,
+                    release_goal_hit_count=outcome_goal_count,
+                    physical_apex_z_m=predicted_apex_z,
+                    quality_apex_floor_z_m=risk_quality_floor,
+                    late_resolved_event=risk_late_resolved,
+                    startup_weight=float(self.cfg.v247_startup_physical_weak_penalty_weight),
+                    late_weight=float(self.cfg.v247_late_physical_band_penalty_weight))
+                reward = reward + risk_startup_cost + risk_late_cost
+                reward_terms['fixed_plane_v247_startup_physical_weak_penalty'] = risk_startup_cost
+                reward_terms['fixed_plane_v247_late_physical_band_penalty'] = risk_late_cost
+                reward_terms['metric/v247_release_apex_z_m'] = jnp.where(
+                    outcome_active, predicted_apex_z, 0.)
+                reward_terms['metric/v247_startup_quality_floor_z_m'] = jnp.where(
+                    outcome_active & (outcome_goal_count <= 2), risk_quality_floor, 0.)
+                reward_terms['metric/v247_late_resolved_event'] = risk_late_resolved.astype(jnp.float32)
+            reward_terms['total'] = reward
+        if (float(getattr(self.cfg, 'v253_preimpact_energy_weight_per_s', 0.)) > 0.
+                or float(getattr(self.cfg, 'v253_flight_xy_reward_weight_per_s', 0.)) > 0.):
+            from fixed_plane_v253_preimpact import (
+                preimpact_energy_penalty, flight_horizontal_quality_reward)
+            if bool(getattr(self.cfg, 'v293_monotone_preimpact_enabled', False)):
+                from fixed_plane_v293_monotone_preimpact import preimpact_energy_penalty
+            from fixed_plane_v245_startup_apex_margin import reward_apex_target
+            preparation_goal = reward_apex_target(
+                self._fixed_plane_limit_cycle_desired_apex_z_m(state.hit_count),
+                state.hit_count,
+                second_margin_m=float(self.cfg.v252_second_energy_band_margin_m),
+                third_margin_m=float(self.cfg.v252_third_energy_band_margin_m))
+            preparation_cost, preparation_active, preparation_vz, preparation_ttc = preimpact_energy_penalty(
+                previous_hit_count=state.hit_count, pending_hit=state.pending_hit,
+                in_contact=in_contact, ball_z_m=bpos[:, 2], racket_z_m=rpos[:, 2],
+                ball_vz_m_s=bvel[:, 2], racket_vz_m_s=racket_contact_point_velocity[:, 2],
+                target_apex_z_m=preparation_goal, gravity_m_s2=jnp.abs(state.dr_gravity_z),
+                ball_radius_m=float(self.mj_model.geom_size[self.ball_geom_id, 0]),
+                effective_restitution=float(self.cfg.fixed_plane_limit_cycle_effective_restitution),
+                max_racket_vz_m_s=float(self.cfg.fixed_plane_limit_cycle_max_contact_vz_m_s),
+                lead_s=float(self.cfg.v253_preimpact_energy_lead_s), velocity_scale_m_s=.25,
+                weight_per_s=float(self.cfg.v253_preimpact_energy_weight_per_s), dt_s=self.dt)
+            if float(getattr(self.cfg, 'v255_near_preparation_gain', 0.)) > 0.:
+                from fixed_plane_v255_corner import near_preparation_multiplier
+                preparation_scale = near_preparation_multiplier(
+                    initial_y_m=state.v225_reset_y_offset_m, group=state.v225_group,
+                    gain=float(self.cfg.v255_near_preparation_gain))
+                preparation_cost = preparation_cost * preparation_scale
+            flight_xy_reward = flight_horizontal_quality_reward(
+                previous_hit_count=state.hit_count, in_contact=in_contact,
+                relative_z_m=rel[:, 2], speed_m_s=jnp.linalg.norm(bvel[:, :2], axis=-1),
+                weight_per_s=float(self.cfg.v253_flight_xy_reward_weight_per_s), dt_s=self.dt)
+            reward = reward + preparation_cost + flight_xy_reward
+            reward_terms = dict(reward_terms)
+            reward_terms['fixed_plane_v253_preimpact_energy_penalty'] = preparation_cost
+            reward_terms['fixed_plane_v253_flight_xy_reward'] = flight_xy_reward
+            reward_terms['metric/v253_preimpact_active'] = preparation_active.astype(jnp.float32)
+            reward_terms['metric/v253_preimpact_target_vz_m_s'] = jnp.where(preparation_active, preparation_vz, 0.)
+            reward_terms['metric/v253_preimpact_ttc_s'] = jnp.where(preparation_active, preparation_ttc, 0.)
+            reward_terms['total'] = reward
+
+        if float(getattr(self.cfg, 'v276_second_prepare_weight_per_s', 0.)) > 0.:
+            from fixed_plane_v276_second_launch import second_preparation_penalty
+            if bool(getattr(self.cfg, 'v293_monotone_preimpact_enabled', False)):
+                from fixed_plane_v293_monotone_preimpact import second_preparation_penalty
+            second_cost, second_active, second_vz, second_ttc = second_preparation_penalty(
+                initial_y_m=state.v225_reset_y_offset_m, group=state.v225_group,
+                previous_hit_count=state.hit_count, pending_hit=state.pending_hit,
+                in_contact=in_contact, ball_z_m=bpos[:, 2], racket_z_m=rpos[:, 2],
+                ball_vz_m_s=bvel[:, 2], racket_vz_m_s=racket_contact_point_velocity[:, 2],
+                target_apex_z_m=self._fixed_plane_limit_cycle_desired_apex_z_m(state.hit_count),
+                gravity_m_s2=jnp.abs(state.dr_gravity_z),
+                ball_radius_m=float(self.mj_model.geom_size[self.ball_geom_id, 0]),
+                effective_restitution=float(self.cfg.fixed_plane_limit_cycle_effective_restitution),
+                max_racket_vz_m_s=float(self.cfg.fixed_plane_limit_cycle_max_contact_vz_m_s),
+                lead_s=float(self.cfg.v276_second_prepare_lead_s), velocity_scale_m_s=.25,
+                weight_per_s=float(self.cfg.v276_second_prepare_weight_per_s), dt_s=self.dt)
+            reward = reward + second_cost
+            reward_terms = dict(reward_terms)
+            reward_terms['fixed_plane_v276_second_preimpact_penalty'] = second_cost
+            reward_terms['metric/v276_second_prepare_active'] = second_active.astype(jnp.float32)
+            reward_terms['metric/v276_second_prepare_target_vz_m_s'] = jnp.where(second_active, second_vz, 0.)
+            reward_terms['metric/v276_second_prepare_ttc_s'] = jnp.where(second_active, second_ttc, 0.)
+            reward_terms['total'] = reward
+
+        if float(getattr(self.cfg, 'v277_second_reserve_credit_weight', 0.)) > 0.:
+            from fixed_plane_v277_second_reserve import second_reserve_credit
+            second_reserve = second_reserve_credit(
+                counted_hit=counted_hit, previous_hit_count=state.hit_count,
+                initial_y_m=state.v225_reset_y_offset_m, group=state.v225_group,
+                apex_z_m=predicted_apex_z,
+                weight=float(self.cfg.v277_second_reserve_credit_weight))
+            reward = reward + second_reserve
+            reward_terms = dict(reward_terms)
+            reward_terms['fixed_plane_v277_second_reserve_credit'] = second_reserve
+            reward_terms['metric/v277_second_confirmed_event'] = (counted_hit & (state.hit_count == 1)).astype(jnp.float32)
+            reward_terms['total'] = reward
+
+        if float(getattr(self.cfg, 'v279_energy_progress_weight', 0.)) > 0.:
+            from fixed_plane_v279_energy_progress import startup_energy_correction
+            zeros = jnp.zeros_like(reward)
+            energy_correction, energy_metrics = startup_energy_correction(
+                release_event=collision_outcome_release_event, phase=outcome_goal_count,
+                incoming_z_m=state.collision_outcome_pending_pre_ball_position_m[:, 2],
+                incoming_vz_m_s=state.collision_outcome_pending_pre_ball_velocity_m_s[:, 2],
+                gravity_m_s2=state.dr_gravity_z, outgoing_apex_z_m=predicted_apex_z,
+                initial_y_m=state.v225_reset_y_offset_m, group=state.v225_group,
+                old_outcome_cost=reward_terms['fixed_plane_v241_physical_apex_huber_penalty'],
+                old_weak_cost=reward_terms.get('fixed_plane_v247_startup_physical_weak_penalty', zeros),
+                old_preparation_cost=(reward_terms.get('fixed_plane_v253_preimpact_energy_penalty', zeros)
+                    + reward_terms.get('fixed_plane_v276_second_preimpact_penalty', zeros)),
+                preparation_phase=state.hit_count,
+                physical_huber_weight=float(self.cfg.v241_physical_apex_huber_weight),
+                physical_huber_delta_m=float(self.cfg.v241_physical_apex_huber_delta_m),
+                progress_weight=float(self.cfg.v279_energy_progress_weight))
+            reward = reward + energy_correction
+            reward_terms = dict(reward_terms)
+            reward_terms['fixed_plane_v279_startup_energy_correction'] = energy_correction
+            for energy_name, energy_value in energy_metrics.items():
+                reward_terms['metric/v279_' + energy_name] = energy_value.astype(jnp.float32)
+            reward_terms['total'] = reward
+
+        if float(getattr(self.cfg, 'v284_reference_prepare_weight_per_s', 0.)) > 0.:
+            from fixed_plane_v284_reference_prepare import preparation_penalty
+            reference_axis = data.xaxis[:, self.arm_jids, :]
+            reference_anchor = data.xanchor[:, self.arm_jids, :]
+            reference_z_jacobian = jnp.cross(
+                reference_axis, rpos[:, None, :] - reference_anchor)[:, :, 2]
+            reference_z_lead = jnp.sum(reference_z_jacobian
+                * (arm_cmd_q - data.qpos[:, self.arm_qadr]), axis=-1)
+            reference_cost, reference_metrics = preparation_penalty(
+                previous_hits=state.hit_count, pending=state.pending_hit,
+                in_contact=in_contact, ball_z_m=bpos[:, 2], racket_z_m=rpos[:, 2],
+                ball_vz_m_s=bvel[:, 2], racket_vz_m_s=racket_contact_point_velocity[:, 2],
+                gravity_m_s2=state.dr_gravity_z,
+                ball_radius_m=state.model.geom_size[:, self.ball_geom_id, 0],
+                reference_z_lead_m=reference_z_lead,
+                initial_y_m=state.v225_reset_y_offset_m, group=state.v225_group,
+                weight_per_s=float(self.cfg.v284_reference_prepare_weight_per_s),
+                dt_s=self.dt)
+            reward = reward + reference_cost
+            reward_terms = dict(reward_terms)
+            reward_terms['fixed_plane_v284_reference_prepare_penalty'] = reference_cost
+            for reference_name, reference_value in reference_metrics.items():
+                reward_terms['metric/v284_' + reference_name] = reference_value.astype(jnp.float32)
+            reward_terms['total'] = reward
+            if float(getattr(self.cfg, 'v286_reference_velocity_weight_per_s', 0.)) > 0.:
+                from fixed_plane_v286_vertical_intent import velocity_preparation_penalty
+                reference_command_vz = jnp.sum(reference_z_jacobian * cmd_qvel, axis=-1)
+                velocity_cost, velocity_metrics = velocity_preparation_penalty(
+                    command_vz_m_s=reference_command_vz,
+                    reference_z_lead_m=reference_z_lead,
+                    active=reference_metrics['active'],
+                    weak_fraction=reference_metrics['weak_fraction'],
+                    initial_y_m=state.v225_reset_y_offset_m,
+                    weight_per_s=float(self.cfg.v286_reference_velocity_weight_per_s),
+                    dt_s=self.dt)
+                reward = reward + velocity_cost
+                reward_terms['fixed_plane_v286_vertical_intent_penalty'] = velocity_cost
+                for velocity_name, velocity_value in velocity_metrics.items():
+                    reward_terms['metric/v286_' + velocity_name] = velocity_value.astype(jnp.float32)
+                reward_terms['total'] = reward
+
+            if (float(getattr(self.cfg, 'v288_raw_stroke_weight_per_s', 0.)) > 0.
+                    and external_arm_q_ref is None):
+                from fixed_plane_v288_safe_stroke import safe_stroke_penalties
+                v288_raw_joint_velocity = jnp.clip(
+                    raw_cmd_qvel, -self.arm_vel_limit_rad_s, self.arm_vel_limit_rad_s)
+                v288_raw_reference_vz = jnp.sum(
+                    reference_z_jacobian * v288_raw_joint_velocity, axis=-1)
+                v288_raw_cost, v288_feasible_cost, v288_metrics = safe_stroke_penalties(
+                    raw_command_vz_m_s=v288_raw_reference_vz,
+                    projection_correction_norm_rad_s=cartesian_projection_correction_norm,
+                    reference_z_lead_m=reference_z_lead,
+                    active=reference_metrics['active'],
+                    weak_fraction=reference_metrics['weak_fraction'],
+                    initial_y_m=state.v225_reset_y_offset_m,
+                    raw_weight_per_s=float(self.cfg.v288_raw_stroke_weight_per_s),
+                    feasible_weight_per_s=float(self.cfg.v288_feasible_stroke_weight_per_s),
+                    dt_s=self.dt)
+                reward = reward + v288_raw_cost + v288_feasible_cost
+                reward_terms['fixed_plane_v288_raw_upward_penalty'] = v288_raw_cost
+                reward_terms['fixed_plane_v288_projection_feasibility_penalty'] = v288_feasible_cost
+                reward_terms['metric/v288_raw_vz_unmasked_m_s'] = v288_raw_reference_vz
+                for v288_name, v288_value in v288_metrics.items():
+                    reward_terms['metric/v288_' + v288_name] = v288_value.astype(jnp.float32)
+                reward_terms['total'] = reward
+
+            if (float(getattr(self.cfg, 'v289_coordinated_stroke_weight_per_s', 0.)) > 0.
+                    and external_arm_q_ref is None):
+                from fixed_plane_v289_coordinated_stroke import coordinated_stroke_penalty
+                v289_raw_joint_velocity = jnp.clip(
+                    raw_cmd_qvel, -self.arm_vel_limit_rad_s, self.arm_vel_limit_rad_s)
+                v289_translation_jacobian = jnp.cross(
+                    reference_axis, rpos[:, None, :] - reference_anchor)
+                v289_linear_velocity = jnp.sum(
+                    v289_translation_jacobian * v289_raw_joint_velocity[:, :, None], axis=1)
+                v289_angular_velocity = jnp.sum(
+                    reference_axis * v289_raw_joint_velocity[:, :, None], axis=1)
+                v289_raw_twist = jnp.concatenate(
+                    (v289_linear_velocity, v289_angular_velocity), axis=-1)
+                v289_cost, v289_metrics = coordinated_stroke_penalty(
+                    command_twist=v289_raw_twist, reference_z_lead_m=reference_z_lead,
+                    active=reference_metrics['active'],
+                    weak_fraction=reference_metrics['weak_fraction'],
+                    initial_y_m=state.v225_reset_y_offset_m,
+                    weight_per_s=float(self.cfg.v289_coordinated_stroke_weight_per_s),
+                    dt_s=self.dt)
+                reward = reward + v289_cost
+                reward_terms['fixed_plane_v289_coordinated_stroke_penalty'] = v289_cost
+                for v289_name, v289_value in v289_metrics.items():
+                    reward_terms['metric/v289_' + v289_name] = v289_value.astype(jnp.float32)
+                for v289_axis, v289_axis_name in enumerate(('vx', 'vy', 'vz', 'wx', 'wy', 'wz')):
+                    reward_terms['metric/v289_unmasked_' + v289_axis_name] = v289_raw_twist[:, v289_axis]
+                reward_terms['total'] = reward
+
+        if float(getattr(self.cfg, 'v287_startup_contact_center_radius_m', 0.)) > 0.:
+            from fixed_plane_v287_startup_center import startup_center_correction
+            center_correction, center_metrics = startup_center_correction(
+                old_center_penalty=reward_terms['hit_contact_center_excess_penalty'],
+                contact_distance_m=reward_terms['metric/physical_center_penalty_distance_sum_m'],
+                physical_center_event=reward_terms['metric/physical_center_penalty_event_count'],
+                previous_hits=state.hit_count, group=state.v225_group,
+                initial_y_m=state.v225_reset_y_offset_m,
+                new_radius_m=float(self.cfg.v287_startup_contact_center_radius_m),
+                weight=float(self.cfg.hit_contact_center_excess_penalty_weight),
+                sigma_m=float(self.cfg.hit_contact_center_excess_sigma_m))
+            reward = reward + center_correction
+            reward_terms = dict(reward_terms)
+            reward_terms['fixed_plane_v287_startup_center_correction'] = center_correction
+            for center_name, center_value in center_metrics.items():
+                reward_terms['metric/v287_' + center_name] = center_value.astype(jnp.float32)
+            reward_terms['total'] = reward
+
+        if float(getattr(self.cfg, 'v241_late_ball_xy_weight', 0.)) > 0.:
+            from fixed_plane_v241_physical_outcome import late_ball_xy_penalty
+            late_xy_cost = late_ball_xy_penalty(
+                existing_cost=reward_terms['fixed_plane_v166_physical_ball_xy_penalty'],
+                previous_hit_count=state.hit_count,
+                base_weight=float(self.cfg.fixed_plane_v166_physical_ball_xy_weight),
+                extra_weight=float(self.cfg.v241_late_ball_xy_weight))
+            reward = reward + late_xy_cost
+            reward_terms = dict(reward_terms)
+            reward_terms['fixed_plane_v241_late_ball_xy_penalty'] = late_xy_cost
+            reward_terms['total'] = reward
 
         if (
             self.cfg.fixed_plane_v124_edge_z_penalty_weight > 0.0
@@ -18115,7 +19099,31 @@ class MjxJuggleEnv:
         )
 
         arm_qvel = data.qvel[:, self.arm_vadr]
+        if self.v256_enabled:
+            from fixed_plane_v256_workspace_force import spatial_rewards
+            center_reward, outward_penalty = spatial_rewards(bpos, rpos, bvel,
+                center_weight=self.cfg.v256_center_reward_per_s,
+                outward_weight=self.cfg.v256_outward_penalty_per_s, dt_s=self.dt)
+            reward = reward + center_reward + outward_penalty
+            reward_terms = dict(reward_terms)
+            reward_terms["v256_center_reward"] = center_reward
+            reward_terms["v256_outward_penalty"] = outward_penalty
+        if bool(getattr(self.cfg, "v259_enabled", False)):
+            from fixed_plane_v259_reward_tuning import near_y_rewards
+            near_position, toward_robot = near_y_rewards(bpos, rpos, bvel,
+                position_weight=self.cfg.v259_near_y_position_weight_per_s,
+                velocity_weight=self.cfg.v259_toward_y_weight_per_s,
+                safe_y_m=self.cfg.v259_safe_y_m,
+                width_m=self.cfg.v259_y_width_m, dt_s=self.dt)
+            reward = reward + near_position + toward_robot
+            reward_terms = dict(reward_terms)
+            reward_terms['v259_near_y_position_penalty'] = near_position
+            reward_terms['v259_toward_robot_penalty'] = toward_robot
         terminated, done_terms = self._termination_terms(data, bpos, rpos, state.racket_anchor)
+        if self.v256_enabled:
+            done_terms["v256_ball_workspace"] = v256_metadata[2]
+            done_terms["v256_racket_workspace"] = v256_metadata[3]
+            terminated |= v256_metadata[2] | v256_metadata[3]
         failed_confirmation_termination = (
             failed_hit
             & bool(getattr(
@@ -18668,6 +19676,30 @@ class MjxJuggleEnv:
                 ),
                 sigma_m=float(self.cfg.fixed_plane_v94_first_hit_apex_sigma_m),
             )
+            if float(getattr(self.cfg, 'v249_first_apex_reward_margin_m', 0.)) > 0.:
+                from fixed_plane_v249_bootstrap_energy import first_apex_reward_target
+                v94_first_hit_apex_credit = first_confirmed_apex_credit(
+                    counted_hit=counted_hit,
+                    confirmed_hits_before_event=state.hit_count,
+                    predicted_apex_z_m=predicted_apex_z,
+                    target_apex_z_m=first_apex_reward_target(
+                        self._fixed_plane_limit_cycle_desired_apex_z_m(state.hit_count),
+                        margin_m=float(self.cfg.v249_first_apex_reward_margin_m)),
+                    weight=float(self.cfg.fixed_plane_v94_first_hit_apex_reward_weight),
+                    sigma_m=float(self.cfg.fixed_plane_v94_first_hit_apex_sigma_m))
+            if bool(getattr(self.cfg, 'v251_startup_energy_band_enabled', False)):
+                from fixed_plane_v249_bootstrap_energy import first_apex_reward_target
+                from fixed_plane_v251_startup_energy_band import (
+                    STARTUP_APEX_CEILING_M, first_energy_band_credit)
+                v94_first_hit_apex_credit = first_energy_band_credit(
+                    counted_hit=counted_hit, previous_hit_count=state.hit_count,
+                    apex_z_m=predicted_apex_z,
+                    lower_z_m=first_apex_reward_target(
+                        self._fixed_plane_limit_cycle_desired_apex_z_m(state.hit_count),
+                        margin_m=float(self.cfg.v249_first_apex_reward_margin_m)),
+                    upper_z_m=STARTUP_APEX_CEILING_M,
+                    weight=float(self.cfg.fixed_plane_v94_first_hit_apex_reward_weight),
+                    sigma_m=float(self.cfg.fixed_plane_v94_first_hit_apex_sigma_m))
         if float(self.cfg.fixed_plane_v106_first_launch_progress_weight) > 0.0:
             from fixed_plane_v106 import first_launch_clearance_credit
 
@@ -19126,6 +20158,23 @@ class MjxJuggleEnv:
                 collision_outcome_pending_contact_time_s
             ),
         )
+        if self.camera_position_noise_schema:
+            next_state = CameraPositionNoiseEnvState(
+                *next_state, state.ball_position_noise_epsilon_m)
+        if self.v256_enabled:
+            next_state = V256WorkspaceForceEnvState(
+                *next_state, v256_metadata[0], v256_metadata[1])
+        if self.racket_attitude_observation_dr_enabled:
+            next_state = RacketAttitudeObservationEnvState(
+                *next_state, state.racket_attitude_observation_bias_rad)
+        if self.v224_history_enabled:
+            next_state = V224HistoryRecoveryEnvState(*next_state,
+                state.v224_observation_history, state.v224_impulse_scheduled_step,
+                state.v224_impulse_applied | v224_impulse_event)
+        if self.v225_enabled:
+            next_state = V225NearSideRecoveryEnvState(*next_state, state.v225_group,
+                state.v225_reset_y_offset_m, state.v225_target_vy_m_s,
+                state.v225_scheduled_step, state.v225_momentum_applied | v225_momentum_event)
         obs_state = next_state._replace(prev_racket_pos=state.prev_racket_pos)
         obs_state, obs, obs_metrics = self._apply_observation_pipeline(obs_state, bpos, bvel)
         next_state = obs_state._replace(prev_racket_pos=rpos)
@@ -20041,6 +21090,413 @@ class MjxJuggleEnv:
                 ),
             })
         metrics.update(obs_metrics)
+        if self.v256_enabled:
+            metrics["v256/ball_workspace_exit"] = v256_metadata[2].astype(jnp.float32)
+            metrics["v256/racket_workspace_exit"] = v256_metadata[3].astype(jnp.float32)
+            metrics["v256/first_exit_substep"] = v256_metadata[6].astype(jnp.float32)
+            metrics["v256/rebound_events"] = v256_metadata[5].astype(jnp.float32)
+            for axis, label in enumerate(("x", "y", "z")):
+                metrics[f"v256/force_rms_{label}_n"] = jnp.sqrt(v256_metadata[4][:, axis] / 5.)
+            metrics["v256/center_reward"] = center_reward
+            metrics["v256/outward_penalty"] = outward_penalty
+            if self.v258_enabled:
+                metrics["v258/rebound_limited_events"] = v256_metadata[7].astype(jnp.float32)
+                metrics["v258/rebound_force_peak_n"] = v256_metadata[8]
+                metrics["v258/rebound_predicted_deflection_deg"] = v256_metadata[9]
+                metrics["v258/rebound_predicted_relative_speed_change"] = v256_metadata[10]
+                metrics["v258/rebound_near_angle_cap_events"] = v256_metadata[11].astype(jnp.float32)
+        if self.racket_attitude_observation_dr_enabled:
+            bias = next_state.racket_attitude_observation_bias_rad
+            angle_deg = jnp.linalg.norm(bias, axis=-1) * (180. / math.pi)
+            metrics["v223/racket_observation_bias_angle_deg"] = angle_deg
+            metrics["v223/racket_observation_bias_x_rad"] = bias[:, 0]
+            metrics["v223/racket_observation_bias_y_rad"] = bias[:, 1]
+            metrics["v223/racket_observation_biased"] = (angle_deg > 0.).astype(jnp.float32)
+        if self.v224_history_enabled:
+            metrics["v224/flight_impulse_event"] = v224_impulse_event.astype(jnp.float32)
+            metrics["v224/history_available"] = (next_state.step_count >= 40).astype(jnp.float32)
+            metrics["v224/impulse_scheduled_step"] = state.v224_impulse_scheduled_step.astype(jnp.float32)
+        if self.v225_enabled:
+            metrics["v225/group"] = state.v225_group.astype(jnp.float32)
+            metrics["v225/reset_y_offset_m"] = state.v225_reset_y_offset_m
+            metrics["v225/target_vy_m_s"] = state.v225_target_vy_m_s
+            metrics["v225/momentum_event"] = v225_momentum_event.astype(jnp.float32)
+            metrics["v225/momentum_delta_m_s"] = v225_momentum_delta
+            metrics["v225/ball_ey_m"] = bpos[:, 1]-float(self.cfg.fixed_contact_workspace_center_xy_m[1])
+            metrics["v225/ball_vy_m_s"] = bvel[:, 1]
+        if impulse_limit > 0.:
+            metrics["v221/flight_impulse_event"] = flight_impulse_applied.astype(jnp.float32)
+            metrics["v221/flight_impulse_delta_vxy_m_s"] = jnp.where(
+                flight_impulse_applied, jnp.linalg.norm(delta_xy,axis=-1), 0.)
+        if (getattr(self.cfg, "fplc_v221_episode_weighted_convergence", False)
+                and self.cfg.dr_randomize_contact):
+            metrics["v221/contact_dynamic_active"] = (
+                state.hit_count >= int(self.cfg.fplc_v221_contact_dr_min_hits)).astype(jnp.float32)
+            metrics["v221/contact_time_s"] = state.model.pair_solref[:,self.ball_racket_pair_ids[0],0]
+            metrics["v221/contact_damping"] = state.model.pair_solref[:,self.ball_racket_pair_ids[0],1]
+            metrics["v221/contact_mu0"] = state.model.pair_friction[:,self.ball_racket_pair_ids[0],0]
+            metrics["v221/contact_mu1"] = state.model.pair_friction[:,self.ball_racket_pair_ids[0],1]
+        if getattr(self.cfg, "fplc_v221_camera_dropout_frames", False):
+            invalid_ball_state = ~next_state.fixed_contact_ball_state_valid
+            done = done | invalid_ball_state
+            done_terms["v221_invalid_ball_state"] = invalid_ball_state
+            metrics["terminated"] = jnp.maximum(
+                metrics["terminated"], invalid_ball_state.astype(jnp.float32))
+            metrics["truncated"] = jnp.where(invalid_ball_state, 0., metrics["truncated"])
+        if float(getattr(self.cfg, 'v290_startup_potential_weight', 0.)) > 0.:
+            from fixed_plane_v290_startup_potential import state_potential, potential_reward
+            v290_weight = float(self.cfg.v290_startup_potential_weight)
+            v290_before = state_potential(self, state, v290_weight)
+            v290_raw_after = state_potential(self, next_state, v290_weight)
+            v290_reward, v290_after = potential_reward(
+                v290_before, v290_raw_after, metrics['terminated'])
+            reward = reward + v290_reward
+            metrics['reward/total'] = metrics['reward/total'] + v290_reward
+            metrics['reward/fixed_plane_v290_startup_potential_shaping'] = v290_reward
+            metrics['v290_phi_before'] = v290_before
+            metrics['v290_phi_after_unclamped'] = v290_raw_after
+            metrics['v290_phi_after'] = v290_after
+            metrics['v290_active'] = ((v290_before != 0.) | (v290_raw_after != 0.)).astype(jnp.float32)
+        if float(getattr(self.cfg, 'v291_near_acquisition_credit', 0.)) > 0.:
+            from fixed_plane_v291_acquisition_success import acquisition_reward
+            v291_reward, v291_metrics = acquisition_reward(
+                previous_hits=state.hit_count, next_hits=next_state.hit_count,
+                terminated=metrics['terminated'], group=state.v225_group,
+                initial_y_m=state.v225_reset_y_offset_m,
+                weight=float(self.cfg.v291_near_acquisition_credit))
+            reward = reward + v291_reward
+            metrics['reward/total'] = metrics['reward/total'] + v291_reward
+            metrics['reward/fixed_plane_v291_acquisition_success'] = v291_reward
+            for v291_name, v291_value in v291_metrics.items():
+                metrics['v291_' + v291_name] = v291_value
+        if float(getattr(self.cfg, 'v292_critical_startup_extra_scale', 0.)) > 0.:
+            from fixed_plane_v292_critical_startup import critical_reward_correction
+            v292_reward, v292_metrics = critical_reward_correction(
+                potential_reward=metrics['reward/fixed_plane_v290_startup_potential_shaping'],
+                acquisition_reward=metrics['reward/fixed_plane_v291_acquisition_success'],
+                group=state.v225_group, initial_y_m=state.v225_reset_y_offset_m,
+                extra_scale=float(self.cfg.v292_critical_startup_extra_scale))
+            reward = reward + v292_reward
+            metrics['reward/total'] = metrics['reward/total'] + v292_reward
+            metrics['reward/fixed_plane_v292_critical_startup'] = v292_reward
+            for v292_name, v292_value in v292_metrics.items():
+                metrics['v292_' + v292_name] = v292_value
+        if float(getattr(self.cfg, 'v294_critical_preparation_scale', 0.)) > 0.:
+            from fixed_plane_v294_effective_preimpact import effective_preparation_penalty
+            from fixed_plane_v245_startup_apex_margin import reward_apex_target
+            v294_base_goal = self._fixed_plane_limit_cycle_desired_apex_z_m(state.hit_count)
+            v294_third_goal = reward_apex_target(
+                v294_base_goal, state.hit_count,
+                second_margin_m=float(self.cfg.v252_second_energy_band_margin_m),
+                third_margin_m=float(self.cfg.v252_third_energy_band_margin_m))
+            v294_reward, v294_metrics = effective_preparation_penalty(
+                previous_hit_count=state.hit_count, pending_hit=state.pending_hit,
+                in_contact=metrics['in_contact'], ball_z_m=metrics['ball_z'],
+                racket_z_m=metrics['racket_z'], ball_vz_m_s=metrics['ball_vz'],
+                racket_vz_m_s=metrics['racket_contact_point_vz'],
+                base_apex_goal_m=v294_base_goal, third_apex_goal_m=v294_third_goal,
+                initial_y_m=state.v225_reset_y_offset_m, group=state.v225_group,
+                gravity_m_s2=jnp.abs(state.dr_gravity_z),
+                ball_radius_m=float(self.mj_model.geom_size[self.ball_geom_id, 0]),
+                effective_restitution=float(self.cfg.fixed_plane_limit_cycle_effective_restitution),
+                max_racket_vz_m_s=float(self.cfg.fixed_plane_limit_cycle_max_contact_vz_m_s),
+                second_lead_s=float(self.cfg.v276_second_prepare_lead_s),
+                third_lead_s=float(self.cfg.v253_preimpact_energy_lead_s),
+                second_weight_per_s=float(self.cfg.v276_second_prepare_weight_per_s),
+                third_weight_per_s=float(self.cfg.v253_preimpact_energy_weight_per_s),
+                near_preparation_gain=float(self.cfg.v255_near_preparation_gain),
+                weight_scale=float(self.cfg.v294_critical_preparation_scale), dt_s=self.dt)
+            # Deliberately after V279: this named term must reach returned reward.
+            reward = reward + v294_reward
+            metrics['reward/total'] = metrics['reward/total'] + v294_reward
+            metrics['reward/fixed_plane_v294_effective_preimpact_penalty'] = v294_reward
+            for v294_name, v294_value in v294_metrics.items():
+                metrics['v294_' + v294_name] = v294_value
+        if float(getattr(self.cfg, 'v295_mid_near_preparation_scale', 0.)) > 0.:
+            from fixed_plane_v295_mid_near_preimpact import mid_near_preparation_penalty
+            from fixed_plane_v245_startup_apex_margin import reward_apex_target
+            v295_base_goal = self._fixed_plane_limit_cycle_desired_apex_z_m(state.hit_count)
+            v295_third_goal = reward_apex_target(
+                v295_base_goal, state.hit_count,
+                second_margin_m=float(self.cfg.v252_second_energy_band_margin_m),
+                third_margin_m=float(self.cfg.v252_third_energy_band_margin_m))
+            v295_reward, v295_metrics = mid_near_preparation_penalty(
+                previous_hit_count=state.hit_count, pending_hit=state.pending_hit,
+                in_contact=metrics['in_contact'], ball_z_m=metrics['ball_z'],
+                racket_z_m=metrics['racket_z'], ball_vz_m_s=metrics['ball_vz'],
+                racket_vz_m_s=metrics['racket_contact_point_vz'],
+                base_apex_goal_m=v295_base_goal, third_apex_goal_m=v295_third_goal,
+                initial_y_m=state.v225_reset_y_offset_m, group=state.v225_group,
+                gravity_m_s2=jnp.abs(state.dr_gravity_z),
+                ball_radius_m=float(self.mj_model.geom_size[self.ball_geom_id, 0]),
+                effective_restitution=float(self.cfg.fixed_plane_limit_cycle_effective_restitution),
+                max_racket_vz_m_s=float(self.cfg.fixed_plane_limit_cycle_max_contact_vz_m_s),
+                second_lead_s=float(self.cfg.v276_second_prepare_lead_s),
+                third_lead_s=float(self.cfg.v253_preimpact_energy_lead_s),
+                second_weight_per_s=float(self.cfg.v276_second_prepare_weight_per_s),
+                third_weight_per_s=float(self.cfg.v253_preimpact_energy_weight_per_s),
+                near_preparation_gain=float(self.cfg.v255_near_preparation_gain),
+                weight_scale=float(self.cfg.v295_mid_near_preparation_scale), dt_s=self.dt)
+            # Deliberately after V294: this named term must reach returned reward.
+            reward = reward + v295_reward
+            metrics['reward/total'] = metrics['reward/total'] + v295_reward
+            metrics['reward/fixed_plane_v295_mid_near_preimpact_penalty'] = v295_reward
+            for v295_name, v295_value in v295_metrics.items():
+                metrics['v295_' + v295_name] = v295_value
+        if float(getattr(self.cfg, 'v296_action_prepare_weight_per_s', 0.)) > 0.:
+            from fixed_plane_v296_feasible_startup import (
+                feasible_preparation_target, action_label_penalty, early_xy_penalty)
+            # Reward labels only; never apply the diagnostic action to control.
+            v296_unused, v296_diag = feasible_preparation_target(self, state, raw_policy_action)
+            v296_action_cost = action_label_penalty(
+                raw_action=raw_policy_action, target_action=v296_diag['proposal_action'],
+                requested_vz=v296_diag['proposal_requested_vz'],
+                feasible_vz=v296_diag['proposal_linearized_vz'],
+                blend=v296_diag['proposal_blend'],
+                weight_per_s=float(self.cfg.v296_action_prepare_weight_per_s), dt_s=self.dt)
+            v296_xy_cost = early_xy_penalty(
+                existing_cost=metrics['reward/fixed_plane_v166_physical_ball_xy_penalty'],
+                previous_hits=state.hit_count, initial_y_m=state.v225_reset_y_offset_m,
+                group=state.v225_group,
+                base_weight=float(self.cfg.fixed_plane_v166_physical_ball_xy_weight),
+                extra_weight=float(self.cfg.v296_early_xy_extra_weight))
+            if float(getattr(self.cfg, 'v298_early_xy_huber_transition_m_s', 0.)) > 0.:
+                from fixed_plane_v298_practical_dr_completion import robust_xy_extra
+                v296_xy_quadratic = v296_xy_cost
+                v296_xy_cost = robust_xy_extra(
+                    v296_xy_cost,
+                    metrics['reward/fixed_plane_v166_physical_ball_xy_penalty'],
+                    base_weight=float(self.cfg.fixed_plane_v166_physical_ball_xy_weight),
+                    normalizer_m_s=.025,
+                    transition_m_s=float(self.cfg.v298_early_xy_huber_transition_m_s))
+                metrics['reward/fixed_plane_v298_xy_tail_correction'] = (
+                    float(self.cfg.v297_feasible_reward_multiplier) *
+                    (v296_xy_cost - v296_xy_quadratic))
+            v296_cost = v296_action_cost + v296_xy_cost
+            reward = reward + v296_cost
+            metrics['reward/total'] = metrics['reward/total'] + v296_cost
+            metrics['reward/fixed_plane_v296_action_prepare_penalty'] = v296_action_cost
+            metrics['reward/fixed_plane_v296_early_xy_penalty'] = v296_xy_cost
+            v296_active = v296_diag['proposal_blend'] > 0.
+            metrics['v296_active'] = v296_active.astype(jnp.float32)
+            metrics['v296_blend'] = v296_diag['proposal_blend']
+            metrics['v296_requested_vz'] = jnp.where(v296_active, v296_diag['proposal_requested_vz'], 0.)
+            metrics['v296_feasible_vz'] = jnp.where(v296_active, v296_diag['proposal_linearized_vz'], 0.)
+            metrics['v296_raw_label_rmse'] = jnp.where(v296_active,
+                jnp.sqrt(jnp.mean((raw_policy_action-v296_diag['proposal_action'])**2, axis=-1)), 0.)
+            metrics['v296_xy_event'] = (v296_xy_cost < 0.).astype(jnp.float32)
+        if float(getattr(self.cfg, 'v297_feasible_reward_multiplier', 1.)) > 1.:
+            from fixed_plane_v297_feasible_reward_gain import extra_reward
+            v297_action_extra, v297_xy_extra = extra_reward(
+                metrics['reward/fixed_plane_v296_action_prepare_penalty'],
+                metrics['reward/fixed_plane_v296_early_xy_penalty'],
+                multiplier=float(self.cfg.v297_feasible_reward_multiplier))
+            v297_extra = v297_action_extra + v297_xy_extra
+            reward = reward + v297_extra
+            metrics['reward/total'] = metrics['reward/total'] + v297_extra
+            metrics['reward/fixed_plane_v297_action_extra'] = v297_action_extra
+            metrics['reward/fixed_plane_v297_xy_extra'] = v297_xy_extra
+        if int(getattr(self.cfg, 'v301_center_return_full_hits', 0)) > 0:
+            from fixed_plane_v301_launch_center import center_reward_correction
+            v301_correction, v301_metrics = center_reward_correction(
+                old_ball_penalty=reward_terms['ball_racket_anchor_xy_penalty'],
+                old_racket_penalty=reward_terms['fixed_plane_v134_late_xy_anchor_penalty'],
+                ball_offset_xy_m=bpos[:, :2]-state.racket_anchor[:, :2],
+                racket_offset_xy_m=rpos[:, :2]-state.racket_anchor[:, :2],
+                initial_y_m=state.v225_reset_y_offset_m, group=state.v225_group,
+                hit_count=next_state.hit_count,
+                return_full_hits=int(self.cfg.v301_center_return_full_hits),
+                ball_weight=float(self.cfg.fixed_plane_v146_ball_anchor_xy_penalty_weight),
+                racket_weight=float(self.cfg.fixed_plane_v134_late_xy_anchor_penalty_weight),
+                dt_s=self.dt)
+            reward = reward + v301_correction
+            metrics['reward/total'] = metrics['reward/total'] + v301_correction
+            metrics['reward/fixed_plane_v301_center_correction'] = v301_correction
+            metrics['v301_old_ball_penalty'] = reward_terms['ball_racket_anchor_xy_penalty']
+            metrics['v301_old_racket_penalty'] = reward_terms['fixed_plane_v134_late_xy_anchor_penalty']
+            for v301_name, v301_value in v301_metrics.items():
+                metrics['v301_' + v301_name] = v301_value
+        if bool(getattr(self.cfg, 'v303_late_action_label_fade', False)):
+            from fixed_plane_v303_preimpact_timing import late_label_correction
+            v303_old_cost = metrics['reward/fixed_plane_v296_action_prepare_penalty']
+            v303_correction, v303_metrics = late_label_correction(
+                old_cost=v303_old_cost, ttc_s=v296_diag['proposal_ttc'])
+            reward = reward + v303_correction
+            metrics['reward/total'] = metrics['reward/total'] + v303_correction
+            metrics['reward/fixed_plane_v303_late_label_correction'] = v303_correction
+            metrics['v303_label_ttc_s'] = v296_diag['proposal_ttc']
+            for v303_name, v303_value in v303_metrics.items():
+                metrics['v303_' + v303_name] = v303_value
+        if bool(getattr(self.cfg, 'v304_timing_envelope_reward', False)):
+            from fixed_plane_v304_timing_envelope import (
+                envelope_reward, preparation_reward_correction)
+            v304_reference_data = next_state.data.replace(
+                qpos=next_state.data.qpos.at[:, self.arm_qadr].set(next_state.arm_cmd_q),
+                qvel=next_state.data.qvel.at[:, self.arm_vadr].set(0.))
+            v304_reference_data = self.batched_forward(next_state.model, v304_reference_data)
+            v304_reference_lead = (
+                v304_reference_data.site_xpos[:, self.racket_site_id, 2]-metrics['racket_z'])
+            v304_reward, v304_metrics = envelope_reward(
+                previous_hits=state.hit_count, pending=state.pending_hit,
+                in_contact=metrics['in_contact'], ball_z_m=metrics['ball_z'],
+                racket_z_m=metrics['racket_z'], ball_vz_m_s=metrics['ball_vz'],
+                racket_vz_m_s=metrics['racket_contact_point_vz'],
+                gravity_m_s2=state.dr_gravity_z,
+                ball_radius_m=float(self.mj_model.geom_size[self.ball_geom_id, 0]),
+                base_apex_goal_m=v294_base_goal, third_apex_goal_m=v294_third_goal,
+                reference_z_lead_m=v304_reference_lead,
+                initial_y_m=state.v225_reset_y_offset_m, group=state.v225_group,
+                effective_restitution=float(self.cfg.fixed_plane_limit_cycle_effective_restitution),
+                max_racket_vz_m_s=float(self.cfg.fixed_plane_limit_cycle_max_contact_vz_m_s),
+                second_weight_per_s=float(self.cfg.v276_second_prepare_weight_per_s),
+                third_weight_per_s=float(self.cfg.v253_preimpact_energy_weight_per_s),
+                near_preparation_gain=float(self.cfg.v255_near_preparation_gain), dt_s=self.dt)
+            v304_old_label = metrics['v303_effective_cost']
+            v304_old_preparation = (
+                metrics['reward/fixed_plane_v294_effective_preimpact_penalty']
+                +metrics['reward/fixed_plane_v295_mid_near_preimpact_penalty'])
+            v304_correction = preparation_reward_correction(
+                old_label_cost=v304_old_label,
+                old_preparation_cost=v304_old_preparation, new_reward=v304_reward)
+            reward = reward+v304_correction
+            metrics['reward/total'] = metrics['reward/total']+v304_correction
+            metrics['reward/fixed_plane_v304_timing_envelope_correction'] = v304_correction
+            metrics['v304_new_reward'] = v304_reward
+            metrics['v304_old_label_cost'] = v304_old_label
+            metrics['v304_old_preparation_cost'] = v304_old_preparation
+            for v304_name, v304_value in v304_metrics.items():
+                metrics['v304_'+v304_name] = v304_value
+        if float(getattr(self.cfg, 'v305_reference_preparation_scale', 1.)) != 1.:
+            from fixed_plane_v305_reference_price import reference_cost_correction
+            v305_correction, v305_effective = reference_cost_correction(
+                old_cost=metrics['v304_reference_cost'],
+                scale=float(self.cfg.v305_reference_preparation_scale))
+            reward = reward+v305_correction
+            metrics['reward/total'] = metrics['reward/total']+v305_correction
+            metrics['reward/fixed_plane_v305_reference_price_correction'] = v305_correction
+            metrics['v305_effective_reference_cost'] = v305_effective
+        if float(getattr(self.cfg, 'v306_near_first_launch_credit', 0.)) > 0.:
+            from fixed_plane_v306_first_launch_reserve import first_launch_correction
+            v306_correction, v306_metrics = first_launch_correction(
+                old_credit=v94_first_hit_apex_credit, counted_hit=counted_hit,
+                previous_hits=state.hit_count, apex_z_m=predicted_apex_z,
+                terminated=metrics['terminated'], initial_y_m=state.v225_reset_y_offset_m,
+                group=state.v225_group, weight=float(self.cfg.v306_near_first_launch_credit))
+            reward = reward+v306_correction
+            metrics['reward/total'] = metrics['reward/total']+v306_correction
+            metrics['reward/fixed_plane_v306_first_launch_correction'] = v306_correction
+            for v306_name, v306_value in v306_metrics.items():
+                metrics['v306_'+v306_name] = v306_value
+        if float(getattr(self.cfg, 'v307_first_launch_low_sigma_m', .025)) != .025:
+            from fixed_plane_v307_launch_gradient import low_tail_correction
+            v307_correction, v307_metrics = low_tail_correction(
+                old_effective_credit=metrics['v306_effective_credit'],
+                first_event=metrics['v306_active'], first_apex_m=metrics['v306_first_apex_m'],
+                support=metrics['v306_support'], terminated=metrics['terminated'],
+                low_sigma_m=float(self.cfg.v307_first_launch_low_sigma_m),
+                weight=float(self.cfg.v306_near_first_launch_credit))
+            reward = reward+v307_correction
+            metrics['reward/total'] = metrics['reward/total']+v307_correction
+            metrics['reward/fixed_plane_v307_launch_gradient_correction'] = v307_correction
+            for v307_name, v307_value in v307_metrics.items():
+                metrics['v307_'+v307_name] = v307_value
+        if float(getattr(self.cfg, 'v308_first_push_weight_per_s', 0.)) > 0.:
+            from fixed_plane_v308_first_push import first_push_penalty
+            v308_penalty, v308_metrics = first_push_penalty(
+                racket_vz_m_s=metrics['racket_contact_point_vz'],
+                previous_hits=state.hit_count, in_contact=metrics['in_contact'],
+                episode_time_s=(state.step_count+1)*self.dt,
+                initial_y_m=state.v225_reset_y_offset_m, group=state.v225_group,
+                target_vz_m_s=float(self.cfg.fixed_contact_pre_hit_launch_vz_target_m_s),
+                window_s=float(self.cfg.fixed_contact_pre_hit_launch_vz_window_s),
+                weight_per_s=float(self.cfg.v308_first_push_weight_per_s), dt_s=self.dt)
+            reward = reward+v308_penalty
+            metrics['reward/total'] = metrics['reward/total']+v308_penalty
+            metrics['reward/fixed_plane_v308_first_push_penalty'] = v308_penalty
+            for v308_name, v308_value in v308_metrics.items():
+                metrics['v308_'+v308_name] = v308_value
+        if bool(getattr(self.cfg, 'v309_clean_startup_reward_enabled', False)):
+            from fixed_plane_v309_clean_startup import clean_startup_reward
+            reward, v309_metrics = clean_startup_reward(
+                old_reward=reward, previous_hits=state.hit_count,
+                confirmed_event=counted_hit, apex_abs_m=predicted_apex_z,
+                ball_vxy_m_s=jnp.linalg.norm(bvel[:, :2], axis=-1),
+                terminated=metrics['terminated'],
+                initial_y_m=state.v225_reset_y_offset_m, group=state.v225_group,
+                enabled=True, dt_s=self.dt)
+            metrics['reward/total'] = reward
+            for v309_name, v309_value in v309_metrics.items():
+                metrics['v309_'+v309_name] = v309_value
+        if bool(getattr(self.cfg, 'v310_qualified_acquisition_enabled', False)):
+            from fixed_plane_v310_qualified_acquisition import qualified_acquisition_correction
+            v310_extra, v310_metrics = qualified_acquisition_correction(
+                old_clean_credit=metrics['v309_event_credit'],
+                legacy_acquisition_reward=metrics['reward/fixed_plane_v291_acquisition_success'],
+                legacy_critical_acquisition_extra=metrics['v292_acquisition_extra'],
+                support=metrics['v309_support'], previous_hits=state.hit_count,
+                confirmed_event=counted_hit, terminated=metrics['terminated'],
+                enabled=True)
+            reward = reward + v310_extra
+            metrics['reward/total'] = metrics['reward/total'] + v310_extra
+            for v310_name, v310_value in v310_metrics.items():
+                metrics['v310_'+v310_name] = v310_value
+        if bool(getattr(self.cfg, 'v311_clean_preimpact_enabled', False)):
+            from fixed_plane_v311_clean_preimpact import preparation_correction
+            v311_extra, v311_metrics = preparation_correction(
+                physical_cost=metrics['v304_physical_cost'],
+                clean_support=metrics['v309_support'], previous_hits=state.hit_count,
+                enabled=True)
+            reward = reward + v311_extra
+            metrics['reward/total'] = metrics['reward/total'] + v311_extra
+            for v311_name, v311_value in v311_metrics.items():
+                metrics['v311_'+v311_name] = v311_value
+        if bool(getattr(self.cfg, 'v314_late_ball_xy_tail_enabled', False)):
+            from fixed_plane_v314_late_ball_tail import late_ball_tail_penalty
+            v314_penalty, v314_metrics = late_ball_tail_penalty(
+                ball_vxy_m_s=jnp.linalg.norm(bvel[:, :2], axis=-1),
+                previous_hits=state.hit_count, confirmed_event=counted_hit,
+                terminated=metrics['terminated'], enabled=True)
+            reward = reward + v314_penalty
+            metrics['reward/total'] = metrics['reward/total'] + v314_penalty
+            metrics['reward/fixed_plane_v314_late_ball_xy_tail_penalty'] = v314_penalty
+            for v314_name, v314_value in v314_metrics.items():
+                metrics['v314_'+v314_name] = v314_value
+        if bool(getattr(self.cfg, 'v315_late_ball_xy_tail_gain_enabled', False)):
+            from fixed_plane_v315_late_ball_tail_gain import late_ball_tail_gain_correction
+            v315_extra, v315_metrics = late_ball_tail_gain_correction(
+                parent_penalty=metrics['v314_penalty'],
+                ball_vxy_m_s=jnp.linalg.norm(bvel[:, :2], axis=-1),
+                previous_hits=state.hit_count, confirmed_event=counted_hit,
+                terminated=metrics['terminated'], enabled=True)
+            reward = reward + v315_extra
+            metrics['reward/total'] = metrics['reward/total'] + v315_extra
+            metrics['reward/fixed_plane_v315_late_ball_xy_tail_gain_correction'] = v315_extra
+            for v315_name, v315_value in v315_metrics.items():
+                metrics['v315_'+v315_name] = v315_value
+        if bool(getattr(self.cfg, 'v316_late_ball_xy_margin_enabled', False)):
+            from fixed_plane_v316_late_ball_margin import late_ball_margin_correction
+            v316_extra, v316_metrics = late_ball_margin_correction(
+                parent_penalty=metrics['v315_target_penalty'],
+                ball_vxy_m_s=jnp.linalg.norm(bvel[:, :2], axis=-1),
+                previous_hits=state.hit_count, confirmed_event=counted_hit,
+                terminated=metrics['terminated'], enabled=True)
+            reward = reward + v316_extra
+            metrics['reward/total'] = metrics['reward/total'] + v316_extra
+            metrics['reward/fixed_plane_v316_late_ball_margin_correction'] = v316_extra
+            for v316_name, v316_value in v316_metrics.items():
+                metrics['v316_'+v316_name] = v316_value
+        if bool(getattr(self.cfg, 'v317_late_ball_xy_margin_gain_enabled', False)):
+            from fixed_plane_v317_late_ball_margin_gain import late_ball_margin_gain_correction
+            v317_extra, v317_metrics = late_ball_margin_gain_correction(
+                parent_penalty=metrics['v316_target_penalty'],
+                ball_vxy_m_s=jnp.linalg.norm(bvel[:, :2], axis=-1),
+                previous_hits=state.hit_count, confirmed_event=counted_hit,
+                terminated=metrics['terminated'], enabled=True)
+            reward = reward + v317_extra
+            metrics['reward/total'] = metrics['reward/total'] + v317_extra
+            metrics['reward/fixed_plane_v317_late_ball_margin_gain_correction'] = v317_extra
+            for v317_name, v317_value in v317_metrics.items():
+                metrics['v317_'+v317_name] = v317_value
         if getattr(self.cfg, 'fixed_plane_v167_global_reward_multiplier', 1.) != 1.:
             from fixed_plane_v167_reward_scale import scale_reward_terms
             reward, metrics = scale_reward_terms(
@@ -20093,9 +21549,14 @@ class MjxJuggleEnv:
         vel_noise = jax.vmap(lambda k: jax.random.normal(k, (3,), dtype=jnp.float32))(key_vel_noise) * vel_std[:, None]
 
         if bool(self.cfg.ball_obs_fractional_rate):
-            prev_tick = jnp.floor(state.last_ball_obs_step.astype(jnp.float32) * float(self.ball_obs_period))
-            curr_tick = jnp.floor(state.step_count.astype(jnp.float32) * float(self.ball_obs_period))
-            refresh = curr_tick > prev_tick
+            if getattr(self.cfg,"fplc_v222_independent_camera_clock",False):
+                from fixed_plane_recovery_dr import fractional_camera_refresh
+                refresh=fractional_camera_refresh(state.step_count,state.last_ball_obs_step,
+                    float(self.ball_obs_period),independent=True)
+            else:
+                prev_tick = jnp.floor(state.last_ball_obs_step.astype(jnp.float32) * float(self.ball_obs_period))
+                curr_tick = jnp.floor(state.step_count.astype(jnp.float32) * float(self.ball_obs_period))
+                refresh = curr_tick > prev_tick
         else:
             refresh = (state.step_count - state.last_ball_obs_step) >= int(self.ball_obs_every)
         camera_visible_for_obs = jnp.ones((true_bpos.shape[0],), dtype=bool)
@@ -20169,6 +21630,17 @@ class MjxJuggleEnv:
                 )
                 view_bounds_sample_available = view_bounds_visible_for_obs | (~view_bounds_missing)
             camera_visible_for_obs = camera_visible_for_obs & view_bounds_sample_available
+        if self.ball_position_noise_ar1_enabled:
+            from ball_position_noise_ar1 import advance_noise
+            epsilon_m = advance_noise(
+                state.ball_position_noise_epsilon_m, key_pos_noise,
+                dt_s=(state.step_count - state.last_ball_obs_step).astype(jnp.float32) * self.dt,
+                refresh=refresh, std_m=self.cfg.ball_position_noise_std_m,
+                rho_at_90hz=self.cfg.ball_position_noise_rho_at_90hz)
+            state = state._replace(ball_position_noise_epsilon_m=epsilon_m)
+            # This path replaces the old warm-up-scaled IID noise; 1x is
+            # active from reset, before sample/hold and causal history writes.
+            pos_noise = jnp.asarray(self.cfg.ball_position_noise_mean_m) + epsilon_m
         sampled_pos = true_bpos + pos_noise
         # Lateral ball-velocity estimator-error model (see ball_obs_vel_xy_*
         # config comment): AR(1)-correlated baseline error plus a spike for a
@@ -20314,7 +21786,25 @@ class MjxJuggleEnv:
             jnp.where(start_dropout, jnp.maximum(0, new_duration - 1), 0),
         )
         blocked_by_dropout = still_dropout | start_dropout
+        if getattr(self.cfg, "fplc_v221_camera_dropout_frames", False):
+            from fixed_plane_recovery_dr import camera_dropout_transition
+            camera_refresh = refresh & camera_visible_for_obs
+            start_allowed = state.hit_count >= int(self.cfg.fplc_v221_camera_dropout_min_hits)
+            candidate_start = start_allowed & (u < float(self.cfg.ball_obs_dropout_prob)
+                                               + float(self.cfg.ball_obs_dropout_burst_prob))
+            candidate_burst = u < float(self.cfg.ball_obs_dropout_burst_prob)
+            camera_burst_frames = jax.vmap(lambda key: jax.random.randint(
+                key, (), minval=int(self.cfg.fplc_v221_camera_burst_min_frames),
+                maxval=int(self.cfg.fplc_v221_camera_burst_max_frames)+1))(key_burst_duration)
+            blocked_by_dropout, dropout_remaining, start_dropout = camera_dropout_transition(
+                refresh=camera_refresh, remaining=state.ball_obs_dropout_remaining,
+                missing=state.ball_obs_missing_since_sample, start=candidate_start,
+                duration=jnp.where(candidate_burst,camera_burst_frames,1))
+            burst_start = start_dropout & candidate_burst
+            single_start = start_dropout & (~candidate_burst)
         sample_available = refresh & camera_visible_for_obs & (~blocked_by_dropout)
+        if getattr(self.cfg, "fplc_v221_camera_dropout_frames", False):
+            last_ball_obs_step = jnp.where(sample_available,state.step_count,state.last_ball_obs_step)
         if bool(self.cfg.dr_post_hit_ball_obs_latency):
             # Derive two independent keys without changing the legacy
             # split(k, 11) sequence used by every existing profile.
@@ -20950,6 +22440,19 @@ class MjxJuggleEnv:
                 fixed_predictor_output.represented_state_age_s,
                 age_seconds,
             )
+        if getattr(self.cfg, "fplc_v221_camera_dropout_frames", False):
+            from fixed_plane_recovery_dr import short_gap_prediction
+            source_age_s = jnp.maximum(state.step_count-last_ball_obs_step,0).astype(jnp.float32)*self.dt
+            predicted_pos, predicted_vel, predicted, valid = short_gap_prediction(
+                cached_pos,cached_vel,source_age_s,missing=missing_since_sample,
+                max_gap_s=float(self.cfg.fplc_v221_short_gap_prediction_max_s),
+                gravity_z=float(self.cfg.dr_gravity_z_range[0]))
+            valid_pos = jnp.where(missing_since_sample[:,None],predicted_pos,valid_pos)
+            valid_vel = jnp.where(missing_since_sample[:,None],predicted_vel,valid_vel)
+            fixed_ball_predicted = predicted
+            fixed_prediction_horizon_s = jnp.where(predicted,source_age_s,0.)
+            fixed_ball_state_valid = valid
+            age_seconds = jnp.where(predicted,0.,jnp.where(missing_since_sample,source_age_s,age_seconds))
         dropout_steps_total = state.ball_obs_dropout_steps_total + blocked_by_dropout.astype(jnp.int32)
         burst_count = state.ball_obs_burst_count + burst_start.astype(jnp.int32)
 
@@ -21118,6 +22621,10 @@ class MjxJuggleEnv:
             )
         else:
             delayed_base_obs = buffered_base_obs
+        if self.v224_history_enabled:
+            from fixed_plane_v224_history_context import advance_history
+            state = state._replace(v224_observation_history=advance_history(
+                state.v224_observation_history, delayed_base_obs))
         obs = self._augment_obs(state, delayed_base_obs)
         if self.high_latency_obs_prev_frames > 0:
             obs_history = jnp.concatenate(
@@ -21443,6 +22950,20 @@ class MjxJuggleEnv:
                     ),
                 }
             )
+        if getattr(self.cfg, "fplc_v221_camera_dropout_frames", False):
+            metrics["v221/raw_source_age_s"] = source_age_s
+            metrics["v221/represented_state_age_s"] = age_seconds
+            metrics["v221/prediction_horizon_s"] = fixed_prediction_horizon_s
+            metrics["v221/camera_missing_frame"] = (refresh & ~sample_available).astype(jnp.float32)
+            metrics["v221/short_gap_predicted"] = fixed_ball_predicted.astype(jnp.float32)
+            metrics["v221/reacquired"] = reacquired_after_missing.astype(jnp.float32)
+        if self.camera_position_noise_schema:
+            for axis, label in enumerate(("x", "y", "z")):
+                metrics[f"camera_position_noise/epsilon_{label}_m"] = (
+                    state.ball_position_noise_epsilon_m[:, axis])
+                metrics[f"camera_position_noise/observed_error_{label}_m"] = (
+                    cached_pos[:, axis] - true_bpos[:, axis])
+            metrics["camera_position_noise/refresh"] = refresh.astype(jnp.float32)
         return state, obs, metrics
 
     def _ball_contact_flags(self, data) -> tuple[jax.Array, jax.Array]:
@@ -21595,6 +23116,7 @@ class MjxJuggleEnv:
         hit_ball_z_at_contact: jax.Array,
         hit_racket_z_at_contact: jax.Array,
         fixed_contact_policy_target,
+        recovery_group=None,
     ) -> tuple[jax.Array, dict[str, jax.Array]]:
         if self.cfg.hit_apex_target_abs_z is None:
             target_ball_z = racket_anchor[:, 2] + float(self.cfg.target_height)
@@ -24904,6 +26426,28 @@ class MjxJuggleEnv:
                 + fixed_pending_hit_retract_command_vz_reward
                 + fixed_workspace_z_barrier_penalty
             )
+            if self.cfg.fixed_plane_v320_recurrent_guidance_weight_per_s > 0.:
+                from fixed_plane_v320_from_scratch import recurrent_guidance_reward
+                v320_recurrent_guidance, v320_recurrent_active = recurrent_guidance_reward(
+                    hit_count=hit_count, pending_hit=pending_hit,
+                    target_valid=fixed_limit_cycle_phase_active,
+                    time_to_contact_s=fixed_time_to_contact,
+                    racket_z_m=fixed_racket_surface_position[:, 2],
+                    target_z_m=fixed_limit_cycle_phase_z_target,
+                    racket_vz_m_s=fixed_racket_surface_velocity[:, 2],
+                    target_vz_m_s=fixed_limit_cycle_phase_vz_target,
+                    weight_per_s=self.cfg.fixed_plane_v320_recurrent_guidance_weight_per_s,
+                    dt_s=self.dt,
+                )
+                fixed_s0_component_reward = fixed_s0_component_reward + v320_recurrent_guidance
+            if self.cfg.fixed_plane_v320_third_apex_weight > 0.:
+                from fixed_plane_v320_from_scratch import third_apex_guard_reward
+                v320_third_apex_reward = third_apex_guard_reward(
+                    hit_count=hit_count, confirmed_event=new_hit,
+                    predicted_apex_z_m=predicted_apex_z,
+                    weight=self.cfg.fixed_plane_v320_third_apex_weight,
+                )
+                fixed_s0_component_reward = fixed_s0_component_reward + v320_third_apex_reward
             fixed_task_aligned_dense_reward = (
                 (
                     term_post_hit_survival
@@ -25249,6 +26793,11 @@ class MjxJuggleEnv:
                                     'fixed_plane_v159_adjacent_height_linear', False),
                             )
                             v92_height_reward = v92_height.total
+                            if getattr(self.cfg, 'fixed_plane_v191_absolute_height_multiplier', 1.) != 1.:
+                                from fixed_plane_v191_height_reward import reweight_absolute_height
+                                v92_height = reweight_absolute_height(v92_height,
+                                    multiplier=self.cfg.fixed_plane_v191_absolute_height_multiplier)
+                                v92_height_reward = v92_height.total
                             v92_height_absolute = v92_height.absolute
                             v92_height_adjacent = v92_height.adjacent_penalty
                             v92_height_unresolved = v92_height.unresolved_penalty
@@ -25486,11 +27035,32 @@ class MjxJuggleEnv:
                 eligible=v92_height_eligible, in_band=v92_height_in_band,
                 weight=self.cfg.fixed_plane_v165_steady_band_violation_weight)
             reward = reward + v165_band_penalty
+        if (getattr(self.cfg, 'fixed_plane_v184_upper_event_weight', 0.) != 0.
+                or getattr(self.cfg, 'fixed_plane_v184_upper_shoulder_weight', 0.) != 0.):
+            from fixed_plane_v184_height_reward import upper_height_penalty
+            v184_upper_penalty = upper_height_penalty(
+                eligible=(v92_height_below | v92_height_in_band | v92_height_above),
+                apex_z_m=predicted_apex_z,
+                event_weight=self.cfg.fixed_plane_v184_upper_event_weight,
+                shoulder_weight=self.cfg.fixed_plane_v184_upper_shoulder_weight)
+            reward = reward + v184_upper_penalty
+        v191_margin_penalty = jnp.zeros_like(reward)
+        if getattr(self.cfg, 'fixed_plane_v191_margin_weight', 0.) != 0.:
+            from fixed_plane_v191_height_reward import symmetric_height_margin_penalty
+            v191_margin_penalty = symmetric_height_margin_penalty(
+                eligible=(v92_height_below | v92_height_in_band | v92_height_above),
+                apex_z_m=predicted_apex_z,weight=self.cfg.fixed_plane_v191_margin_weight)
+            reward = reward + v191_margin_penalty
         if getattr(self.cfg, 'fixed_plane_v166_physical_ball_xy_weight', 0.) != 0.:
             from fixed_plane_v166_ball_xy_reward import physical_ball_xy_penalty
             v166_ball_xy_penalty = physical_ball_xy_penalty(
                 event=new_hit, vxy_m_s=hit_vxy,
                 weight=self.cfg.fixed_plane_v166_physical_ball_xy_weight)
+            if bool(getattr(self.cfg, 'v231_nominal_reward_parity', False)):
+                if recovery_group is None:
+                    raise ValueError('V231 physical reward requires the existing recovery cohort')
+                from fixed_plane_v231_recovery_only import recovery_only_penalty
+                v166_ball_xy_penalty = recovery_only_penalty(v166_ball_xy_penalty, recovery_group)
             reward = reward + v166_ball_xy_penalty
         terms = {
             "total": reward,
@@ -26204,6 +27774,11 @@ class MjxJuggleEnv:
             terms['fixed_plane_v164_dense_racket_xy_penalty'] = v164_racket_xy_penalty
         if getattr(self.cfg, 'fixed_plane_v165_steady_band_violation_weight', 0.) != 0.:
             terms['fixed_plane_v165_steady_band_violation_penalty'] = v165_band_penalty
+        if getattr(self.cfg, 'fixed_plane_v191_margin_weight', 0.) != 0.:
+            terms['fixed_plane_v191_margin_penalty'] = v191_margin_penalty
+        if (getattr(self.cfg, 'fixed_plane_v184_upper_event_weight', 0.) != 0.
+                or getattr(self.cfg, 'fixed_plane_v184_upper_shoulder_weight', 0.) != 0.):
+            terms['fixed_plane_v184_upper_height_penalty'] = v184_upper_penalty
         if getattr(self.cfg, 'fixed_plane_v166_physical_ball_xy_weight', 0.) != 0.:
             terms['fixed_plane_v166_physical_ball_xy_penalty'] = v166_ball_xy_penalty
         if (
@@ -26809,6 +28384,11 @@ class MjxJuggleEnv:
                 ),
                 }
             )
+            if self.cfg.fixed_plane_v320_recurrent_guidance_weight_per_s > 0.:
+                terms['fixed_plane_v320_recurrent_guidance_reward'] = v320_recurrent_guidance
+                terms['metric/v320_recurrent_guidance_active'] = v320_recurrent_active.astype(jnp.float32)
+            if self.cfg.fixed_plane_v320_third_apex_weight > 0.:
+                terms['fixed_plane_v320_third_apex_reward'] = v320_third_apex_reward
             if bool(
                 self.cfg.fixed_plane_limit_cycle_dynamic_stroke_enabled
             ):
@@ -27273,6 +28853,19 @@ class MjxJuggleEnv:
                     ),
                 }
             )
+        if self.v256_enabled:
+            # Absolute world boxes remain fixed even if the reset anchor moves.
+            from fixed_plane_v256_workspace_force import (
+                BALL_LOW_M, BALL_HIGH_M, RACKET_LOW_M, RACKET_HIGH_M)
+            for axis, label in enumerate(("x", "y", "z")):
+                key = f"ball_{label}_out_of_bounds" if axis < 2 else "ball_too_low"
+                outside_low = bpos[:, axis] < BALL_LOW_M[axis]
+                outside_high = bpos[:, axis] > BALL_HIGH_M[axis]
+                terms[key] = outside_low | outside_high if axis < 2 else outside_low
+                if axis == 2:
+                    terms["ball_too_high"] = outside_high
+                terms[f"racket_{label}_out_of_bounds"] = (
+                    (rpos[:, axis] < RACKET_LOW_M[axis]) | (rpos[:, axis] > RACKET_HIGH_M[axis]))
         if not bool(self.cfg.terminate_on_base_stability):
             for key in (
                 "base_z_out_of_bounds",

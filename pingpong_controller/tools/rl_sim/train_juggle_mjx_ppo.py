@@ -306,6 +306,12 @@ def policy_components(
     makes training, validation, and deployment consume identical actions.
     """
 
+    if "wind_ablation_v1" in params:
+        from fixed_plane_wind_ablation import policy_components as ablation_components
+
+        return ablation_components(params, obs)
+    if "wind_pose_bound_gate_v1" in params and (obs.ndim < 2 or obs.shape[-1] != 114):
+        raise ValueError("Wind authority gate requires the registered114-D observation")
     residual_or_mean = apply_mlp(params["pi"], obs)
     if "teacher_pi" not in params:
         zeros = jnp.zeros_like(residual_or_mean)
@@ -320,6 +326,11 @@ def policy_components(
         from fixed_plane_residual_gate_v1 import v53_residual_precontact_gate
 
         correction = correction * v53_residual_precontact_gate(obs)
+    if "wind_pose_bound_gate_v1" in params:
+        from fixed_plane_wind_actor import apply_bound_gate
+
+        baseline, correction = apply_bound_gate(params, obs, teacher_mean, correction)
+        return baseline + correction, teacher_mean, correction
     return teacher_mean + correction, teacher_mean, correction
 
 
@@ -1784,7 +1795,11 @@ def make_train_fns(
     compact_rollout_metrics: bool = False,
     full_rollout_metric_names: tuple[str, ...] = (),
     conditional_reset_done: bool = False,
+    apply_every_minibatch: bool = False,
 ):
+    # Explicit continuation contract: KL remains telemetry, never a data filter.
+    if apply_every_minibatch and float(actor_anchor_replay_max_kl) > 0.:
+        raise ValueError("Every-minibatch mode rejects hard replay projection")
     if (
         min_log_std is not None
         and max_log_std is not None
@@ -2527,7 +2542,7 @@ def make_train_fns(
             def guarded_minibatch(minibatch_carry, idx):
                 minibatch_state, minibatch_active = minibatch_carry
                 full_candidate_state, aux = update_minibatch(minibatch_state, idx)
-                if target_kl is None or float(target_kl) <= 0.0:
+                if apply_every_minibatch or target_kl is None or float(target_kl) <= 0.0:
                     apply_candidate = minibatch_active
                     next_active = minibatch_active
                     candidate_state = full_candidate_state
@@ -2681,7 +2696,7 @@ def make_train_fns(
             candidate_final_log_std,
         )
         target_kl_rollback = jnp.asarray(False)
-        if target_kl is not None and float(target_kl) > 0.0:
+        if not apply_every_minibatch and target_kl is not None and float(target_kl) > 0.0:
             target_kl_rollback = candidate_final_exact_kl > float(target_kl)
 
         # A small trust-region budget per PPO update does not bound the
@@ -2820,6 +2835,8 @@ def make_train_fns(
         aux_mean["ppo_exact_kl"] = effective_exact_kl
         aux_mean["ppo_pre_rollback_exact_kl"] = candidate_final_exact_kl
         aux_mean["ppo_update_rolled_back"] = rollback_update.astype(jnp.float32)
+        if apply_every_minibatch:
+            aux_mean["ppo_apply_every_minibatch"] = jnp.asarray(1., dtype=jnp.float32)
         aux_mean["actor_anchor_replay_candidate_kl"] = (
             actor_anchor_replay_candidate_kl
         )
