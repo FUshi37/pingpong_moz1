@@ -1,0 +1,3500 @@
+{
+  "schema": "wmj_git_handoff_manifest_v1",
+  "branch": "wmj",
+  "base_commit": "f2706492bd53e8e4cdfc093dcf1d847d21f344da",
+  "date": "2026-11-23",
+  "scope": "Local source/dependency snapshot and handoff; no push, training, or asset transfer.",
+  "source_hash_overrides": {
+    "TRAINING_CURRICULA.md": {
+      "inventory_sha256": "48601d4cffd86769c9fe7ae0e83e1fc382da868f6ddcd0a9e8ce17f45236c505",
+      "committed_sha256": "b98cca2a321eea9e882e6dc3f69945373f44a66c013d4d43e1db510f29252c1f",
+      "reason": "Stage only WMJ registry additions on the original HEAD; preserve unrelated working-tree additions."
+    },
+    "test/test_wmj_v1_paired_history.py": {
+      "inventory_sha256": "a5682d2e2cbab210e9c6ef19614928f103742aa1fd114032ab0ed4218eb3ecd0",
+      "committed_sha256": "c58754adcf0ea13c936dff7e7325b903b4031d20597edf3a911f3e66a936c49d",
+      "reason": "Remove trailing blank line at EOF reported by git diff --cached --check; no test behavior changes."
+    },
+    "test/test_wmj_v1_paired_precision.py": {
+      "inventory_sha256": "40fe3e924aaaf7be507a8554cf158c0140b2919096c2d3149d21253275e36f90",
+      "committed_sha256": "79b2ce9d57ddfd2a39f61e45d06ff99d2e030d692f17096c271743d7af1546c2",
+      "reason": "Remove trailing blank line at EOF reported by git diff --cached --check; no test behavior changes."
+    }
+  },
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "0ce9500d788f3e83364fb6ef2afaab48b69e84ae66ebe6904d9d0aeb5ffdb5d7",
+      "size_bytes": 201528
+    },
+    {
+      "path": "TRAINING_CURRICULA.md",
+      "sha256": "b98cca2a321eea9e882e6dc3f69945373f44a66c013d4d43e1db510f29252c1f",
+      "size_bytes": 1845111
+    },
+    {
+      "path": "pingpong_controller/tools/rl_2real/BALL_RACKET_CONTACT_REAL11_STATIC_1MS_V1_REPORT.md",
+      "sha256": "4cc5f36b59d04a7e0a82cdda54269047bfd83ec8d4879c2365dfbd8df1a00829",
+      "size_bytes": 4208
+    },
+    {
+      "path": "pingpong_controller/tools/rl_2real/STABLE_JUGGLING_SIM2REAL_ARCHITECTURE_AND_CODEX_PROMPT.md",
+      "sha256": "d0545753a29662648d849a620beca317ae8f339535e45a2ffd2a01b529430fc6",
+      "size_bytes": 45106
+    },
+    {
+      "path": "pingpong_controller/tools/rl_2real/WMJ_TRAINING_PROTOCOL.md",
+      "sha256": "c3cd399b8e0ff8fd86369befb80eb9eebd55d49c28a05de0fbb778bf748bf1fc",
+      "size_bytes": 12560
+    },
+    {
+      "path": "pingpong_controller/tools/rl_2real/WMJ_V1_CANDIDATES_AND_DIFFERENTIABILITY.md",
+      "sha256": "9568992fdcb01f57ba11b58d308c1554f08d0b031a3660d16a66e8aaa9c2cc94",
+      "size_bytes": 3709
+    },
+    {
+      "path": "pingpong_controller/tools/rl_2real/WMJ_V1_CODEX_HANDOFF_20261123.md",
+      "sha256": "c235bb268adc503f98b991b6c471f7fac1b46712cb0cb4ca20eed5223ebda4b1",
+      "size_bytes": 60295
+    },
+    {
+      "path": "pingpong_controller/tools/rl_2real/WMJ_V1_CONFIG.json",
+      "sha256": "725fb9a0fc857bd99ac10deace20966e522be88fdbf807eb6f13208b52c65cb5",
+      "size_bytes": 145454
+    },
+    {
+      "path": "pingpong_controller/tools/rl_2real/WMJ_V1_HANDOFF_APPENDIX_20261123.md",
+      "sha256": "42aaeed7e3a888bddcf95ee5ee6557aefededf21be05390e7a3c9f1edea77028",
+      "size_bytes": 115462
+    },
+    {
+      "path": "pingpong_controller/tools/rl_2real/WMJ_V1_HANDOFF_ASSET_PATHS_20261123.txt",
+      "sha256": "7e99b540b7b00c848e175a90fcad76e97f94fa4ee55e648412d5aea3b5f792a9",
+      "size_bytes": 908187
+    },
+    {
+      "path": "pingpong_controller/tools/rl_2real/WMJ_V1_HANDOFF_CHECKS_20261123.json",
+      "sha256": "57a1bd88d390299651426ac4a7f6e327d7bfc814144f9a70ec23026608039aa7",
+      "size_bytes": 4198
+    },
+    {
+      "path": "pingpong_controller/tools/rl_2real/WMJ_V1_HANDOFF_INVENTORY_20261123.json",
+      "sha256": "66aa380fe0d8b49040cf81644fb591ad2ba7d23cc33b4d1ff6ed71cf8783918b",
+      "size_bytes": 3363811
+    },
+    {
+      "path": "pingpong_controller/tools/rl_2real/WMJ_V1_HANDOFF_PACKAGES_20261123.txt",
+      "sha256": "59e7e17aa11b775da24e151acff8e41705eccde4949e5b6ebafccfd630bc071f",
+      "size_bytes": 2740
+    },
+    {
+      "path": "pingpong_controller/tools/rl_2real/WMJ_V1_HANDOFF_SOURCE_PATHS_20261123.txt",
+      "sha256": "8d2850fe74955f5997de3e5ef438d4dfd134dbea3fcfc5747dcd204d3eb46d9a",
+      "size_bytes": 41009
+    },
+    {
+      "path": "pingpong_controller/tools/rl_2real/WMJ_V324_CONFIG.json",
+      "sha256": "2c62a5624ef201ace732fa013299e03f4cab2841235795a604bd16865c1ddd0b",
+      "size_bytes": 26486
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/assess_fixed_plane_v179.py",
+      "sha256": "35d485d813e4227371fd518de244232103fac0d699db8698065d8e61894fb6b3",
+      "size_bytes": 11949
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/assess_fixed_plane_v184.py",
+      "sha256": "16edb5dde5a6a4425f0dbfecbf1a8b4aceef5b604ac397985fe9d27a6830b64c",
+      "size_bytes": 14511
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/assess_fixed_plane_v191.py",
+      "sha256": "504a2f45bb1b2c72544556486a9be1851d14d6febca43d7ee27f49a90de7e295",
+      "size_bytes": 17268
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/assess_fixed_plane_v225.py",
+      "sha256": "12178617ed70e86abb129ab45c56de0501b33b4e443798fed3721a2b740c2e6b",
+      "size_bytes": 14343
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/assess_fixed_plane_v226.py",
+      "sha256": "b3afb3820eb86416bb637ea331934c76ea90d272b131d8fdf37829144f9ead99",
+      "size_bytes": 5697
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/ball_mass_measurement.py",
+      "sha256": "c298615d811666e1d1a8702ede56bef49482b8bc9f5eab408c083e3e45de7b88",
+      "size_bytes": 8593
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/ball_position_noise_ar1.py",
+      "sha256": "28beb406bd1865a40c4323efb18ef7799f4a06e0fb0d2571a12a77c373bef0cc",
+      "size_bytes": 1231
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/bounded_validation_memory.py",
+      "sha256": "ebb10cb6ede3ad5b090be09048feed4402a18ba06313d6e6ddf817b0a5ab8a0d",
+      "size_bytes": 1488
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/camera_calibration.py",
+      "sha256": "36d455ad488ca5a335b8e495db94e9a446866ae8b239ba41a9a9b32e74c0fb9f",
+      "size_bytes": 2677
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/cartesian_pose_action_projection_jax.py",
+      "sha256": "0f43f1f4d05a410f3fd066d7776980bb075a97f74566f00249aaadbea553929e",
+      "size_bytes": 7938
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/collision_outcome_residual.py",
+      "sha256": "cd060c1f1291507cfeecced432843bad9c62ee397ace2742068826bfb76ea8b2",
+      "size_bytes": 26765
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/delay_control.py",
+      "sha256": "63140cfb87bd01d6c50aadce273493bc07f7764cfdfc88abc127c4d4794c646c",
+      "size_bytes": 32357
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/eval_speed.py",
+      "sha256": "a5eba0c5bed8692c37949cf4d90bd1b408304ebc43895f994da76e107311a529",
+      "size_bytes": 5044
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/evaluate_fixed_plane_v225.py",
+      "sha256": "f21cd503ec5cc12a27441d44f74e9c15a2af5ed24e8ce65640082db5f68c0232",
+      "size_bytes": 6106
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/evaluate_fixed_plane_v226.py",
+      "sha256": "0e97a8b1c24bd2f63b18b4ed2828ae9c70f6f1d12952db67115c41b8be310631",
+      "size_bytes": 4716
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_contact_oom_recovery.py",
+      "sha256": "3837dfb83e4b5cf628d8248948a0490f1dba62a983af38a016a76fc72ae2ca3e",
+      "size_bytes": 3191
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_contact_plane_training.py",
+      "sha256": "db4126aa1f672ae70f7abbdbbed4c7f432328a608539e5c4a6ec5ac434455c35",
+      "size_bytes": 147814
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_completed_resume.py",
+      "sha256": "b7253a28d6223cbf3832e0d1b407193f83c64423fa3f6bcbf8be8e68234c095e",
+      "size_bytes": 3892
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_limit_cycle_contact_vxy_v32.py",
+      "sha256": "1b3270e5b10819c743c2b4b03e10408a9d25f044bc7e453ba79a6c59eeac622b",
+      "size_bytes": 1663
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_limit_cycle_v1.py",
+      "sha256": "92fb0ce6988d7bfa415ab03e8720ab2afce9f9cdc1f842aac2e337e3d3df5570",
+      "size_bytes": 12819
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_noise_training_v3.py",
+      "sha256": "3ccc2c690921111a2d87938d24731d9eb4793195e727777d4e0ad4e126fff83e",
+      "size_bytes": 2983
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_noise_validation_v2.py",
+      "sha256": "6d6c5401616217ec2aaa72a1f921dd2c139bcecdfd596e487c70c354453ca0a7",
+      "size_bytes": 21472
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_rapid_steady_v1.py",
+      "sha256": "bb4d6ebb9b4ef298243cc55600250589e49571ce2aed9605c4530af21203504c",
+      "size_bytes": 19396
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_recovery_dr.py",
+      "sha256": "35e76670710c1df128aeb29e51924f94ea9ce900b4ba923b5bc0a529ef7039ac",
+      "size_bytes": 3931
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_residual_gate_v1.py",
+      "sha256": "7302da10d38c2a616c416f76688db08247e7d58ba34b33ab91b220984f023ba0",
+      "size_bytes": 1139
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v106.py",
+      "sha256": "302b0acbb9dc2809066763a22fd88437cdaf77f4fe58d9ae132eff03337e3d51",
+      "size_bytes": 4085
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v107.py",
+      "sha256": "404feccd057f3f41ad77855e3c7279d9d20dae713a5a8a272e08ef265388fd45",
+      "size_bytes": 3006
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v108.py",
+      "sha256": "28d6bda7f17606e5a3bd31759b7e1894931cf846ddc53c1d187101351b8b3f38",
+      "size_bytes": 1923
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v110.py",
+      "sha256": "0461c712e14daa16d4976864887630266a8073718a0a447754149a0f77ebd208",
+      "size_bytes": 471
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v115.py",
+      "sha256": "10e50a5d0b899a254e021bf355d2f8fa6f55d21cba8972ffca634e5fa8465418",
+      "size_bytes": 625
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v116.py",
+      "sha256": "1492ebfb87b6abd2bbceef2d8e1fdad18ccf66843c3f4990ce13ac33f90aab00",
+      "size_bytes": 1706
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v118.py",
+      "sha256": "e021ff2c739e81d95c4d2c1f1d965c077bf50828cb7a836b954550b510d3ec60",
+      "size_bytes": 2658
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v119.py",
+      "sha256": "50cf247618e83109158b377ac35fe2f0d4a8cb35b0b9ff80928bb014f2c62455",
+      "size_bytes": 1477
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v120.py",
+      "sha256": "dd94d98d4e2936e58c30a583e242cb683a2b6d56b652c3d4d6a3bd46aea85a33",
+      "size_bytes": 1709
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v122.py",
+      "sha256": "69d2d0fdf6aef466cc9eeadaa937b2d78ad19cf7be749b52b9542907bd2f09fe",
+      "size_bytes": 1575
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v123.py",
+      "sha256": "15f6802f8354143b21a4183676436e2a423ef04ed62e331b54359ee252fa2b3e",
+      "size_bytes": 809
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v124.py",
+      "sha256": "d0e9352f93b0d956ead18442676c76b196441881578c0a923ff10300bd7dc067",
+      "size_bytes": 2352
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v149.py",
+      "sha256": "37355e62f8b94a5f7ddd7a4cc4153907e90f99299779062f2331c08f78bd2264",
+      "size_bytes": 2475
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v151.py",
+      "sha256": "eae971f3a76b9502097c62a7dc4f201688f91c693304f3dea95d833d8b97f76c",
+      "size_bytes": 2918
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v152.py",
+      "sha256": "e4b8a58d94417b7c14cba753b3753cc15c5805de0023417956f054c63f43f023",
+      "size_bytes": 6821
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v153.py",
+      "sha256": "10e7e86603139d04501a0e063b35cabe6495c5c767f10d6d979b741d06e41a7d",
+      "size_bytes": 7689
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v154.py",
+      "sha256": "749097a0c2591f57b44183f6c855bd3f8ea1cce7be695a1feeca0eee918466d8",
+      "size_bytes": 3534
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v155.py",
+      "sha256": "bcc204ecd5afc5d5802e456e3680b6bbc87e15e531ac592d8fec88c4b5b28635",
+      "size_bytes": 3953
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v156.py",
+      "sha256": "a185bc24ad501220225475fb6ada8c0763eba5d6eef722e7e070a9b7f7f244f4",
+      "size_bytes": 5521
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v157_gpu1.py",
+      "sha256": "ebb4972348b1f51cfc968abd0d7313315d289bbf463c311dafa30170418e1ab4",
+      "size_bytes": 3775
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v158_gpu1.py",
+      "sha256": "871718eb5400b01861a66afa92d732be5cb54e53d29eb57902c484210b6c7c8f",
+      "size_bytes": 3860
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v159_gpu1.py",
+      "sha256": "aaa7deab77b7e7093862055c6471430e093cef76c6241e10ff63ef0aa4ffabd2",
+      "size_bytes": 3052
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v160_gpu0.py",
+      "sha256": "bba9d1403888fea042902453e4f083c3e7a63beaf7428d5b098a0a0d99f1fb8f",
+      "size_bytes": 3261
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v161_gpu0.py",
+      "sha256": "0d7a420ae8be7b3dcf4e6d2a11319c74865b4b30a743cb15b9be3762840ce04d",
+      "size_bytes": 3401
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v162_gpu0.py",
+      "sha256": "8c29c65b28703391e6492ce3674080018e962ef1f0a3e839895813fa95d3de78",
+      "size_bytes": 2850
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v163_gpu0.py",
+      "sha256": "8bfe5e639a1706679ad29caaa2e48b6eab862b243e4037afecaa5166d439c2c4",
+      "size_bytes": 2906
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v164_dense_anchor_reward.py",
+      "sha256": "4c57e3974ce4cce9651f61dd85033d2be0276167f9388884f3e8f1992250bc15",
+      "size_bytes": 1602
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v164_gpu0.py",
+      "sha256": "f9dedf2500110ef24bb1703ed169a971442665a788ad7c8c856ede8fab157c04",
+      "size_bytes": 3149
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v165_band_reward.py",
+      "sha256": "b39ce3171cf0ddef77ea9a824c46a1e73e673671b224cd1635aea9cc546f9df7",
+      "size_bytes": 724
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v165_gpu0.py",
+      "sha256": "106c6d693422542afcc31eef247a06c667baeb85a0f36ee638cf86fc4f28f79a",
+      "size_bytes": 3235
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v166_ball_xy_reward.py",
+      "sha256": "1870919ac71c5709629536e829fb138113f72b915197d43e882915035767990c",
+      "size_bytes": 670
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v166_gpu0.py",
+      "sha256": "3b83f035feba0e80968e04598fc584d73946344216bae9b07e59d8315aea1eba",
+      "size_bytes": 2951
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v167_gpu0.py",
+      "sha256": "bb522e1c709e79314c4f21ff7f60efaa9cd734bc7d76b0c9f2937c17e6db8c84",
+      "size_bytes": 2942
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v167_reward_scale.py",
+      "sha256": "30feb927e03924fb6b254158542e7b73bef1b2feed5c359462eb9a1d7c6ab03d",
+      "size_bytes": 533
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v168_gpu0.py",
+      "sha256": "c739b9026ab72e977c191bcab5ea8eaa16f4bb82b41dd821a403a125f1c27646",
+      "size_bytes": 2996
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v168_mean_quality_reward.py",
+      "sha256": "fe8452de0d3162244ca785fca5e4ccad80b81c2ada2316e5d8256adea8585936",
+      "size_bytes": 2333
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v169_gpu0.py",
+      "sha256": "3fe6e51952eb10c13e845065e070a12d791d0fb754b0095100f7db2d85c520b2",
+      "size_bytes": 2715
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v170_gpu0.py",
+      "sha256": "99ee917983f20c8fbe41b761d5b25bc88400aa2af7d27933491c65b0f6d19357",
+      "size_bytes": 2893
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v171_gpu0.py",
+      "sha256": "dbdf8fba94667fbcbd2937f22103daddbddcbfb741acca7170c4f4a3cc114b7a",
+      "size_bytes": 3645
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v172_gpu1.py",
+      "sha256": "126a03ac72655e8284a95bf95e2a301d016d766f287068b82cba5844a2e9fad2",
+      "size_bytes": 3191
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v173_critic.py",
+      "sha256": "70c82803f9c984771ff6d3e29803012907449eb38d208c53ce7edbe0d94190bd",
+      "size_bytes": 3868
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v174_gpu1.py",
+      "sha256": "f553a00353db4beafa97560be18b51e3618bfad4977aff44c2a7fb523c151b67",
+      "size_bytes": 4786
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v179_gpu1.py",
+      "sha256": "04378b09e7b693b87f81197fae661e08e59564f7cb9a25c0023307d4970c3a43",
+      "size_bytes": 5602
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v184_gpu1.py",
+      "sha256": "a4e06fe27929e5e80eca48235faa4d2f328af71fd52fa190d2e134d50df0bf7d",
+      "size_bytes": 6122
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v184_height_reward.py",
+      "sha256": "4ebfa91febf28aadd512c62d256ae88e13cffaaf5bea722465294ffac606f074",
+      "size_bytes": 1333
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v191_gpu1.py",
+      "sha256": "0ba5544b3bc29e63f0ae1706ed032cae585d14d094df2427832102be274e54c2",
+      "size_bytes": 8802
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v191_height_reward.py",
+      "sha256": "6a71f6779dfe17b70ef701e9521b8875b108958dd76d21ee2e65a618fec4a169",
+      "size_bytes": 4369
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v198_gpu1.py",
+      "sha256": "a34f5e2042c534916d9ca702fe062a65fab1c382f990ad0bf38090ae44867458",
+      "size_bytes": 6657
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v199_gpu1.py",
+      "sha256": "5dfe36fc7e8d3c4d67b63635727a30c02192ce1db5a9e944df51633bf54b3cf5",
+      "size_bytes": 7847
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v200_gpu1.py",
+      "sha256": "28b072a2830a698967685266ce0f101700f4c14c47945f47fbe6d63e14404937",
+      "size_bytes": 11223
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v211_weak_reward.py",
+      "sha256": "3ca4eb6b684529bec4f103de8cc18db1fe124451b99e78b23a82252b1c2ebdb4",
+      "size_bytes": 856
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v219_dr_progression.py",
+      "sha256": "cb8b55a89793c2361c6ac1bdf0f5399fba4b5dbd1041a2efdc602e22349b8ae5",
+      "size_bytes": 3803
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v220_retention.py",
+      "sha256": "da1495d5c3342e19dc624ee07626a0587e1c6a2382e9ce295a9f93dc7b345acf",
+      "size_bytes": 3236
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v221_recovery.py",
+      "sha256": "e0eb5b3a42c0629be87c0d347fad3a18876a4602de828597cb2ed4b25fed1d30",
+      "size_bytes": 8804
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v223_attitude.py",
+      "sha256": "f15b18401a04803ff1d7d6e6a876986c3edb75f32b73afcafae09d183a3c513e",
+      "size_bytes": 5004
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v224_history_context.py",
+      "sha256": "4eed34902259dd418952e60089a82a5f0c5e40c81ad217d5e0c4dec67b590ae0",
+      "size_bytes": 3772
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v224_history_recovery.py",
+      "sha256": "4542516e61832df6f9ae72f98f7c18a2b103bf5191f73526e0466f237262d191",
+      "size_bytes": 7165
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v225_near_side.py",
+      "sha256": "bf89d25de83766032e1e0a5bc5cc0e2dcbc7abfab26e95641a0b4dfcbd1a4007",
+      "size_bytes": 13134
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v226_stability_recovery.py",
+      "sha256": "3e5a99f380bc256f011c38f792aca7d60e4f2adc75cff5fe23fe7ff5987b6de6",
+      "size_bytes": 8316
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v227_nominal_reference.py",
+      "sha256": "6e6e21fb46e4b564fb6d5e1b7de2277a2e2b9a1e90def68762aca2c3683db112",
+      "size_bytes": 4236
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v228_motion_alignment.py",
+      "sha256": "6c8f17317440c6f9a61e47c366e4c106e854c746f046065fe4b54fc184084d0f",
+      "size_bytes": 4278
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v229_noninferiority.py",
+      "sha256": "4e9d0f16cbb4af333de4bf861b22486e424572d10277a534992a1ea155b5c31e",
+      "size_bytes": 5033
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v230_angular_repair.py",
+      "sha256": "15d2efe9695e920db402f8b5f6e651daee65e554d793c01effa944cf4b2fd01b",
+      "size_bytes": 3850
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v231_recovery_only.py",
+      "sha256": "afd90414342fe874b0315edd36f9157a88a93eba0f09d22975ac4370b65fbc33",
+      "size_bytes": 5415
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v232_full_survival.py",
+      "sha256": "7a9899e73f3e12c924db470634f05372dabe978f45ccb3cda73d4dfa4e8dd10b",
+      "size_bytes": 8328
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v233_functional_guard.py",
+      "sha256": "0b0e12713d496844fb2f5b7ebcd06d5f3cd65a021f3f481f789558b1486dc701",
+      "size_bytes": 6275
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v234_reward_only.py",
+      "sha256": "85de208e85dfedb710969815b4ac2a50ba0ec029ab2b7e0d789fb5dc7bd4524d",
+      "size_bytes": 7110
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v235_absolute_gates.py",
+      "sha256": "d67dbe16fc6f315474354017ca345da5a4ccdb053fa0d7bd684bf154f86cb083",
+      "size_bytes": 5058
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v236_launch_first.py",
+      "sha256": "90e67897dec3ef7a8ffffbc5d530b119b10f823b97c12e8c06a5b6a3874d4ade",
+      "size_bytes": 5173
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v237_release_margin.py",
+      "sha256": "24a4fe761ef44844c8668bd6ffcaa2a2142cc30dda8c4d6e0d2e77457e093617",
+      "size_bytes": 4141
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v238_release_motion.py",
+      "sha256": "9140cf96b4bc26773d1e757fb671081c8ba71aaeef83d9b8efe4577d793214cb",
+      "size_bytes": 2353
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v239_release_apex.py",
+      "sha256": "1852a23f7ea18fe790de531a06d04c6d55b36882b05dc59506f922ac225bf846",
+      "size_bytes": 5404
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v240_release_balance.py",
+      "sha256": "dcadf365084a23327c6702393ae73bca532293d4e7c5fcd471fdcd75ddd153cf",
+      "size_bytes": 3851
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v241_physical_outcome.py",
+      "sha256": "57d9450d75233f8a5cfb431eec21cf85e14e87b424ae99a015a70bc4c12c8234",
+      "size_bytes": 6985
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v242_startup_objectives.py",
+      "sha256": "6dd1347daa53b1a6a5768bd22341ac73bd00c03c0a99ece767587c7042465bb0",
+      "size_bytes": 4876
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v243_placement_allowance.py",
+      "sha256": "68626e4cd2702e4a78fc508cbb49acde79d9709e3055a9343ea01e9d37680682",
+      "size_bytes": 4021
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v244_startup_tracking.py",
+      "sha256": "3db72c09f19acddbbd4725f06bfb0529545a2416775c0079badc3668c56f05d2",
+      "size_bytes": 3379
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v245_startup_apex_margin.py",
+      "sha256": "1a196d7a79240581b24376cccb9e88ab68d565c50547a77e4201f8e7cd916f38",
+      "size_bytes": 5405
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v246_reward_consolidation.py",
+      "sha256": "fb2287dfeebd9750f08447e8a37dc21fcb4d214809adfa763b1dec2aa8c2bad7",
+      "size_bytes": 4132
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v247_physical_risk.py",
+      "sha256": "acd40bb9595f0ea70683e63c6520268f7b8160d1b09da8dddc3434360220a55b",
+      "size_bytes": 6404
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v248_startup_band_weights.py",
+      "sha256": "5eff72e12e662ec7f2046a7af3d1e1940fb67ca957b9935fccf07b35b15fdcb3",
+      "size_bytes": 3688
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v249_bootstrap_energy.py",
+      "sha256": "2835f17410bbb6b8d60d837846d94324321600d87d9093cb082fbceec284f46d",
+      "size_bytes": 4879
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v250_bootstrap_credit.py",
+      "sha256": "8ca58c88069baaf7e29d8ae085814dab34a6d8f973c7b109740949c3ee565088",
+      "size_bytes": 3507
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v251_startup_energy_band.py",
+      "sha256": "2e87ea19cf02f73646671dfed8f2a46fcabdff92b2940fa29a9e5a5f5c29348b",
+      "size_bytes": 6575
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v252_energy_reserve.py",
+      "sha256": "be339340078ba12d43f8368e8b7e678711cb5350bc57731ba1b3bb64d531c68a",
+      "size_bytes": 4489
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v253_preimpact.py",
+      "sha256": "fb72a8afb08b4552d1ebd9e9e29f89f579399c41a30323529aa542bfce7c2b80",
+      "size_bytes": 8589
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v254_camera_noise.py",
+      "sha256": "47f136adca652de3ea53b5228c172d12dba4196b7262e858ab0829c46a6ea549",
+      "size_bytes": 7490
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v255_corner.py",
+      "sha256": "2136a1de0fb0d5863a4103c534fe43329ecf6047cd0e73c3997bb181cf933950",
+      "size_bytes": 4748
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v256_substeps.py",
+      "sha256": "947a7ae11e416f3088907fb74bc3b1c3729f765443881e50c4a765b1344052c7",
+      "size_bytes": 3306
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v256_workspace_force.py",
+      "sha256": "30d88004d3a97005b81ab2e6d09078cc0b8631cda3dae4017643742f5173f95d",
+      "size_bytes": 9641
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v257_outcome_balance.py",
+      "sha256": "2322246b05a87e55cc81a389a3c4fc78773def32334f2e84efa254ab298aebda",
+      "size_bytes": 3903
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v258_gaussian_force.py",
+      "sha256": "e264c6168e3cc8c14c5a2fee5af39a005d5d42fa839de10af9c828e30ff3bad6",
+      "size_bytes": 12971
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v258_substeps.py",
+      "sha256": "5c985ea1e2b113973ceb2656c2d4ee700bf26f4e0b997f21ee85e2430887a985",
+      "size_bytes": 4957
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v259_reward_tuning.py",
+      "sha256": "aa16be4e9bbe6ca870b4057d310a4a5647943ec58021135e5fd7d55d2bf19703",
+      "size_bytes": 7877
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v261_reward_balance.py",
+      "sha256": "29627939bd935d608d20b256b33407036431bc64cc0aa9e437e1331f3ab1f49a",
+      "size_bytes": 5868
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v262_correction_balance.py",
+      "sha256": "397351456b3cf9176f1b1ee51e3bfb7826ada6a4fc5adc8a00c1242abecfb8ec",
+      "size_bytes": 4002
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v263_tail_cost.py",
+      "sha256": "a1d1acdc73ff76639e65fa4e924f80e7755c59e20b57901aa14707156546c236",
+      "size_bytes": 3997
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v264_variance_balance.py",
+      "sha256": "a3c75e67d4cf7ec4ca5e223ee5dec80cf73760da4627827cf77323b9aa2ae2a3",
+      "size_bytes": 4550
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v265_mild_variation.py",
+      "sha256": "839e639d06f23719bbfeff68441671356f49e8601a5e40d63e65f66db3f7b33c",
+      "size_bytes": 3920
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v266_value_scale.py",
+      "sha256": "a2c07634e76e0a22be2068e15cf70097c42b2e5e4edcf45e5f3b0bc64aeb055c",
+      "size_bytes": 3884
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v267_motion_alignment.py",
+      "sha256": "e4cde3c2651fc737a44dc632b85105398842b99c2071e955ffe1e81bfc5f5f2d",
+      "size_bytes": 4908
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v268_temporal_balance.py",
+      "sha256": "8df8abf852b4d0afb32ab982bf5fa559e3720a1ac4153375bca321fc7b7d6d26",
+      "size_bytes": 4725
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v269_conditional_quality.py",
+      "sha256": "fe3dc1e6ed10dfe7931945094649f4b66dc70337177316aef67a4478f8b72df0",
+      "size_bytes": 5777
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v270_angular_relaxation.py",
+      "sha256": "cb062b5fa6e13fb7b37f472ea5c40ff016f176a2529345fae491f52efbbc5738",
+      "size_bytes": 4958
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v271_dr_tail_tolerance.py",
+      "sha256": "354be5e02878c75a7a94cd0e76f925402b4ea7c5744abd1ba92c5d04d323581f",
+      "size_bytes": 3605
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v272_height_margin.py",
+      "sha256": "59a52b2ffc2ac16c6a511397223c55c444c735584b50c8524f4002ba6c5ff7c3",
+      "size_bytes": 4825
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v273_gate_calibration.py",
+      "sha256": "6bf21166bbffbe21348b48b2b7c3882af03228d3dde92ccd4fcab659ede40df9",
+      "size_bytes": 3628
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v274_stable_dr.py",
+      "sha256": "5aba06410874dd2496628734dab72f36f373b6a7a793e6ed85a971ffb7a51e87",
+      "size_bytes": 4846
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v275_stable_completion.py",
+      "sha256": "ef4da4d654903dca848a33be016c75608740f89f77495758811260cd204c69c8",
+      "size_bytes": 4941
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v276_second_launch.py",
+      "sha256": "69842e862e136d0d97bfb6952d86540a5f72dafeef96a148d4c3d837c56689e4",
+      "size_bytes": 5932
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v277_second_reserve.py",
+      "sha256": "cfac4c8a66f7850174e8eaa846b4be11643a14ac918ed92a9d1ad92c53729d7e",
+      "size_bytes": 5196
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v278_all_samples.py",
+      "sha256": "a0ff43ae45b72ce7d9b8b9d8a1f5e6d85d95e50e112707e828efbfe6de6b8ea8",
+      "size_bytes": 4057
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v279_energy_progress.py",
+      "sha256": "cc05a927a1c7b9005c9316e513bb556504590816840a5c349be95d5aecb1fd72",
+      "size_bytes": 6956
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v280_stable_tolerance.py",
+      "sha256": "4b4803c9e3bb924d6bee2e283d9ae6198be59a825487f5c96389148d1cd5a5db",
+      "size_bytes": 3991
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v281_stable_completion.py",
+      "sha256": "ff76b9bba6dd5ebabc577a65a5c9d369db693d3d87b4072e3f5e6f2bef3a9dfc",
+      "size_bytes": 3992
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v282_survival_gate.py",
+      "sha256": "307c8454ec90db827c143c1a54067fc1cf5d446850231bdb9379d510ba1a10c2",
+      "size_bytes": 6659
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v283_primary_completion.py",
+      "sha256": "b427510ed71981515dee21b83c6f318e6fe7b399decda5b7bb0acd2a642d7fd4",
+      "size_bytes": 5964
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v284_reference_prepare.py",
+      "sha256": "d091422d658fec9c7065c2ff6b72bfcc0f41265bfe85ae3118dc476bc341673a",
+      "size_bytes": 6284
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v285_survival_objective.py",
+      "sha256": "fdb8d4addf185264861859985b9fe5acd6ee965a5fff39bad374458ab67e2201",
+      "size_bytes": 3481
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v286_vertical_intent.py",
+      "sha256": "61864dc00d3d69a4e20e2b4228eb5356ad76749e03bf92b9420c2b5330a7197f",
+      "size_bytes": 5827
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v287_startup_center.py",
+      "sha256": "bdfdda4a6f2a8a5ef1b26940ff5522e39adb370370f1acb3addb7fce4a357c29",
+      "size_bytes": 6453
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v288_safe_stroke.py",
+      "sha256": "01d6316fae1ec45bedcfc9c2b6d3a5d2f541bd0a17ca9eb5e76d84d5a3182ca2",
+      "size_bytes": 6979
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v289_coordinated_stroke.py",
+      "sha256": "6fa62df6040a7c9153767b467b34eb00672a71065933c96e6ef83eaacd00bbe2",
+      "size_bytes": 6314
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v290_startup_potential.py",
+      "sha256": "f3c3b0872de8b7db967c59a7d13231bb594c47ffe5c0658f81b3643471d47efd",
+      "size_bytes": 7825
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v291_acquisition_success.py",
+      "sha256": "416678ba6b5c0ab9b56753bf4b47b44c8508d5ea580dca66fb71bf3a2c9c94db",
+      "size_bytes": 5756
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v292_critical_startup.py",
+      "sha256": "16c30532daf9d8b46c13d6fb730580d2e8582bd5594207d74ec4e1d28bb1efdf",
+      "size_bytes": 5601
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v293_monotone_preimpact.py",
+      "sha256": "64b5536efdabf992716839547b117ec8f2c667f976c66a4b86dfeb7b717443f4",
+      "size_bytes": 8163
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v294_effective_preimpact.py",
+      "sha256": "9f3e934678b413636d6020d187d0f239f027e850fe3912f5c5112c69997aa81e",
+      "size_bytes": 7909
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v295_mid_near_preimpact.py",
+      "sha256": "9700407c8d976571dcbee85355917aea444b74e9cbb55ec999fff9430f3c2555",
+      "size_bytes": 8310
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v296_feasible_startup.py",
+      "sha256": "bc6065b02d0ea281aa9e915a8b376b469fc4da45bf7f7138f1227e54fc2a63f7",
+      "size_bytes": 11798
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v297_feasible_reward_gain.py",
+      "sha256": "fe21854611ad8d94f3f9c34e0adbb70bc72bb6be79ab8e39573806ca6e3368e9",
+      "size_bytes": 4391
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v298_practical_dr_completion.py",
+      "sha256": "a6ea21689d1811277791fb93770a21a93217bc535d034547414818d6745d0a4d",
+      "size_bytes": 5333
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v299_safe_reward_backoff.py",
+      "sha256": "fd09d70c717a9b63868f378c1b83267769b97bb8a2b7791a9c9122b86c190e85",
+      "size_bytes": 4225
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v301_launch_center.py",
+      "sha256": "30c5a67d9d0ab98d4681f073806b8bbb6b669d3bbcd19b20a0d252ffe9edffe5",
+      "size_bytes": 8321
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v302_preimpact_price.py",
+      "sha256": "7c83354be6e1476c441c4dc4e85732df006b5da6ec2f5c28382bd2f18d1b1582",
+      "size_bytes": 4103
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v303_preimpact_timing.py",
+      "sha256": "db337b7251590cc481700b0955ce980d1390229d9089899adf5664a5c6b974f8",
+      "size_bytes": 6045
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v304_timing_envelope.py",
+      "sha256": "346b9a78e0ea0038ae57a410cbc9d6e72a0ebe7d23f07b6a93d0dd2eca110e80",
+      "size_bytes": 10635
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v305_reference_price.py",
+      "sha256": "8ac7d29268bcc3e0248f1005b4c8d7d5d17759ed5179267f8d8ec285b44d6e4f",
+      "size_bytes": 5037
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v306_first_launch_reserve.py",
+      "sha256": "48d64d963cb34e2f96e1a9c59b2e13e429c9ce620be9f3932373ec2e90b34f20",
+      "size_bytes": 6664
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v307_launch_gradient.py",
+      "sha256": "d870504913b024b659fc2dae0820a23a5a4745ad482207a56ff873117a2d1f14",
+      "size_bytes": 5805
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v308_first_push.py",
+      "sha256": "8f93b4cc14e5fd0b424ecb967534d3ece75998052a8e53c073541cd9d6b8f18a",
+      "size_bytes": 6794
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v309_clean_startup.py",
+      "sha256": "7dbe5941f2c1021df06490d0f1fa3e6603f7cb35681cc969ad4fd51efb2a1a8e",
+      "size_bytes": 7937
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v310_qualified_acquisition.py",
+      "sha256": "cc80f95221698abd27e0a1445f3e2f18153c9bdc874733a1b13618f681c442d3",
+      "size_bytes": 6521
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v311_clean_preimpact.py",
+      "sha256": "1d05ff01cac4a49ec8bb076cf669bc5078dc2405c25a65fe18cc426dd223abbb",
+      "size_bytes": 6036
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v312_stage13_preimpact.py",
+      "sha256": "8d904feb9d665d8867a311bc713fb9b7e45aa7091361b7845e09e637502e9dd4",
+      "size_bytes": 3998
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v313_stage16_preimpact.py",
+      "sha256": "25e268faef05a3eff07fe2853e7a4bfbc79bf6d331d121f2c4a6fe8b7c7233d9",
+      "size_bytes": 4033
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v314_late_ball_tail.py",
+      "sha256": "8adc9363b7fea98f45d22ab15f6f5f44e04a5f31d6ed9240094ad0774cbd86f6",
+      "size_bytes": 6063
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v315_late_ball_tail_gain.py",
+      "sha256": "9d675abfa9d73f9b651ad5faa1a97db900a8e336caa980c40c3338b37c42b351",
+      "size_bytes": 6123
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v316_late_ball_margin.py",
+      "sha256": "328fb6b805f744bbb3fc800e9162395b5c1b03aa35caa294f748f92e96ff98f1",
+      "size_bytes": 6107
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v317_late_ball_margin_gain.py",
+      "sha256": "6078b9750451d148357befcb389a10153c9fae99fc178c2be017a6d4db0d719c",
+      "size_bytes": 6117
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v318_rms031_completion.py",
+      "sha256": "bf2037ec7f41fb29c6e7c0b66db7cff2d17c9c7661fcbc82d2ff723d4fe26d44",
+      "size_bytes": 2987
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v319_mean0265_completion.py",
+      "sha256": "9e5679d796d2f3aed6eea8a6795902065f0f947d7de66e6fa17cdd8f449c4eeb",
+      "size_bytes": 2991
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v320_from_scratch.py",
+      "sha256": "5890d5efa62ac4b915f234946f3cddf0d6a86e4a526851952bb22d2ea84bb175",
+      "size_bytes": 7976
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v321_long_episode.py",
+      "sha256": "39bf1593a3782f6575084dcbf50a2a631f9c466ccd3ab75db47178de8015ee06",
+      "size_bytes": 7866
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v322_accepted_checkpoint.py",
+      "sha256": "ef164a5ffa32a37365fa6f21fcb4422dc8ec85476c7d4fd5994dc53d64e8d02e",
+      "size_bytes": 6144
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v322_condition_gates.py",
+      "sha256": "ddee590f9456fdd520f1b2d2f01e28e24126d16cf745e1297a57032b4f549b84",
+      "size_bytes": 6056
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v322_late_cycle_reward.py",
+      "sha256": "72c345f80733cb5d6e12ece97a7224707f4620741e62a941129f7cf56d5a4984",
+      "size_bytes": 1655
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v322_long_episode.py",
+      "sha256": "9181a12fb81e4eadcc48a5e7e36c9ed54d34b13a340e4f3deb8f2afb5ac4cbbc",
+      "size_bytes": 40757
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v322_quality_repair.py",
+      "sha256": "507c7ab89597b3f9189a51a9840bc6feed656be5004c0d0cfa4cf9c76a79a52e",
+      "size_bytes": 14470
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v322_runtime_acceptance.py",
+      "sha256": "49b2300c8eff25230083864bf8f4744e171cbd4a497a0e8af29af892d8b13305",
+      "size_bytes": 11588
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v323_ball_obs_noise.py",
+      "sha256": "b5f641cd7d03423fe1086e59ee7571b39f784daaa3ed6a7f2bb04983868078fc",
+      "size_bytes": 7466
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v323_noise_backport.py",
+      "sha256": "50662499de752df03f60f6a2289f73a476c323b821923a739b731c8fb0434add",
+      "size_bytes": 5784
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v324_ball_obs_noise.py",
+      "sha256": "25e9d53384edd8264c04f4aa6a55f3439b57591c9d24c62bd54ba3db1b6cd9d0",
+      "size_bytes": 234
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v325_wind.py",
+      "sha256": "50a19332af0ee9d1505d16fb9ac9125e245615d0e7f632ac17dfbbf52f0d705d",
+      "size_bytes": 16612
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v34.py",
+      "sha256": "5bd43c06406ad5ac6ddc07a20ab97c776a90e992ce620ab24f57c4e8b486b51d",
+      "size_bytes": 2128
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v36.py",
+      "sha256": "8f288435b02a78d0ff6bccec16158dfa02b12bb5e0b2cec6e991c1f1b21bcdef",
+      "size_bytes": 1062
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v41.py",
+      "sha256": "73014ec6b8605ab5091242238b978fb4f862f2c9dc22155d259d1620547d8458",
+      "size_bytes": 1259
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v46.py",
+      "sha256": "df3b57906ff2e98fb1ae144dcea4b0ded6904067a3ae9da559786b1a332f7d42",
+      "size_bytes": 2190
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v51.py",
+      "sha256": "b51ca6fb32dabfc55b1bd3da5ada30861dd5edef2130df10a8bb4b77cbba77e2",
+      "size_bytes": 818
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v53.py",
+      "sha256": "e5ff15efae047ae7c30bebf506c04b6b86b0eb96dc3ff49ed5e642848236ebe0",
+      "size_bytes": 2320
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v54.py",
+      "sha256": "d55895dac168f0e9ec6640d00aca9a7f9bd27b5a6fa584e18005f1d600a1e8b9",
+      "size_bytes": 1550
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v58.py",
+      "sha256": "56472faaade784eba55eec8b67c274451fa1d22826d5243744a47d2af13dd505",
+      "size_bytes": 1392
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v59.py",
+      "sha256": "31ad99935a692f4d4da06c6761f8b2d9c7083fbc034256f8ed7d234fd9689e67",
+      "size_bytes": 1101
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v60.py",
+      "sha256": "5b46fe8aa791e384cd255f68abc8fff06c351f6462ff5073384c445865e0d61e",
+      "size_bytes": 1203
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v63.py",
+      "sha256": "d749129d7b3ef38bacfab51f0306606981cd9d25189820ba1902015dfa35b30e",
+      "size_bytes": 702
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v69.py",
+      "sha256": "e28561be8318d3bd86c16e53d9065d7d42b4915f195dab6c91d907a27d00798c",
+      "size_bytes": 2163
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v71.py",
+      "sha256": "e529dbbcd121d085d120c0d795881fe65bd68bf5460ac40c0f98d4cddcea40d5",
+      "size_bytes": 974
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v72.py",
+      "sha256": "de1a809e54efb0bb836f971d21f263d1db0750779ab91f81c3ea6c6ba96fa796",
+      "size_bytes": 770
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v75.py",
+      "sha256": "86b3101d2cf07779dc0ae0f423be0e75c822652f3b2ebbb437552c157dc9940a",
+      "size_bytes": 2036
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v77.py",
+      "sha256": "b8acb3306af1873d5021457fd586162782f26a3df257ffa6fb57660fa4e6a6a8",
+      "size_bytes": 1004
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v78.py",
+      "sha256": "66fe5c0a44b6fc65cea29992ab35489563d13782d057590b162b45d65494fbd3",
+      "size_bytes": 1351
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v80.py",
+      "sha256": "af587c5bab582785000b6ec911ece46ebfb974a4cf4d1d7958c1614b46b7d86b",
+      "size_bytes": 1787
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v88.py",
+      "sha256": "0b0c6cb4960135627128c978fbef6627d14adf97004a9ca43c8649ecd5d6198a",
+      "size_bytes": 1213
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v90.py",
+      "sha256": "7f6d37d40db2b335899873376a6eaf0f0d1afaee629291debd4936ddb88a9cd8",
+      "size_bytes": 981
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v92.py",
+      "sha256": "3df1c50f0ce7e441d662f1d8ec348d536018a8c136989ea2a690a569e2018b58",
+      "size_bytes": 7587
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v93.py",
+      "sha256": "6e87743d70a76b8e93aa318af2670cdaaae4b51ea8d5e0d1cb815534174d2f7d",
+      "size_bytes": 1762
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v94.py",
+      "sha256": "b37b84010f0b8c57b1ed8a37e526d604a5e0e48bbce365b056cdbbbebc5f97ee",
+      "size_bytes": 2042
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v95.py",
+      "sha256": "1c83e7da5aacd80fee918f86ce80b1340bcbc361464d2cd025c6836daa620530",
+      "size_bytes": 1374
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v96.py",
+      "sha256": "b61356d154dca525bb45d4dd213c2352229c5a394c9703ac89d226fde8c13365",
+      "size_bytes": 2766
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_v99.py",
+      "sha256": "eab9d061c53838b594df47f7a2c2c7fd7661b8e632c39e464c59707ea4553099",
+      "size_bytes": 242
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_wind_ablation.py",
+      "sha256": "5c5ea924b76861150b0f47885dc114fb083526dfab8f19b9dfff52f84503873e",
+      "size_bytes": 7086
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_wind_actor.py",
+      "sha256": "85b3e464699dffbfb879b7db79f3e1145e0b7760b18c8bb49300ab0a76b52f86",
+      "size_bytes": 911
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_wind_bounded_recovery_reward.py",
+      "sha256": "5f996eac57b143e2c4f2d9ed2af37cca919242be423d1490d5edc27793377af1",
+      "size_bytes": 18936
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_wind_direction_domain.py",
+      "sha256": "562316124f0b35538eef39ac42743ffcb19b261e76d3a10a8bd0145eb04791ed",
+      "size_bytes": 1614
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_wind_dynamics_guidance.py",
+      "sha256": "e30dca67508abf720861bbe2dbf5c794e62b7c372ef9f8898e34f2ecd64f1927",
+      "size_bytes": 25077
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_wind_flight_outcomes.py",
+      "sha256": "8168177086e5c7b8b81d2b8619d58919f712e310ae4b5bb24fd616402fac996e",
+      "size_bytes": 19872
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_wind_gate_precision.py",
+      "sha256": "88d1231826541a9e9097b725af14fc16eb8aeaae95de22e62e2ba373a516e9ac",
+      "size_bytes": 9024
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_wind_history.py",
+      "sha256": "7db5cd69cd6238edc656a2e3be1d55eac646c0961a7020382d39affa3a2d3558",
+      "size_bytes": 7860
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_wind_lower_guard.py",
+      "sha256": "11a8c3ae8c67bfb3d41979bf4cc940a8c53f9b72e0f218173064b614dd024727",
+      "size_bytes": 1145
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_wind_objectives.py",
+      "sha256": "8c173418b40aec7b5ce60b652951dd587342103297d8a14977ac426e6bd142bb",
+      "size_bytes": 5643
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_wind_pose.py",
+      "sha256": "6dc30db4439d810ce99c4654352eb299dd96c7c7357c081ae2a075c0b9bf0f18",
+      "size_bytes": 14405
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_wind_precision.py",
+      "sha256": "11e8b0d1a7544dd32b6c311f47e6b1932af5a0e00668a1d7c44e5275c7b89e00",
+      "size_bytes": 1287
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_wind_progression.py",
+      "sha256": "bfbb8a584ff1d0ac8b831a74f5c5e83162b7603e3c5898292a4f26737828c5f6",
+      "size_bytes": 4600
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_wind_recovery_safety.py",
+      "sha256": "cef7178daf6bbebcaa7b9d4fccc66ba7eb1bd08ff93e771630c1cf9f1d1730ad",
+      "size_bytes": 2416
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_wind_reward.py",
+      "sha256": "70a3f94ef52d77e242ed5ad351e30e16dda8a404cca781db7ddad07db48411c6",
+      "size_bytes": 7749
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_wind_strong.py",
+      "sha256": "fc340760c6e34b41116d59c356a66538a1957b0b63340be0e9fb47fff04f782b",
+      "size_bytes": 7977
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_wind_survival_precision.py",
+      "sha256": "6c05509044e5f8aebf398b4fe6ddb8c916635171f581ea1f65db96fb694a68ef",
+      "size_bytes": 3696
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/fixed_plane_wind_tail_precision.py",
+      "sha256": "f70eeab6b276384e92fdf5e09b0ec7fa1b25fa95e7ae352546c1f346df5c2818",
+      "size_bytes": 2049
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/freeze_training_source.py",
+      "sha256": "98825b2c7ec7319d56e4d2700a4df504c222cb2f979b9c1b6e9b4445a2af8a44",
+      "size_bytes": 5005
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/mjx_juggle_env.py",
+      "sha256": "333677ec0fadf17d812cf3fd1f0f74a44ed08c2098fc7ab3597bfa5d127fca3a",
+      "size_bytes": 1373036
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/mjx_line_search_schedule.py",
+      "sha256": "07a53511bb493eb559adb40d5d5ca46023eb9d7d26df9da97c6c0bed802e69dd",
+      "size_bytes": 5102
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/mjx_smoke.py",
+      "sha256": "d36982b4120068ca8168d3600b9e79894ea66368637f654c20fbea6c37d40101",
+      "size_bytes": 14890
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/mjx_topology_execution.py",
+      "sha256": "3d1bed370804d4ec5c2a07bffbdadbb7c250b91f67ebda1d0801e122b2d416f0",
+      "size_bytes": 9648
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/packed_rollout_metrics.py",
+      "sha256": "fc9233d3b4553756c03f4303dd93e1f62120d74e35ebf6f17f6c03a5add4a771",
+      "size_bytes": 1443
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/plant_aware_fixed_plane_v1.py",
+      "sha256": "0a0016c942dbcb54528f966e27b594a05538e49645831883cfefc87a3ad0cf89",
+      "size_bytes": 12438
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/preflight_fixed_plane_v225.py",
+      "sha256": "3682b962a862339a7296256bb7def62363b0d0e46c2cf82de0380e51e01a3bf5",
+      "size_bytes": 5260
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/prepare_fixed_plane_v226.py",
+      "sha256": "1a7bded02e4b2c193af1d0f5e8cecba651e892f7da041abd0d321cec9974779d",
+      "size_bytes": 6053
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/probe_fixed_plane_v22_checkpoint_pair.py",
+      "sha256": "3ca07bd071a2ca92a8f131eda80e16f5d2b482ca471796fcc5337ac0aa1b5ca8",
+      "size_bytes": 9543
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/racket_attitude_observation_dr.py",
+      "sha256": "5bee6f85f6997fa69c60bd81bdd2b29a1247392b3eb684a280438afc2ab1cb3a",
+      "size_bytes": 1962
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/recovered_rmp_jax.py",
+      "sha256": "eefa002a3a30bb62e5a4965b19a9d728fd76596f9298e1e32cfecb4c7c8679b7",
+      "size_bytes": 16027
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/rl_juggle_env_random.py",
+      "sha256": "4babff18b6742ce829ef7cfef1eda6c3cfe0eef68e28a9425017e4a1d5682031",
+      "size_bytes": 100505
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/rmp_training_evidence.py",
+      "sha256": "f0d4af5aebde40f88c5361c702913aa6130c5c5c4decfb2ef5ce3dec6b766f44",
+      "size_bytes": 30283
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_gpu0_fixed_contact_plane_vision_robust_qvel_rmp_v38_from_scratch.sh",
+      "sha256": "599d805565d840cbd389f6630c6bdce78e65ccbcd0909f826ef1e0a2ae8a8d0e",
+      "size_bytes": 7010
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_gpu0_fixed_contact_plane_vision_robust_qvel_rmp_v99_1024x128_resume_v97_u500.sh",
+      "sha256": "feb63b9d1c14d5275d9a6d5ac9e1b11c84164710ff3ce5df3a9056ab2917e848",
+      "size_bytes": 10344
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_gpu1_fixed_contact_plane_vision_robust_qvel_rmp_v101_1024x128_resume_v98_u1978.sh",
+      "sha256": "866dc9572ee53c02805d1603147f1d5fe733d61da4645176133c1a76e0a6c257",
+      "size_bytes": 12970
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_gpu1_fixed_contact_plane_vision_robust_qvel_rmp_v39_resume_v9_actor.sh",
+      "sha256": "7f4244ec6779f2b51f9a09c7cfd635943a43d705c9ba58580d7fafdae06953d8",
+      "size_bytes": 7710
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_gpu1_fixed_plane_v225.sh",
+      "sha256": "50c117d68bbe45b6484cc9c6f30c34c2c778aab098455c2939b1358f68a14aed",
+      "size_bytes": 7363
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_gpu1_fixed_plane_v226.sh",
+      "sha256": "0d6ef250496c6cdfa28af9e873cc709ee7ce356c18ffb08d038345c71c27a7c1",
+      "size_bytes": 2687
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_action_effects.sh",
+      "sha256": "b6e357ad118bf43fffb6ddb5fd3abc4c82d6e32ce51f63a59ed0ac64dd682528",
+      "size_bytes": 1636
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_attribution_collision.sh",
+      "sha256": "c9e4a861f88bc13ad58d6c2909ca7d09c97d6eecf485533cedbdf3a43883282d",
+      "size_bytes": 1333
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_attribution_modes.sh",
+      "sha256": "de863cf742aa012677e3b6f132c8d53d36fac2762f8ce3dd1d040256a55d69d4",
+      "size_bytes": 1329
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_attribution_native.sh",
+      "sha256": "76ea00248f418d94dd8b2e52f75264f0ae394f14bbae53189d8d03cf68727ca1",
+      "size_bytes": 1330
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_attribution_native_gradients.sh",
+      "sha256": "6788e73effd7b4860bdf99e3d7801836c64deae10744c1e327e45d65ffff1f2d",
+      "size_bytes": 1340
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_attribution_world.sh",
+      "sha256": "9374bd0872f55dbd5a6a1eb8d6e1ce2fcb281be24bdb1644fdc0f0b8ca7dd03c",
+      "size_bytes": 1329
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_audit_contact_solver.sh",
+      "sha256": "cb7c4abe2e50830c0f189a97cd3d7481a6cf19a083f2510309d91746e68ae7a8",
+      "size_bytes": 1491
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_audit_error_attribution.sh",
+      "sha256": "134ea359500df392a696328a467f48921bd69accfa65ea9b066e1bd71e4d6eed",
+      "size_bytes": 1329
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_audit_free_imagination.sh",
+      "sha256": "ab28792216fabc6daef8fdecf1e311e383b05f1c6bd781da62fc68577434a09a",
+      "size_bytes": 1328
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_audit_orientation_initial.sh",
+      "sha256": "c8e5446c022854b83e101a1529f53df9b92a297ecb1f2330a6ba384217842ad6",
+      "size_bytes": 1331
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_audit_projection_seed.sh",
+      "sha256": "664ceed6e079440404d151f23ff996784d9f10e300933f380e03bcfd83d503b3",
+      "size_bytes": 1531
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_audit_world_control.sh",
+      "sha256": "d9244a396c8b01053b445f78afd5216fc34f786e9fdf3cfbf26757382292ed23",
+      "size_bytes": 1518
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_auxiliary_refresh.sh",
+      "sha256": "be5c2c34748d8914a38d34e6ac0b8d72969516be49eebdb9ffeb3100e83cdfe0",
+      "size_bytes": 1784
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_auxiliary_refresh_audit.sh",
+      "sha256": "e305e296390c98517f4202d8095e96b9e6afa8876336bd51180b586ff1b3efc1",
+      "size_bytes": 1301
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_calibrate_pose_margin.sh",
+      "sha256": "06f8fefb185d78bed7c2ef7ca72da10106efe42e5f8237ecdd867710e46ae041",
+      "size_bytes": 1327
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_calibrate_velocity_reward.sh",
+      "sha256": "fc1cc393c8c56d6f389ee25362c46b2863e50895db0cf5c5a75ca252749869b4",
+      "size_bytes": 1331
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_collect.sh",
+      "sha256": "2cef886655761a9c1387e09ef0f583900a6ce24d5742b3fe4c7495750574ffe6",
+      "size_bytes": 1516
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_corrected_candidate.sh",
+      "sha256": "595271cf9588f75285d7744e2fc5c346f82f913a8dbc447cb02f0b5113606f2b",
+      "size_bytes": 1331
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_corrected_reward.sh",
+      "sha256": "2e8421959d41173a96ed4188361ebd75218e2613eb6466dca18235df37d720ad",
+      "size_bytes": 1328
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_course_pool_no_update.sh",
+      "sha256": "6b9ba1e9e208e4517f059ef80e28e08df806dc7722f91822d83efc8347052ebf",
+      "size_bytes": 1438
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_critic_distribution.sh",
+      "sha256": "d44e70702fd2c9df5f92ba5a2d47249118d407bf1fa34f1e776871cd4a16e6e3",
+      "size_bytes": 1298
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_critic_ema.sh",
+      "sha256": "8d407ea38c9a28bf64f79d7cd6dedca7e6b77202ae98404cdd9c0ca249d6ad0a",
+      "size_bytes": 1324
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_critic_fit.sh",
+      "sha256": "17d1f27452f3fe617ed62493e34f1e3e4e64412949a630018d730ff9df465e88",
+      "size_bytes": 1324
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_critic_inputs.sh",
+      "sha256": "e12b5bfafd936ed87ad16be6f450d52a7c4c5feac46e0acf70c5c56061875bc1",
+      "size_bytes": 1292
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_critic_targets.sh",
+      "sha256": "c6babae73b40f1e7206d7c8488469a7013689e70ca74c6595a4ba9ab36699be2",
+      "size_bytes": 1326
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_evaluate_orientation_limit.sh",
+      "sha256": "4c80f90b2e43d5847d3dd52e7d965ea46cb65e489aa892672693d66e897cf48a",
+      "size_bytes": 1332
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_evaluate_paired.sh",
+      "sha256": "de125b1229a6045daa9da2d47631c503600a434079f104778eedf6ca3291040f",
+      "size_bytes": 1321
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_evaluate_physics.sh",
+      "sha256": "8bf73429699f671ae880b260ba6fee9ce8b922449604417d632ccb4a9251cf19",
+      "size_bytes": 1502
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_evaluate_pose_trial.sh",
+      "sha256": "0d8eefb936b76f60ade4894bd962b7ff7234947bca40c0c5c97521f5c706c973",
+      "size_bytes": 1325
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_expanded_auxiliary.sh",
+      "sha256": "f373a854496c2a7e3edce29b34fc45e6039f050c8facc079fa9a60660b3a28a8",
+      "size_bytes": 1328
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_fit_contact.sh",
+      "sha256": "bfb0158619cf554928aa676cd4e6efc9365f3798215e77c232ca813b4f4b7237",
+      "size_bytes": 1484
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_fit_physics_contact.sh",
+      "sha256": "4bb1011e400787ac52f3e34ebd49930624948ef8ed96cff9e5eb60f832445bad",
+      "size_bytes": 1512
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_fit_robot.sh",
+      "sha256": "d89be8b88c80110201458bf49d1c7a5f1674f18eb732b7005e2b42f80a69775c",
+      "size_bytes": 1472
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_fit_support.sh",
+      "sha256": "595302d7ca103846a5b3d2829aecf86bb138f610414dab407a79c4d634cef509",
+      "size_bytes": 1477
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_fixed_critic.sh",
+      "sha256": "baf59830148f891dd333d392e8d821c0adacdb2f9f0780e3095a44f7b9950280",
+      "size_bytes": 1291
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_fixed_critic_resume.sh",
+      "sha256": "291fad1fa4b3c98035ec2d5f8ffcc8abf53c7ae9fc36fc80081b632ca1d110c1",
+      "size_bytes": 1560
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_frozen_evaluation.sh",
+      "sha256": "4ec9dc2416b2b27b755cd0b4bbb9a140ed796218ab4c71f9a725411392e7c434",
+      "size_bytes": 1545
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_full_prior_integration.sh",
+      "sha256": "10809baf4716734ffbf7a7d34c7319bf74cc6b746f95d5cbfb47174571b4cf70",
+      "size_bytes": 1451
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_imagination_no_update.sh",
+      "sha256": "0bc8b6456cba299db0dc8caa3ed84ed35d77169667d6598046880f0c0c6fdadd",
+      "size_bytes": 1337
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_initialization_search.sh",
+      "sha256": "ae9cbca30e47d3f4cef109a79551003c58c41cffb7ef3ec18084a93f920c3d90",
+      "size_bytes": 1349
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_mixed_precision.sh",
+      "sha256": "5e1a5b13896d23af99bf68f4b8225f152ca4da3d03c46525f124a960e0cf5424",
+      "size_bytes": 1327
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_module_gradients.sh",
+      "sha256": "9ae15be4590d65ee55b97a694a15eefd6a10568422a1c9f09972c527090d0fdf",
+      "size_bytes": 1328
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_new_pose_audit.sh",
+      "sha256": "bea0f4bacba4240d2b1a6434718ce665ac85b0ff06d98eb78717bb2c4b66f895",
+      "size_bytes": 1297
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_normal_components.sh",
+      "sha256": "a1dd170f0d4f8d01946a0491cba5b3198b83dcf4737e2bc0d28f760a2dd317fe",
+      "size_bytes": 1584
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_normal_experiment.sh",
+      "sha256": "65a344010b9e51699a846ed290c56199d127f27203dbc1be7f0061df4fc7e72b",
+      "size_bytes": 1911
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_paired.sh",
+      "sha256": "518b6ae9b8d710b8a9687b97a9760898b7252a8974500de32aa70adc4e2a232a",
+      "size_bytes": 1318
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_paired_attribution.sh",
+      "sha256": "fdae2f2272f82fa3417e3d0228de68d999483766082aa1ef9532d24f0e30caf2",
+      "size_bytes": 1330
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_pilot_actions.sh",
+      "sha256": "665d6170320f1b3fd41c9a5406d070b1e6c231367536af34d589a68ca5dc2f8c",
+      "size_bytes": 1297
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_pilot_evaluate.sh",
+      "sha256": "343cf791636a2ebb6e13fb24dbb136e575e0c06ccfaeb0d51a1904211d8a00fe",
+      "size_bytes": 1320
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_pilot_gradients.sh",
+      "sha256": "cbab4e68ff805f372932c0eef936baf0fdbf8d47aecfd89f25c30935de0e2482",
+      "size_bytes": 1299
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_pilot_train.sh",
+      "sha256": "354e17c574c162918226de0eba569bf6462719d4b411c3366003e730d2872117",
+      "size_bytes": 1317
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_pose_trial.sh",
+      "sha256": "1e1307c949720c891b6c764f61446ff4f479c576ac0d640c586dc31de3eed8e5",
+      "size_bytes": 1322
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_projection_consistency.sh",
+      "sha256": "e498ac2c77ca74fa56dea27ad5f702ed3b7c7bc021dc516ce27e6376b6b0f64e",
+      "size_bytes": 1334
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_projection_precision.sh",
+      "sha256": "1b6be00684a589d0930d56420a5f7c3ed17368284133e7ce7d8a1fc8ee1fa96e",
+      "size_bytes": 1332
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_projection_precision_integrated.sh",
+      "sha256": "163ee2c65ca6a48d5964d149e23231ea49aa82c2beedbf8ed1ce63009336bfef",
+      "size_bytes": 1343
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_projection_variants.sh",
+      "sha256": "42c9c44bb4b8496d7a4ada60122896ad559c35fb7f4d53430e3affaeb28d6f58",
+      "size_bytes": 1308
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_replay_support.sh",
+      "sha256": "24e915647b44a5ad70c6668ba675ccc0302808b2e8eda7caf3c72666188c6957",
+      "size_bytes": 1504
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_reward_direction.sh",
+      "sha256": "fbd473e3de7787f0147ea6aa47561096a729b3fe272f15b77967a5c7611651ff",
+      "size_bytes": 1328
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_reward_direction_recover.sh",
+      "sha256": "10f36f9456cd8a0a417513bdd335f52261c72c1b2ffe2a5a4e16f838b81a8635",
+      "size_bytes": 1330
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_saved_pose_events.sh",
+      "sha256": "2b4c783eb2f522103544b5ce4069ace0d08f4c30a7f5a2528555858704df053a",
+      "size_bytes": 1300
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_solver_auxiliary.sh",
+      "sha256": "a41863eaf272ac1bb75166bdfba1713710e5924839976479a0864e80fd8d99f6",
+      "size_bytes": 1785
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_tangent_components.sh",
+      "sha256": "9a8d064157ac1e8fc2fed5449416e264855c610101ee4c8fa150fc5addc4c750",
+      "size_bytes": 1589
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_tangent_diagnostic.sh",
+      "sha256": "2cada1006f45f9b036afd6df3366226da3428668823b30b7b38ec0d7f77c9906",
+      "size_bytes": 1385
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_tangent_experiment.sh",
+      "sha256": "006a57ff6a9742988983f48e3817997c87c99c6c6f751242bb0a05b80e7e09b5",
+      "size_bytes": 1910
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_targeted_collect.sh",
+      "sha256": "61228a4be96924773277600b10fd85b65bcc813c3eff96b478c50b23808750f4",
+      "size_bytes": 1293
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_targeted_pose_plan.sh",
+      "sha256": "a4149737ea2bd0318f3e5c268d6873228a43156ab137854562ba6bd57448598f",
+      "size_bytes": 1118
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_targeted_world_audit.sh",
+      "sha256": "76aee4a284e62229cabd798d9dc6accbd567eeae8d4e20edc50db5b38ddeeb26",
+      "size_bytes": 1298
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_training_seed_bank.sh",
+      "sha256": "dea10e4d587b0f40ccb13a216f8b8346d1e13306b539d9f5bb46bb2815d03715",
+      "size_bytes": 1589
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/run_wmj_v1_training_seed_plan.sh",
+      "sha256": "cb0f01614bac89bc347d18ac51f96fb556df20e6d669a02419eb2f4bb140f94e",
+      "size_bytes": 1115
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/screen_fixed_plane_limit_cycle_v1_reachability.py",
+      "sha256": "14d0e9b474b8f7bc2b716914ddefd094c2fdb5f5a3c35203e5a508ba598f0bb6",
+      "size_bytes": 61200
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/sim2real_bridger.py",
+      "sha256": "163914413b640acf9d4825bbe3db839480e096ed4dca136e373206d514d1445f",
+      "size_bytes": 29138
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/train_fixed_plane_ball_obs_noise.py",
+      "sha256": "83b6461e9bfbb92f76dbf05350706915344bf6d3ea42bcb8506bf30d2ddf8db7",
+      "size_bytes": 53966
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/train_fixed_plane_v321.py",
+      "sha256": "8dbd701c9c58a8083948635159d09786c86c2db989338de772cf91eff6927a06",
+      "size_bytes": 27571
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/train_fixed_plane_v322.py",
+      "sha256": "0bfcedb567199709f94c5b12eaf5b0746dd91367e8c9b397613f1f2571513d4f",
+      "size_bytes": 61340
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/train_fixed_plane_v323.py",
+      "sha256": "ca59cc98bd6c57cfd71bac42bd39562b3ed31e5a78cff4bcca49fd1fb5eb8340",
+      "size_bytes": 191
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/train_fixed_plane_v324.py",
+      "sha256": "4707bca8d7a6ed819a06ee30e18ccb98c302d37efc33a3965f2263df5c2f2341",
+      "size_bytes": 191
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/train_juggle_mjx_curriculum.py",
+      "sha256": "15676e657f9ac49d5d9f650926e3077b8a7430d9b32a0fe5a762ae39a726674e",
+      "size_bytes": 5213800
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/train_juggle_mjx_ppo.py",
+      "sha256": "4034ab47ccb0f3d38c9b0a5c6b9ca1722050f2f9462de37310a4309ef281cada",
+      "size_bytes": 135140
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/training_memory_scope.py",
+      "sha256": "9ecc4a3b54bdd5f58a8586d0a338ce016d2df589a7985a4812760b8156e63e92",
+      "size_bytes": 28079
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/training_run_io.py",
+      "sha256": "bf327bdb6c51153abb8ebe95d448d0b19029817e19be042d546d395e42aa1aac",
+      "size_bytes": 4182
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/validate_juggle_mjx_ppo.py",
+      "sha256": "39fa1b8a839fd81ba789d6bfdd53bb8c25a251c33cf5706356d67b75443c40ba",
+      "size_bytes": 197838
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/__init__.py",
+      "sha256": "0ae781ffe3318e6feb5913d07ef830edd9c82142c1cd2847cd2e8330025d62f1",
+      "size_bytes": 228
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/action_effects.py",
+      "sha256": "e169770c0186bb7d0bb6f5e9e4a3c3c9b3625102c1f39d13d18a0b3c28092c6e",
+      "size_bytes": 8796
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/actor_critic.py",
+      "sha256": "e43ac30192510227bc01e278e66652024f2c9c99bdd4b345422cd5c8d14c3014",
+      "size_bytes": 4858
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/artifacts.py",
+      "sha256": "f2fc7e84bd047867b160e443c3a822a06d17a126b69cf6c90acdea34d68d08af",
+      "size_bytes": 6728
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/attribution_checks.py",
+      "sha256": "aaa2b188c3f0df985f1a448a9d570456d5b67f9d9d25e6e47c8618353db59c7a",
+      "size_bytes": 1297
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/attribution_common.py",
+      "sha256": "c25267b4be03f22692b343393e680c04fc87564533c32b15c3496ed1b7c9d4b5",
+      "size_bytes": 6443
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_action_effects.py",
+      "sha256": "9012620f92b1bc6f03542760eaae6bf27da8acb3a9946421e5ba95da196ff943",
+      "size_bytes": 17736
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_attribution_collision.py",
+      "sha256": "170239556272bb451c50e9fe901378d7527b08d10c106d14bff5034cf8839dbc",
+      "size_bytes": 6448
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_attribution_modes.py",
+      "sha256": "30cc96d161d49f442253079bce66c7ebddf3a6696ad677db8b0a8810219f72c2",
+      "size_bytes": 6986
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_attribution_native.py",
+      "sha256": "bfcd5b6d8d26d47af358e8e55888a8443b5c0b40704723a52a4c2e4973174bed",
+      "size_bytes": 9927
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_attribution_native_gradients.py",
+      "sha256": "1ca8bb61fa15db0421c6bfde6ad3de961d98b47b428fb5a70a665fba86a1761a",
+      "size_bytes": 6412
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_attribution_world.py",
+      "sha256": "ff19e022e82401ce829a6e2f0b6f901994f21cc8a2dfee320e3597f521596833",
+      "size_bytes": 16691
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_auxiliary_refresh.py",
+      "sha256": "dcfd8bcf7a44c3b3b7d036bdf95ebcbbd5a6be0e181a4183b8ad519c66824efd",
+      "size_bytes": 12192
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_collision_geometry.py",
+      "sha256": "d037e42d395050b2067dd034867206b1f906dae951bf6ea30373e301058ef849",
+      "size_bytes": 8008
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_contact_fit.py",
+      "sha256": "69cab9ce14c517872b8940f86c97ec0253398bc4186440f5a95315494295d079",
+      "size_bytes": 11223
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_contact_kernel.py",
+      "sha256": "45bbb67d7695f859f6c62fc9714ea399c6d3154cbcffd69c636eb24d7a85946f",
+      "size_bytes": 6427
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_contact_solver.py",
+      "sha256": "cfe00de5687f9fee3f09bd6c054ba4fcc0a93cf52ab8721660c71f66eb54e1e0",
+      "size_bytes": 9520
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_control_components.py",
+      "sha256": "6f5bbc87fcda864a2d28e389f40bf88a5162da9fc02b394e664238e4067e7b5f",
+      "size_bytes": 3167
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_corrected_candidate.py",
+      "sha256": "d2ab000d26717b6f539458a4d24cf46f8727918f2b780f270c3d4f2469d6ad8b",
+      "size_bytes": 4790
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_corrected_reward.py",
+      "sha256": "fa3b87eb8c21a1500efd17302832fc45c58b0ce41169d091313bc1c8f4adc77f",
+      "size_bytes": 13532
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_course_pool.py",
+      "sha256": "c780f21b414b02f7152880358e6714b6d35db65f89d98575b387c2feeef5ce32",
+      "size_bytes": 16628
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_critic_distribution.py",
+      "sha256": "8e5ddc0371da74030f83cb701be4a45bc074dc9ca936d55b02d2c680ef0b8d19",
+      "size_bytes": 11332
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_critic_inputs.py",
+      "sha256": "7e1d5f60edbf1340095035cf8c27f0673bac8da71c571c408fb949dc9eacd7ef",
+      "size_bytes": 18855
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_critic_targets.py",
+      "sha256": "969975e0dd99430984571787173347b3f2eea5e5e34c44203732215c2b186ab7",
+      "size_bytes": 13404
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_error_attribution.py",
+      "sha256": "fe665e13acdb916bc2ec73a2a472f6345c66a42abedeb9f6f2279ccb3d7ff917",
+      "size_bytes": 16820
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_expanded_retention.py",
+      "sha256": "dba842eb8195ffb6c0f57a0e24dfb8eed7f0c5aafe340f2edd743ddbb593f09f",
+      "size_bytes": 3925
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_fk_context.py",
+      "sha256": "0f243250184087ccd4b9a33ad4e6347cc50af2b331d575299e0aae0bacbb2fbe",
+      "size_bytes": 4636
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_free_imagination.py",
+      "sha256": "4a4fb62a86df7cf3d38ce180975e5a4f264c454fd366b0dee285e0e8a01f8fe9",
+      "size_bytes": 26949
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_full_prior_world.py",
+      "sha256": "73803b5e21b03e18e799ce89e4ba2e822e9f47207061e747b46eaeeb6d5f12a9",
+      "size_bytes": 20682
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_gpu_replay.py",
+      "sha256": "d8b47ab787140212b6c0f7827670859924fca26a7ff03261bd84ef7084dacee1",
+      "size_bytes": 13962
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_mixed_actions.py",
+      "sha256": "59237bb77d9467f3e2c56301021779bcf1fc1b09791b207c1ab5c2de1a4defb0",
+      "size_bytes": 10257
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_mixed_precision.py",
+      "sha256": "7105266eeefdda0dd4c0f65e9d62ff48412fb872ca82cdc4a15da3880386c1f9",
+      "size_bytes": 11868
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_module_gradient_details.py",
+      "sha256": "4fc5b3ccf0e3715c63d579cf20401dbf46e87cda41bd40944c0478ca35d72d61",
+      "size_bytes": 7365
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_module_gradients.py",
+      "sha256": "130c8e3ca457667e3b1caea168fa725e35c8c4a52f370c11164b650cf8d980c4",
+      "size_bytes": 20628
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_native.py",
+      "sha256": "fe7e9d053a20481edb598098e77ba970e8374af55cdd308e503553df28da29d4",
+      "size_bytes": 11177
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_native_contact_geometry.py",
+      "sha256": "e87c47c29456f818e26424a74af4a32e92219a745d1c98fb74e11cf715103e8c",
+      "size_bytes": 4344
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_new_pose_world.py",
+      "sha256": "0e85a42a05c5974a025985bbc6c5ba27f9568426902f582ada87bbdce84b4ec7",
+      "size_bytes": 21445
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_normal_components.py",
+      "sha256": "565d0d63d9c58bbc721e7580a339bb14cc178a505e3f0b8fc700fe8ba0c15f2b",
+      "size_bytes": 7460
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_orientation_initial.py",
+      "sha256": "9e2f4c0245a2c9dc06b3a2bf834fa5df6c2fe960670191c4bd5f7f07515688b6",
+      "size_bytes": 6341
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_paired_attribution.py",
+      "sha256": "af56ee1775e1109602bbf59e70a9095f9ae46eb972c7fadab085b7b5feb4244e",
+      "size_bytes": 20687
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_pilot_actions.py",
+      "sha256": "66625a83f7effdc75c2d0fcca95ac9cf1351181e3a5761e16063daa6bc825449",
+      "size_bytes": 9753
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_pilot_gradients.py",
+      "sha256": "6963ea6967d906778b117283fbebe0c34321d50f310ff59cccb03c6883ff0fdb",
+      "size_bytes": 6661
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_projection_consistency.py",
+      "sha256": "c18cb14f4cdee710fa2f42fddb4cef80698e34b39f2b027c075de8ba7945ca93",
+      "size_bytes": 7703
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_projection_precision.py",
+      "sha256": "ff5ca1e82d76d8356cbb82df9f338f908bff66f86cc13581d0d9e3b064e10455",
+      "size_bytes": 10796
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_projection_precision_integrated.py",
+      "sha256": "a3d21f99bf03b3bc7a573f87a00ea097909d22ec509b91b22cf2addc09ea1fab",
+      "size_bytes": 5428
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_projection_seed.py",
+      "sha256": "4aceefa647c4bbb0cbbecf4a1a98e2cbe6a219e99347d713f3e794eca3e67694",
+      "size_bytes": 12549
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_projection_variants.py",
+      "sha256": "1382d0b63d1aff9c51207e2d0e931d4e94d742eb30c6485a5c652abb1498fa4b",
+      "size_bytes": 7224
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_reward_direction.py",
+      "sha256": "527990ea5de989e179566282866d3e3b0e283cd3971218ade2fee43a62940060",
+      "size_bytes": 8346
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_saved_pose_events.py",
+      "sha256": "a078b1ae8d83c3fa409486de26d23646cb656ee6d7cba151274d9de085a4e389",
+      "size_bytes": 8650
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_soft_acceleration.py",
+      "sha256": "7d588eacf201c061f307472eccb57651f95fc053ff4dccbb6a50fb9d6594e1cc",
+      "size_bytes": 8632
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_support_replay.py",
+      "sha256": "cb732b6dec0c68b1514dd987b71c3bf514c978688a82e3decb40a5326df55d2c",
+      "size_bytes": 6408
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_tangent_components.py",
+      "sha256": "c9afdcf7f54035ad9a672a20c691ed1d7a7baa21df22df9819edb7bf7c8c2960",
+      "size_bytes": 7991
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_tangent_prior.py",
+      "sha256": "6fca8a1822c9666fe48686a1db2a40bd3dbeadf4137e787a85385ffda700e1b2",
+      "size_bytes": 2644
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_tangent_replay.py",
+      "sha256": "a17a604685a16ce239b08232a3be4cc1077a6b80f4f7651f219a737a6a5936be",
+      "size_bytes": 9990
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_targeted_world.py",
+      "sha256": "9cad29b88a0a053ce1bf308e8b464ae895a0d282fd9ad77a5de529e02dd51eb4",
+      "size_bytes": 14731
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_world_control.py",
+      "sha256": "b4e00a0fe71cfc04d0ae04220b9f2888212a28d090ccc8137837cfb9f7a6eea2",
+      "size_bytes": 8480
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/audit_world_control_gpu.py",
+      "sha256": "53d063f01802d539e9c73fff40c53d02c449ec2d7b173c34c0845cdb918e7c4a",
+      "size_bytes": 3316
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/auxiliary_refresh.py",
+      "sha256": "27094e37a5e3c6aae7cd0485a8bdba3e57d68fecd5a3c12ce9ea97eeb569c469",
+      "size_bytes": 3708
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/ball_flight.py",
+      "sha256": "c0995069f63f86ed667f27e0f6d4860bf9a93d2d9344534cb12fccd3e8f3338b",
+      "size_bytes": 2504
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/branch_bank.py",
+      "sha256": "dcd1d821bc3b0ce9b216843e77105d8c228546055ef9b0dc1a5636e2664f3c6d",
+      "size_bytes": 9736
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/build_training_seed_bank.py",
+      "sha256": "d975a6948ac5973f1aacd5fbbb38472032a47a3386cd58fd55ef0ab8f04423d4",
+      "size_bytes": 21471
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/calibrate_pose_margin.py",
+      "sha256": "f8b94d21c6b8d5aae1066e6e829d49ff472012f08d93e97e911dd0f6d750e5da",
+      "size_bytes": 11241
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/calibrate_velocity_reward.py",
+      "sha256": "555d1cec7b9ed31c1f7889652e1aac7bde5dca1c70e96e270a8b9bafb3483126",
+      "size_bytes": 16357
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/collect_refresh_labels.py",
+      "sha256": "6854e0fe56d6b79a5a1c339ef982e67013ab2ae9f9996f993fdc142f39edc463",
+      "size_bytes": 13061
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/collect_solver_auxiliary.py",
+      "sha256": "88cd71e230c8f812d885570e50a40dd71f35545a0344e171c56b0d346e7e15fa",
+      "size_bytes": 13094
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/collect_targeted.py",
+      "sha256": "51aeb73e780c27c9b166de119dda1d6dc876e05bf5ded33755621d9798e95db0",
+      "size_bytes": 24239
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/collect_teacher.py",
+      "sha256": "9cbcac483d7f40c696bfa3035827f69844e6364e05223175b5c84c9ffd20606c",
+      "size_bytes": 25083
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/collection_labels.py",
+      "sha256": "a58fb67308e04859ccad2225cb9f876899986ea8bf0439d535d9becea529275c",
+      "size_bytes": 2283
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/contact_checkpoint.py",
+      "sha256": "afa647b1490538bfc65bf04df7bebe2bd9759f07e7560e346d12e02866fcef2d",
+      "size_bytes": 894
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/contact_data.py",
+      "sha256": "f96b93d02d0f7f2cd5cc5301706febd0115dc0e09e2efa24bae20040220eb771",
+      "size_bytes": 6834
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/contact_dynamics.py",
+      "sha256": "b72cba88e97878404b682114da66d8fe1bf576bd11c5bfbae15e2f87bfc19038",
+      "size_bytes": 2274
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/contact_fitting.py",
+      "sha256": "69f6a628b7c8d2c2a462c6f78ebc670de39f08c65d82f77a75e043e740d3660c",
+      "size_bytes": 2421
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/contact_geometry.py",
+      "sha256": "d7ddfd72d0e6fecb9bbbca5b4dc1653a0b47d81dc1e097fe20f39e24cb4bc886",
+      "size_bytes": 3773
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/contact_losses.py",
+      "sha256": "10631e15461c103ba08fc0e7d270eecd7d9fb71e4a8af836f3b6f27c454c1a6a",
+      "size_bytes": 3254
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/contact_model.py",
+      "sha256": "ccd94659584f832c6ac170bd6a576a37f07439e1b4a985ff61141ac4107e4247",
+      "size_bytes": 4083
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/contact_rates.py",
+      "sha256": "ae45d7d45fe0efb519e5d1390d3ac4e21fc609c5b59d206f0181fbfc5ad5d270",
+      "size_bytes": 2210
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/contact_regularization.py",
+      "sha256": "59024903f9a8161de35dc7bcbf576c8803e0500e3830c81abeb30f9b41b085e5",
+      "size_bytes": 2831
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/contact_schedule.py",
+      "sha256": "9d6958c965a45715d96fe345eb35623a6cc9a0a9b38bcec3727f69751bf1915b",
+      "size_bytes": 2155
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/contact_surface.py",
+      "sha256": "6560e1334a7f37a4cb45b8572011d026a01e7f50e71440ad90bf4321434b8743",
+      "size_bytes": 7067
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/contracts.py",
+      "sha256": "28f33e8abde5a2cc2b4c3fd51f13397231c902092611dcc6771bb7d5408988de",
+      "size_bytes": 14268
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/control_execution.py",
+      "sha256": "c7e8d4e84b9bf6a1a8c6425a3d288b450ccda2d0f18696e58e6347eef70396eb",
+      "size_bytes": 1314
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/control_kinematics.py",
+      "sha256": "222c982d9863884b808ae122d5728836fc078c0079b7c9abcb16a599f2fe8ca8",
+      "size_bytes": 3551
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/control_projection.py",
+      "sha256": "2407c91ae6d64531ed776b054e37bf6b5ffa42d54d4cbe3c096049599e53e504",
+      "size_bytes": 7435
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/control_rmp.py",
+      "sha256": "0d8661610a53bd6e568d303d33904fb59d7ad8dd9d857c63fcf87d70b27b703c",
+      "size_bytes": 2863
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/control_seed.py",
+      "sha256": "15b67240170a1c55932f1c6bb52defa2f44095bbe7a2df477d5eef621cd0e54d",
+      "size_bytes": 2721
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/corrected_action_audit.py",
+      "sha256": "9909d60cd8405259e8aebbc755576ae36802bb636c3b37fc6b34647cf97939c0",
+      "size_bytes": 9169
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/corrected_candidate.py",
+      "sha256": "4a530960b7e9a8439e4f0583e3206f712e541b403192f33ec09ed43e77e00aad",
+      "size_bytes": 5457
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/corrected_reward.py",
+      "sha256": "072dd71868674449b2f5a824dfec46b0a1ef2560925b004d0d78133b86af2d15",
+      "size_bytes": 7783
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/course_control.py",
+      "sha256": "4b93511776f76676d890eb5386b80f4d7f33654ff88658cc03f2002e7e0a1f7e",
+      "size_bytes": 17569
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/course_env.py",
+      "sha256": "81c4174d7327c9d2f3dade328e5618983ac5992f84b035570e43753778a12f70",
+      "size_bytes": 8295
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/course_goals.py",
+      "sha256": "9616b6cfc3c4f75b4764fdd1e2756becf2f9e305b3500964b7833c029d2251c4",
+      "size_bytes": 4183
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/course_learner.py",
+      "sha256": "8f4dbda0f4fee051f2f4afd2e1a024860056c08946355b221183d79d67a77ca0",
+      "size_bytes": 6833
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/course_rollout.py",
+      "sha256": "a81ccea331f0785cf87ac6ce3ef16d0e3fc493e967bf3a987284d6a2d1d8baf5",
+      "size_bytes": 5623
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/course_sampling.py",
+      "sha256": "cdab24ea4d6fbb3e7a694ad9bf4e7d09f8262bd273fdd8109be61279183b945b",
+      "size_bytes": 3364
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/course_schedule.py",
+      "sha256": "d1e9890b49b704bd009d9d5ca0dab1d44231c434f8cf4663bdd3a6744feaecc8",
+      "size_bytes": 3830
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/critic_distribution.py",
+      "sha256": "c4054af98c94fa900b5b71349b814aab80cde5f376f67f060acba369dfe8b3d3",
+      "size_bytes": 5299
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/critic_features.py",
+      "sha256": "d8739c9fbece58db77bcc58822d677454eb91cb6237f22213591d364dcb0e01a",
+      "size_bytes": 5213
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/critic_fit.py",
+      "sha256": "199c186bc03ade4a8fc0ecd71af679e09a3f513a568450ae56eb7986d2c370d7",
+      "size_bytes": 7035
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/critic_input_audit.py",
+      "sha256": "47409dce9cb16598b9777b857d12d02022547d51cb92a57c1aba862cbccadd91",
+      "size_bytes": 6601
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/critic_targets.py",
+      "sha256": "ad59541f6441674c39f84dfc76bf65166dab7e071016e954d5329f6a9817eb15",
+      "size_bytes": 8570
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/datasets.py",
+      "sha256": "c239216a286ab10652de894ee9aa9d7bbe831327f6b59a263f35f819a199bb25",
+      "size_bytes": 2899
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/domain_atlas.py",
+      "sha256": "a8e73315df58d23d58a53124031edcab82610f1127c63e5c6068178927d9de02",
+      "size_bytes": 12983
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/error_attribution.py",
+      "sha256": "001584fe59ea5e46ba4a9b725f413f6b06c952faa925346f3f7c375f75d4811d",
+      "size_bytes": 6322
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/evaluate_frozen.py",
+      "sha256": "09bf0d915e3bea217f8ae957180ebd9ef1a9d5cbb6c04f6ef8b9cf7faa2c56af",
+      "size_bytes": 21048
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/evaluate_orientation_limit.py",
+      "sha256": "da96af616b128d64dcda7b985a2d9e88fa0a66196a767c441abc7c2ddb89b0b1",
+      "size_bytes": 3063
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/evaluate_paired.py",
+      "sha256": "1d18da935265374fc345d003f0391036b31071e94f78f61bad082b79a35e9efc",
+      "size_bytes": 2966
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/evaluate_physics.py",
+      "sha256": "c3054f548336200cf260857db2c5d5060d5eebd80bae9a73e158b06c6a6ac771",
+      "size_bytes": 11333
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/evaluate_pilot.py",
+      "sha256": "5a94449b45cc8c2eb79c17f1d497a07349c8b6ea2d0cf974c230c14135f37bee",
+      "size_bytes": 3112
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/evaluate_pose_trial.py",
+      "sha256": "e641b6c927626d753cd51c6026a2ed2823ef0a36e43e327ee7511885164391b8",
+      "size_bytes": 2969
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/expanded_auxiliary.py",
+      "sha256": "4bd2d0e254ebf8097f1cce0ba1be1f23d916ac576348f11a0274fa361ba041f6",
+      "size_bytes": 7086
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/expanded_model_audit.py",
+      "sha256": "a0d88c92b69008f7e0003e902a425411c5ab8307a7be0ec9916bb7dae4644a49",
+      "size_bytes": 5858
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/external_force.py",
+      "sha256": "6480136f9767e3ce34fda5b2e551e8dea30f00cc8fa3781da7a11f1fa046c34e",
+      "size_bytes": 2354
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/fit_auxiliary_refresh.py",
+      "sha256": "03ab98a8ab0c126645574d9f6bb4d90c1833fd40c35c5893b39dcdbaac2094d7",
+      "size_bytes": 10644
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/fit_contact.py",
+      "sha256": "f4ad40263479292d8468c2c24c9953115f0c83311ee4d08b34909d2e4fe60c73",
+      "size_bytes": 28682
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/fit_expanded_auxiliary.py",
+      "sha256": "1423df32acfc083ee4ea5b6ba8000153b9a8b14d656bcff0ad5a121a6419e427",
+      "size_bytes": 9052
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/fit_physics_contact.py",
+      "sha256": "6f1d1e76ff752258a28d160f24df8ca40677c3bab0cbabc6ad95528b1d4ff1aa",
+      "size_bytes": 14513
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/fit_robot.py",
+      "sha256": "11bb1875a230aa903ee3e9c1ef6b97a590eba41054db96abd4a9f62bf8900ca2",
+      "size_bytes": 18370
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/fit_schedule.py",
+      "sha256": "177e07cc01daca33d0eb79827a40f932e6b90e2e818a5109bd66d3c8ed6e35bb",
+      "size_bytes": 2143
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/fit_solver_auxiliary.py",
+      "sha256": "e816efcec59ab9b3d1447f51e542a235e210c1de2c9ec8ebfc08f283fcda6a5b",
+      "size_bytes": 14584
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/fit_support.py",
+      "sha256": "103b691ffdb7efc0f81909f04460d331bb132eb6298cb917396a48b8302476dd",
+      "size_bytes": 18228
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/fixed_critic_fit.py",
+      "sha256": "3a6b621da2e373816608b56538f7fcb531ef01f4e92b9fae151aed229d802f5e",
+      "size_bytes": 2103
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/flat_initialization.py",
+      "sha256": "5ee58f404672a504a69aea8d4ff17af93a407bace8fb504eb3e44928b32e3c61",
+      "size_bytes": 12663
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/free_imagination.py",
+      "sha256": "88652bc673dc9d23ba664f6c7dbac10dd2d47d543a4301a4d101d5ba693291d2",
+      "size_bytes": 4936
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/free_orientation.py",
+      "sha256": "e46dc6b2fb927a02d1096876bf3be0eadf69d38651c86a0a4fdbe41c4b908f64",
+      "size_bytes": 10017
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/frozen_cases.py",
+      "sha256": "27a7372c56d0ff4d216f5a6b6251dd494d8ab64a816ea67bc42c5ef632686aba",
+      "size_bytes": 3862
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/frozen_initialization.py",
+      "sha256": "792dd2972fb111bad01c85aaba9f43c656358044f25b20e0ffb161f68eda1eaf",
+      "size_bytes": 10919
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/frozen_seed.py",
+      "sha256": "44ead46a5f1eec93748d75c7e23dc293fe664501ecd4bfb31dbf4ce4580929eb",
+      "size_bytes": 1898
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/frozen_task.py",
+      "sha256": "64846bdf292860ef040e4bfbe74a896f22bae6ff3ae1b647ce1fe1805c49b813",
+      "size_bytes": 3984
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/full_prior_seeds.py",
+      "sha256": "84a7f62e23bb5bb22ab11cc910cc99efbbf8dd7d56909a8dc113e45fcf83428d",
+      "size_bytes": 5647
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/full_prior_world.py",
+      "sha256": "7c2beab4109de471bd5d440c6c12c4938551bc30d2bfbdc1780aba4e32778c93",
+      "size_bytes": 6143
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/generators.py",
+      "sha256": "2a63320c993095fde9414d31100123fcbccebf9a5c9b1d4e5320b68784b709f6",
+      "size_bytes": 9990
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/geometry.py",
+      "sha256": "26a47f885b3f9224e9549af914c631d90280098df6db607f26b3cb384341bf84",
+      "size_bytes": 7586
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/hybrid_contact.py",
+      "sha256": "ceaae1275d9bdb7d61ee5f6531e2caad4fbc0adb40d2842737d9dac72d5347f5",
+      "size_bytes": 5464
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/imagination_checkpoint.py",
+      "sha256": "6d70a7db8ae87fa5b0949d6fa22b596ba9a945ec871bc7c4fa247f08878525cf",
+      "size_bytes": 2539
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/imagination_diagnostics.py",
+      "sha256": "d590ca6145a76c7d84707f8705e42fac1f6318dc088609ea423407693856c5b6",
+      "size_bytes": 6767
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/imagination_learner.py",
+      "sha256": "5a8ff7b52ae0c4ed757479b8014a40c87a682d037e36f75966266ed3decf4cd6",
+      "size_bytes": 6872
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/imagined_env.py",
+      "sha256": "30657295bdfb1d3bcaca247c7f05b6956d79bf9704618147562c2db26ade0709",
+      "size_bytes": 10127
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/imagined_rewards.py",
+      "sha256": "ef5298b0ab80d3a855f119ed2ec33de3d0c3b2628080aec675dd116ecf736459",
+      "size_bytes": 4199
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/imagined_rollout.py",
+      "sha256": "3c12293128670a7fa55082a81408341a1dc9efea7291aea968fd945a5a94acf4",
+      "size_bytes": 2783
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/initialization_geometry.py",
+      "sha256": "91933685d4d3829e85cd6d77c8cd31764ac2a2caf6a53250d05c4a2b2fd69120",
+      "size_bytes": 9915
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/kinematics.py",
+      "sha256": "865ff11aaf34b166bf13071dc65334aad45a9d435fe1e9848b30ecdb6b98a935",
+      "size_bytes": 5946
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/mesh_surface.py",
+      "sha256": "509c411dead66e2e54ed6f153f1ebea1a8d11d3b8ad4bc6eadbb8d12b4a7b6ea",
+      "size_bytes": 5836
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/migration.py",
+      "sha256": "348d8c2b758f27a7c75d5b5e24e392f19d2c056c62113235dc5ab74c58d107a2",
+      "size_bytes": 3562
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/mixed_action_seed.py",
+      "sha256": "b650b9ec098473442dc38ac878bbf6b712c186bfbf0ab04c8b765575f4346ba8",
+      "size_bytes": 3173
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/mixed_precision.py",
+      "sha256": "ba00c2dd4bb32fb40a101952b356cb83793fc117e64e47c51af862e93ddc0fb9",
+      "size_bytes": 8619
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/model_data.py",
+      "sha256": "302544c4eb19ae578a825ebb938dd58af0788409b5fe8671af98e1cb38ab04e8",
+      "size_bytes": 5239
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/model_losses.py",
+      "sha256": "a348a58fd069b5016981e56d10ff8b105ffde4797bfc31ab66bd9a5c51e73836",
+      "size_bytes": 2510
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/model_numerics.py",
+      "sha256": "344740737d0e261e6ae3fcb4dc03c25f9a1b8e63808282886e83ec73b2c28313",
+      "size_bytes": 1132
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/module_gradient_tools.py",
+      "sha256": "e56a33c80fe35ff09f7f7b9d50a1043b0cd9b29047f8cd25731e52f8aeaa19bd",
+      "size_bytes": 5689
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/native_contact_data.py",
+      "sha256": "0747cf24bdcba98cc165d6c18dcf5d70297fedb702d45d8be3a3c75684357b28",
+      "size_bytes": 3114
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/native_entry_collision.py",
+      "sha256": "89291452530fd347718ea090347d54c3e81bf0f8431e5ca7234a7249e1a09db8",
+      "size_bytes": 9085
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/native_evaluation.py",
+      "sha256": "375b7a2c8bb1968e4ce9aa77e104f73616c0679860e03b07975c9494866413e8",
+      "size_bytes": 9221
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/native_observation.py",
+      "sha256": "59217536f75aba798b2bd5d84b8caf5dcb2f53fdc9ac214c781fd2f048a31257",
+      "size_bytes": 4859
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/native_pair.py",
+      "sha256": "60b9b153b649c94a492e005aa261e90d906c88403a17f0a2dc0cc0abd5ebd5b1",
+      "size_bytes": 2747
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/native_stack.py",
+      "sha256": "76d77fc69b99d55ef56859da99a086ab4c92c89e91bddef9975094d855594990",
+      "size_bytes": 2267
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/neural.py",
+      "sha256": "2933785b0692ee9c54b27952b3ac4180ca7600fe92738469e31acf1fec941da9",
+      "size_bytes": 2585
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/new_pose_audit.py",
+      "sha256": "677514c0a428a1ba2c40cf8db87dd8bb23162fb02f087447d13af3977bc67b9c",
+      "size_bytes": 2371
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/normal_checkpoint.py",
+      "sha256": "5e52c3cb7578089263cec24e7bae6a6bf06b50a795a6f1af662ba9be89324b6a",
+      "size_bytes": 4652
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/normal_contact.py",
+      "sha256": "fe6908f23c3f65667532aefb51002b8a9b89a4ec831fe8103f634af93fcf0faa",
+      "size_bytes": 7305
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/normal_coupling.py",
+      "sha256": "288996ac168720477f6b75190c05e670dc0e8c59324ea1fb6d6f3c9e0b9cb9f2",
+      "size_bytes": 5332
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/normal_experiment.py",
+      "sha256": "3733bc54ffca7362fc888968d3f45e39f205fcb54252143079b8167b462d6a83",
+      "size_bytes": 13098
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/numerical_validation.py",
+      "sha256": "002022a2a79a12575d094a15a2386e353294cd5d852b1e5b6ecd46ba5f7d5caa",
+      "size_bytes": 2537
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/observation_engine.py",
+      "sha256": "0cdb41093cfa7c3368d3e8b5be6a88940ffe93b29de030cbd6c2d310f254d31d",
+      "size_bytes": 8970
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/paired_attribution.py",
+      "sha256": "fe240168d248cacfde921c538213ce733c3d3c3066ab00fb344fbc8e7588c757",
+      "size_bytes": 7660
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/paired_history.py",
+      "sha256": "15d9180100318f539beb795b54cf86b98ba591927bd9460da8b4aa475b0a7efa",
+      "size_bytes": 8739
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/paired_precision.py",
+      "sha256": "ef6d7f6da06e7e6fe76d52fb895328dbdc9e286241ca83989505372eabac3621",
+      "size_bytes": 8399
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/persistent_pool.py",
+      "sha256": "19a68cf972f9ce1f3065d24e4201e41a6f673fabbf8611778a83998b342a4de7",
+      "size_bytes": 2963
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/physical_events.py",
+      "sha256": "2b5d2f963585f578f0122990a47cbcb58716e9ac11cf81bf3380b47503c9161a",
+      "size_bytes": 4829
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/physics_components.py",
+      "sha256": "811f08e26a6224561a97e084c544ad35e5b605485be1d773ab3c8e4262808f9d",
+      "size_bytes": 6631
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/physics_data.py",
+      "sha256": "9d076fe751ffa7a3f731d864736699d3ec25c8b792c27a31ee5fb90ee5ab75f1",
+      "size_bytes": 1072
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/physics_fitting.py",
+      "sha256": "fe2577492c3266ed93d1f31de039c4e4a58706bac59bb7c4fc61c674fdab4106",
+      "size_bytes": 2357
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/physics_metrics.py",
+      "sha256": "3903194a7b283eb42ff01803c9e4a54e175b5b66195105e2106d2ba939872821",
+      "size_bytes": 2982
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/pilot_checkpoint.py",
+      "sha256": "0878e8fe806573a9800939cf72d70d484cf04c8a28659d64350ee819aef08d48",
+      "size_bytes": 1735
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/pilot_contract.py",
+      "sha256": "4db20b61ec79e6a3af92489946b9e07dabd3b9838ed4fcf685f3d5502299b29f",
+      "size_bytes": 2125
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/pilot_learning.py",
+      "sha256": "ec7749cdc63e4d6eeda6edb6a92e73de309dbe125bd084fa9704db244699c1af",
+      "size_bytes": 3036
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/pilot_runtime.py",
+      "sha256": "5c99af670393a378006b8727ddbc0b6b987904647dd6ffa2cf0b8e6c04b21516",
+      "size_bytes": 6758
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/plan_training_seeds.py",
+      "sha256": "a644f8edc3b011e05550e6ef2afe4cfeabc60cf25f1c6cc39f055e0b59a604c3",
+      "size_bytes": 6799
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/pose_margin.py",
+      "sha256": "85ed8216fe98a27401769ecfc047a0f06e624fbe025f45b2bfdc0193d35ce794",
+      "size_bytes": 8671
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/pose_trial.py",
+      "sha256": "0eff2a6b8c2caf6b257b2326957b57777eb7af85ac3d923c4f284a3d328a2fda",
+      "size_bytes": 4344
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/position_contact.py",
+      "sha256": "fb38a88a7881a1b42829bf9f58ce412e6c046f492306c24d0314995dc635d577",
+      "size_bytes": 5682
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/position_contact_data.py",
+      "sha256": "3f62a402c3ce7f9f44584829a3763812ec138aa18a0db3b48654fcc6823e682f",
+      "size_bytes": 2571
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/preflight.py",
+      "sha256": "aed6dd7d5922f7a20228578955abfa0d44b6cb0fd7a7085dccd832b3f3cb6306",
+      "size_bytes": 4843
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/prepare_targeted_poses.py",
+      "sha256": "060a97e41a098aab8c63595c25bdaf17559391c86c05d0a29ca691a2a03f4a31",
+      "size_bytes": 6344
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/projection_consistency.py",
+      "sha256": "9cc6a84355b3fc02198491ea91619547184c3bace0c0775f80dbd91b78abeb2a",
+      "size_bytes": 2571
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/projection_precision.py",
+      "sha256": "2bb57bb7ff2847703df348c1155b14226418a19a216bd406c65d9eebc6ceec18",
+      "size_bytes": 1798
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/recover_reward_direction.py",
+      "sha256": "eb25605207672ac24f87397c21143ce75bb3c1de35e4fbb6e7f0d2024d1a74c7",
+      "size_bytes": 10181
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/release_alignment.py",
+      "sha256": "36b83d8cd853d61ac0e7716bd7c7620b89a0ff73d10e8ac434a844d8bbe4f672",
+      "size_bytes": 2740
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/render_collision_geometry.py",
+      "sha256": "4a37c4063a35400a49ef21ae858227294a4d5780a9b82f75c1f2ab64b7f58754",
+      "size_bytes": 4177
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/replay_overlay.py",
+      "sha256": "9684d32d9d59900fe8631ea4cb74bf271b57a872f9fe5365800fed9cfc07db7c",
+      "size_bytes": 2886
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/replay_support.py",
+      "sha256": "dc9f54df58bbecbdca13459abbf3c4462a8e477e3a35d6207e3ccb8d02f98a30",
+      "size_bytes": 12706
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/resources.py",
+      "sha256": "41dfa2c07d987e29650bd5d81bdb8c7f6953d7fb1629f61c1915f1a846e26506",
+      "size_bytes": 2422
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/reward_direction.py",
+      "sha256": "bf93e00336403655cc638ec14e6de882ac15254178571b8298e8f31291100f38",
+      "size_bytes": 9061
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/reward_direction_rollout.py",
+      "sha256": "53f3e1a2ce2b672242408108c4d413ea8df555f26a7c6d13fd0aa75c614554d2",
+      "size_bytes": 9347
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/robot_model.py",
+      "sha256": "eb1f15f39036b2de3e0b73af9ead6a4ef56a2c761057b58a3060111a640fef1f",
+      "size_bytes": 3208
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/robot_support_model.py",
+      "sha256": "d689a9ed5ad1ad43582fb744d10e6f59d20962070a2ece8a2bca6243b1480208",
+      "size_bytes": 4364
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/run_expanded_auxiliary.py",
+      "sha256": "06c220dcf41692f550fccb1dc80bd39c3ac79c2d4213afdd9cf686e1e8f705ed",
+      "size_bytes": 7549
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/runtime_guard.py",
+      "sha256": "e03216c3890f5bbc4862635bcacaedbad465ea8020cdc39989b7f1e790f8ba53",
+      "size_bytes": 3890
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/sampling.py",
+      "sha256": "21123bb2b17e30825c6fa4f52e263ed1af5e2d6851776b1bffbb5e73f9aeb429",
+      "size_bytes": 10480
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/search_frozen_initialization.py",
+      "sha256": "6067b61186f90017d723e2a93c54047be467236d677435a59266cd0ecc8ee2a5",
+      "size_bytes": 14876
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/soft_contact.py",
+      "sha256": "10675a759c64d383cf3a51a8a4bf55e6a917b915bd5a41fe9b0317cdc3f37152",
+      "size_bytes": 8286
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/solver_auxiliary.py",
+      "sha256": "9087696270d37d4ebf110a767eb71cdbdd9fe77b34425f398ae9032fd857cb5b",
+      "size_bytes": 3437
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/state_adapter.py",
+      "sha256": "deab126f9ddd705eaa2d741c0d3dfd3135c2bb94bc8f9903e63094eb01c66827",
+      "size_bytes": 4282
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/supplement_data.py",
+      "sha256": "ed3ed73187a150f6ba23b86dfdea29cbb00452b8e24d6b684fe73fe4d84377bf",
+      "size_bytes": 3532
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/support_data.py",
+      "sha256": "72ab1baa1740fd1a3101179c562463b9d595b225b1d1b0d148d3d43c8e8ffa8e",
+      "size_bytes": 7285
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/support_losses.py",
+      "sha256": "684aea26b161d38d00ae8f8bad26d1e728e9a13e35efd7aa6173a34dc8314ff8",
+      "size_bytes": 3817
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/tangent_checkpoint.py",
+      "sha256": "9327e7b14d099663efb38dc2814619926ea6429d57ec116f356c38e15b8d370d",
+      "size_bytes": 3360
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/tangent_contact.py",
+      "sha256": "9a3eea447fd47b7f550b35a2abd406c55981ad9fda716d0468c5dd12a66d5e23",
+      "size_bytes": 7321
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/tangent_coupling.py",
+      "sha256": "6e8798afa0d7c8078894957f073bb3e5d9ff582a3fea81cc44587994d525c0ca",
+      "size_bytes": 4212
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/tangent_experiment.py",
+      "sha256": "a5e62aae86c9162359376db9e6267279b2f21ab1c12edbdbcc1198b654c5332a",
+      "size_bytes": 13231
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/targeted_collection.py",
+      "sha256": "787838cb2cd75b331f50761735295150c17010f251b2fb4201ae4634583a7ea9",
+      "size_bytes": 3742
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/targeted_recovery.py",
+      "sha256": "7184ddf250b6b77ae14119208c8ba0b73a3dcc33251e2868f9cd72fa7c97dead",
+      "size_bytes": 6362
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/task.py",
+      "sha256": "1d9a65718ab2b39e39edabcf0b12c7dc9d0fe3348571c8f66375ceabda62f522",
+      "size_bytes": 6657
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/teacher_initialization.py",
+      "sha256": "b6516cdd33760d416b1eae6a9413ab519efd0ed3679e80785a5dd5c5eff6165c",
+      "size_bytes": 5869
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/teacher_trace.py",
+      "sha256": "978b1d69060dd457365243d652d6ea0a7f1f59f0cef17823602244adc83ee869",
+      "size_bytes": 10533
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/train_critic_ema.py",
+      "sha256": "eab0a53ad867b2536fe88b3d9efb26206b4377cd0cfc1c2a06ed3fe917292da7",
+      "size_bytes": 20617
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/train_critic_fit.py",
+      "sha256": "1c1545c483243352eb3a34ad7f96c289d4a3f21335d58a7a9c5264762017213b",
+      "size_bytes": 22983
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/train_fixed_critic.py",
+      "sha256": "d54b2aefb32bcbe43d745875befa68f0973cd8829750b01a8c98685c2f397d54",
+      "size_bytes": 24639
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/train_imagination.py",
+      "sha256": "a669abbc2efb3b37f9a03bfe17ffd36a3e5ed9ff4542bacd540e84c07130ad53",
+      "size_bytes": 14989
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/train_paired.py",
+      "sha256": "c674c3f60775219ee93df9ea9d4f4cd754f16159ceffb5213b1ede8ac634b868",
+      "size_bytes": 17504
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/train_pilot.py",
+      "sha256": "a2a479d163aee5cdcc3c6cff1b524fc24e1022a41d0c536a17c21ac5193bb0f1",
+      "size_bytes": 14798
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/train_pose_trial.py",
+      "sha256": "6440d3162f03c9605cd32514235e6e94f5c24e85f9614ed2befdbb019ca5a88d",
+      "size_bytes": 15467
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/training_seed_bank.py",
+      "sha256": "2c64898c118c51a701d544fc5412264212367b56d5bb52a66a137bcd0e158a4a",
+      "size_bytes": 5130
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/trajectory_data.py",
+      "sha256": "f9e68b7e249ce0fd7b76175f2a7b656ae7c455e8b531be29561a9b6e7abff214",
+      "size_bytes": 17104
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/velocity_reward.py",
+      "sha256": "6ea48a35b618aaac26836d7079bd44a1ba1b8a4f3e6c36b5365bcb4e13db7906",
+      "size_bytes": 5399
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/world_control.py",
+      "sha256": "773d93886c1d92c17668f71fa24a4ad74098b352a2ca0b4f1298ba37f093796b",
+      "size_bytes": 6165
+    },
+    {
+      "path": "pingpong_controller/tools/rl_sim/world_model/world_physics.py",
+      "sha256": "50c6789bd47c9d4439d7aab1bf65e022a2fa9b3ed474cf365788e08bd1d50a57",
+      "size_bytes": 4732
+    },
+    {
+      "path": "requirements-rl-sim.txt",
+      "sha256": "79779c9c330c6b0b648a62bf18102fa0a43655894d22164d4033d1b9ff75c9d5",
+      "size_bytes": 436
+    },
+    {
+      "path": "requirements.txt",
+      "sha256": "0c5d892aa647bc7b48f8d0302b63d8c747e15826626504bec0a2b3ea436b06b6",
+      "size_bytes": 1199
+    },
+    {
+      "path": "test/test_training_memory_scope.py",
+      "sha256": "616bacc84ce973b849b99f3d9c16cc5f6ae14d34aa3f65a1ddb4dd4da4610630",
+      "size_bytes": 19441
+    },
+    {
+      "path": "test/test_wmj_v1_action_effects.py",
+      "sha256": "925a11405be89fe65e4a38633099cf45c686b81aaca0d2d3e4a12da0809031d1",
+      "size_bytes": 4037
+    },
+    {
+      "path": "test/test_wmj_v1_actor_migration.py",
+      "sha256": "86e5170402988c0dc0ac8a96f4e97ddcc61f2ea1a3ef11f865a969812390f921",
+      "size_bytes": 3295
+    },
+    {
+      "path": "test/test_wmj_v1_array_artifacts.py",
+      "sha256": "2a9f02a9fbbacf4462edab2a1787d66e0b69a345c770d8a3e77e9c8c3a0afab6",
+      "size_bytes": 3776
+    },
+    {
+      "path": "test/test_wmj_v1_attribution.py",
+      "sha256": "8428da9730d22b3696984c81edf86b017b974322ffa5d3d54f1b57920ecdb398",
+      "size_bytes": 6285
+    },
+    {
+      "path": "test/test_wmj_v1_auxiliary_refresh.py",
+      "sha256": "ace2899bdd3efc2c38c2b04f7a125ec2307f6c69f65467085fc5f122ffc6dc4b",
+      "size_bytes": 1996
+    },
+    {
+      "path": "test/test_wmj_v1_ball_flight.py",
+      "sha256": "02a7084def17c3e356237ccb267ab06efdc219c2cb9613a031d07c4949dde706",
+      "size_bytes": 2545
+    },
+    {
+      "path": "test/test_wmj_v1_branch_bank.py",
+      "sha256": "5f1f9876c9e73e63c27a02aacc7f3e2db87b66deed128743ebc1fd8289df6a43",
+      "size_bytes": 4499
+    },
+    {
+      "path": "test/test_wmj_v1_collection_labels.py",
+      "sha256": "cf273d0fcd573c8ed87d51136f07471f5f501cd89ac8026ffdf1d278c11fbeaf",
+      "size_bytes": 1315
+    },
+    {
+      "path": "test/test_wmj_v1_contact_data.py",
+      "sha256": "b83826c7dd721ef03ce027a873c8958259a4576c12d3c921d324a6abffbae1a5",
+      "size_bytes": 2879
+    },
+    {
+      "path": "test/test_wmj_v1_contact_kernel.py",
+      "sha256": "1f2efc83aeeedbd3a8fa3088ebb7a9c6e6d183a145f6c2478791fb803ce45758",
+      "size_bytes": 5769
+    },
+    {
+      "path": "test/test_wmj_v1_contact_model.py",
+      "sha256": "ce406c3e52554fcd7e70ab426f997ca32aa70487ed594291504d5f2eb9df589a",
+      "size_bytes": 3079
+    },
+    {
+      "path": "test/test_wmj_v1_contact_rates.py",
+      "sha256": "11f0e232ca7242d836bf888bacd3b3fac8599f0f0c94a7cdd361cfff2d6ebd94",
+      "size_bytes": 1413
+    },
+    {
+      "path": "test/test_wmj_v1_contact_regularization.py",
+      "sha256": "c42d3b5d186f8cd3fc31eec026185c4615736f3b78a85dd5a4735e18122eaa4b",
+      "size_bytes": 3414
+    },
+    {
+      "path": "test/test_wmj_v1_contact_rollout.py",
+      "sha256": "7d30c33268d879fe9bb93ce95daa5d96b0353e22d2719c248ea7325f31493763",
+      "size_bytes": 3481
+    },
+    {
+      "path": "test/test_wmj_v1_contact_schedule.py",
+      "sha256": "3ea1e5dbe768238a77d7420f7efd25c3489874472442aa94438e8879ed275e6e",
+      "size_bytes": 1838
+    },
+    {
+      "path": "test/test_wmj_v1_contact_surface.py",
+      "sha256": "ca768c83c4d001f1103bf4ab139c91ed576b1cef89a3f10879f7f3611f53e6a1",
+      "size_bytes": 2871
+    },
+    {
+      "path": "test/test_wmj_v1_contracts.py",
+      "sha256": "c8995973d552d0bd1f3a5f5ed45ee4ab291d7240b15163681a2aceb689a79399",
+      "size_bytes": 10147
+    },
+    {
+      "path": "test/test_wmj_v1_control_execution.py",
+      "sha256": "7998fc3539f5b8c863e69cc201a0d2bab3a52c69df88721ab96bbf6217813ec4",
+      "size_bytes": 1596
+    },
+    {
+      "path": "test/test_wmj_v1_control_kinematics.py",
+      "sha256": "21b762b8a18e37c6348ddcff40a83d65d1b06dcb9cf72c227e256e420ebeb280",
+      "size_bytes": 2399
+    },
+    {
+      "path": "test/test_wmj_v1_control_projection.py",
+      "sha256": "cabdc2ea2e04a8ffc9cc8fad0a7189872635df440ec0341e023173eb396fdef7",
+      "size_bytes": 6888
+    },
+    {
+      "path": "test/test_wmj_v1_corrected_candidate.py",
+      "sha256": "db8e1e3dc4a2ab980333d9933a103b024d0ba706aa4e7dffaa51a44cea6fd7a9",
+      "size_bytes": 3030
+    },
+    {
+      "path": "test/test_wmj_v1_corrected_reward.py",
+      "sha256": "ebbaf6030e19f4a5804ed5fe77ec7919bcd4c0c45cfee4ca931f359bd1651631",
+      "size_bytes": 2907
+    },
+    {
+      "path": "test/test_wmj_v1_course_contract.py",
+      "sha256": "687b418b447c39b82b594383441a72dcd1e2126ce6936a7ba93f9d5e27452e7e",
+      "size_bytes": 918
+    },
+    {
+      "path": "test/test_wmj_v1_course_control.py",
+      "sha256": "c2cfe62af44b7e44e10e1ea0f2396ed336e35012c920e4fac714f99b048b9ab5",
+      "size_bytes": 2601
+    },
+    {
+      "path": "test/test_wmj_v1_course_env.py",
+      "sha256": "80541bc2104cc837c580cf689e405998d2ea0fedc17c4c6e6958d3ea719ba4b2",
+      "size_bytes": 5385
+    },
+    {
+      "path": "test/test_wmj_v1_course_goals.py",
+      "sha256": "b531c40aed6659601fd004bed2a70afa19b23094ef233435eff25fa86f6bdd5b",
+      "size_bytes": 2084
+    },
+    {
+      "path": "test/test_wmj_v1_course_rollout.py",
+      "sha256": "30b66e9dbd4308bdb67592e9115502cc3f676d253346ec8c5a2fbe5e00a64d3d",
+      "size_bytes": 3932
+    },
+    {
+      "path": "test/test_wmj_v1_course_sampling.py",
+      "sha256": "7a93913f96c70663d770bd5cf9ff2a3c633f29134a9623d6ec1fd3325c93e8c1",
+      "size_bytes": 2688
+    },
+    {
+      "path": "test/test_wmj_v1_course_schedule.py",
+      "sha256": "228e7d4dc2fa40ea49ec0c5fa54b035f0c92698144296dfde1e897d265c9bc41",
+      "size_bytes": 3150
+    },
+    {
+      "path": "test/test_wmj_v1_critic_distribution.py",
+      "sha256": "30524d42271b0310e32386119a9d389db97a49a693d46966ba504691e7400bb6",
+      "size_bytes": 2583
+    },
+    {
+      "path": "test/test_wmj_v1_critic_ema_pair.py",
+      "sha256": "d2086142124f4311832ed12c0557eda344fa8542a937413e94c16a05e7772eba",
+      "size_bytes": 4189
+    },
+    {
+      "path": "test/test_wmj_v1_critic_features.py",
+      "sha256": "edcb29fbb313c4da26bf0851506d2949a10cedbe977f2da6b471f021929fd85e",
+      "size_bytes": 2767
+    },
+    {
+      "path": "test/test_wmj_v1_critic_input_audit.py",
+      "sha256": "fe972af94c663e581cf879c85755112951444ba7f98c46cadcaf2cb693196389",
+      "size_bytes": 3918
+    },
+    {
+      "path": "test/test_wmj_v1_critic_only_fit.py",
+      "sha256": "7cbb97fb794e1cf6c7424d33d51097349b1649a206cab38ec67b36337e0e0a91",
+      "size_bytes": 6905
+    },
+    {
+      "path": "test/test_wmj_v1_critic_target_audit.py",
+      "sha256": "706561310bf03304488273b05ed01f53ee3edce75839a7722acfaaada227ddcc",
+      "size_bytes": 2577
+    },
+    {
+      "path": "test/test_wmj_v1_domain_atlas.py",
+      "sha256": "1c79d2512fc7efe225416d63f6bdfb3236c7377154ef4ab8e981fcf9d3d945aa",
+      "size_bytes": 4134
+    },
+    {
+      "path": "test/test_wmj_v1_error_attribution.py",
+      "sha256": "f1591a7547b58280660584a22f232cfb4159c23ad4c1ec49802a662d402d68e1",
+      "size_bytes": 2594
+    },
+    {
+      "path": "test/test_wmj_v1_evaluation_evidence.py",
+      "sha256": "c9d670ba715e6d7f38f911e3e0cc92829409077e9c6bc60b42988e788a503513",
+      "size_bytes": 594
+    },
+    {
+      "path": "test/test_wmj_v1_expanded_auxiliary.py",
+      "sha256": "fd0bcfe41b12ba193994b5e9c44a63e1c9730c8b63c784ccc0735729fd98bdd9",
+      "size_bytes": 3302
+    },
+    {
+      "path": "test/test_wmj_v1_external_force.py",
+      "sha256": "328ca3cc07a358aa84ca23ab595edd1f0e109b333d0ea2b6d631a1bed8707f01",
+      "size_bytes": 3345
+    },
+    {
+      "path": "test/test_wmj_v1_fit_schedule.py",
+      "sha256": "3371c471008fc0c82fea9186cafd61dab80088b0a3cf5c6f080c182d02288caf",
+      "size_bytes": 1358
+    },
+    {
+      "path": "test/test_wmj_v1_fixed_critic_fit.py",
+      "sha256": "3e7028ac4199d410c09b19950c699d92ba76871009159384ac72b3b9894867ed",
+      "size_bytes": 6006
+    },
+    {
+      "path": "test/test_wmj_v1_fixed_critic_resume.py",
+      "sha256": "b86c5dadb5cedb281227d155af72f7c220a98dc93fc93fde9200b0b3cec2871f",
+      "size_bytes": 4180
+    },
+    {
+      "path": "test/test_wmj_v1_flat_initialization.py",
+      "sha256": "285b53699cfda760d7c55e6bc13998b5d38697309f377718c7a6c7ab6a5a090d",
+      "size_bytes": 8187
+    },
+    {
+      "path": "test/test_wmj_v1_free_imagination.py",
+      "sha256": "170fb728503f2b83960cbc4e83b1e62f7d66a42cd2ffe34726b17c5134d90111",
+      "size_bytes": 5478
+    },
+    {
+      "path": "test/test_wmj_v1_free_orientation.py",
+      "sha256": "d512791cc0a40a9f7f5b945fff273770834856d583588b0c01b046997be5d39c",
+      "size_bytes": 4167
+    },
+    {
+      "path": "test/test_wmj_v1_frozen_cases.py",
+      "sha256": "77c24cedef55d9494cfa73651fb0b5b72870b034bb5dcc49764a40796ded905f",
+      "size_bytes": 2234
+    },
+    {
+      "path": "test/test_wmj_v1_frozen_initialization.py",
+      "sha256": "906374689176ea89d4b3d6fa70e72eb97218903673eac517f7c148bcc50fe2ba",
+      "size_bytes": 1248
+    },
+    {
+      "path": "test/test_wmj_v1_frozen_seed.py",
+      "sha256": "5c57f765bd7c14d672590111516c84170e76a3615fb4801ac1dcfe09967c1655",
+      "size_bytes": 1334
+    },
+    {
+      "path": "test/test_wmj_v1_frozen_task.py",
+      "sha256": "d9a17fabadeb7f93e35943ca7cc3a1e69ddc2a462ecc041157261b4df6627717",
+      "size_bytes": 3513
+    },
+    {
+      "path": "test/test_wmj_v1_full_prior_world.py",
+      "sha256": "7782b46589ad6760435f9c7d45c40f2948fa6b974798ab6f796452a577de0c67",
+      "size_bytes": 9025
+    },
+    {
+      "path": "test/test_wmj_v1_generators.py",
+      "sha256": "dda2aa00cba66986c4ff712095c19b63c4de2ab3a31e7cbc08d156028e2c089c",
+      "size_bytes": 3444
+    },
+    {
+      "path": "test/test_wmj_v1_imagined_env.py",
+      "sha256": "49fdc32bf2714a18578242fa377285b2bdc572ab8e5911abbcf550f3f751d0bb",
+      "size_bytes": 5744
+    },
+    {
+      "path": "test/test_wmj_v1_imagined_learning.py",
+      "sha256": "1935922d4e175d2e51be0aaa1aed0ac341bd00ae20ab666f72d347c78dbc0572",
+      "size_bytes": 1947
+    },
+    {
+      "path": "test/test_wmj_v1_imagined_rewards.py",
+      "sha256": "957100ff43c6f7a7f53af90253eece90fe6c69afd2b1a6e707890adc02e04d77",
+      "size_bytes": 2021
+    },
+    {
+      "path": "test/test_wmj_v1_imagined_rollout.py",
+      "sha256": "96cd9c542a21f7e9796dc6fcdaf2ac2a6ff53539359406449f9637ada11c7671",
+      "size_bytes": 3820
+    },
+    {
+      "path": "test/test_wmj_v1_initialization_geometry.py",
+      "sha256": "6f9548ee86ff490ec255dc7ceaa91cb906474bbbb8136cb620deee68ae556768",
+      "size_bytes": 4204
+    },
+    {
+      "path": "test/test_wmj_v1_kinematics.py",
+      "sha256": "becb5b84a95ce36bd9c21b609af50e9207d55e4b73740b51ff7397eb1dab71b4",
+      "size_bytes": 4476
+    },
+    {
+      "path": "test/test_wmj_v1_launcher_signals.py",
+      "sha256": "f082f828996dc1dc4194f38a8f12a1fcd4ad91f3bd96e1a89c0ec6ddeee4f98d",
+      "size_bytes": 1512
+    },
+    {
+      "path": "test/test_wmj_v1_memory_pressure.py",
+      "sha256": "7ebe3f5f1ffc17e243a3cf12d2ea4ea8ae6c135d1c6d5c5102493325277759c8",
+      "size_bytes": 3025
+    },
+    {
+      "path": "test/test_wmj_v1_mesh_geometry.py",
+      "sha256": "4abf1379ad7dbc7d2853851ced0854c4a0cf000d7750dafc5dbc5406e3e67b21",
+      "size_bytes": 3730
+    },
+    {
+      "path": "test/test_wmj_v1_mixed_precision.py",
+      "sha256": "f944a6f410f5cea9c6382ecf8a27acb23c9f43a88031b3c70d885bf1185aedc4",
+      "size_bytes": 5209
+    },
+    {
+      "path": "test/test_wmj_v1_model_data.py",
+      "sha256": "b475a10e3a32924664c2fc979bade73d555c5ee4195be95b00533e8b20d3138f",
+      "size_bytes": 2255
+    },
+    {
+      "path": "test/test_wmj_v1_model_numerics.py",
+      "sha256": "433792f56b4b77b46b7ce49194b1614f9ed673a9310bcc35ccb813a9517c7306",
+      "size_bytes": 1131
+    },
+    {
+      "path": "test/test_wmj_v1_module_gradients.py",
+      "sha256": "2197221b458c1f091796b11132788d7de954b210857399d7f3ff4ea56a3acded",
+      "size_bytes": 3108
+    },
+    {
+      "path": "test/test_wmj_v1_native_contact_data.py",
+      "sha256": "2cbf8ccdafc5c123479d39730601c60ec3adc26875bba0ad5d8c30a19a94bb43",
+      "size_bytes": 1782
+    },
+    {
+      "path": "test/test_wmj_v1_native_evaluation.py",
+      "sha256": "dac1c3eba40f2b6e7c34726a9a18bba9ef438c803c178bdd016758cf2e598557",
+      "size_bytes": 1028
+    },
+    {
+      "path": "test/test_wmj_v1_native_pair.py",
+      "sha256": "e9babfc23de0f6b79a7d7560abd27e727d0206dfbaa55ae284b07471423267d0",
+      "size_bytes": 1696
+    },
+    {
+      "path": "test/test_wmj_v1_new_pose_audit.py",
+      "sha256": "95cf192494fb614c900a3d4c4c5e5614c4a265002e92195964e4ec7b1ff850c4",
+      "size_bytes": 1531
+    },
+    {
+      "path": "test/test_wmj_v1_normal_contact.py",
+      "sha256": "71e11ffdeeb8ed81d48316a320e006ba4d91b3c0b0b940dd55011171a8ae9f74",
+      "size_bytes": 7565
+    },
+    {
+      "path": "test/test_wmj_v1_numerical_validation.py",
+      "sha256": "c6e7a12750ac70edebae116f99c60578e33c6239a10fc07b2a9bc83fe3db4df2",
+      "size_bytes": 1227
+    },
+    {
+      "path": "test/test_wmj_v1_observation.py",
+      "sha256": "5d571371ddffd96bb6fcd174ef604fe707da93360d5e238c54b803bd97cbda19",
+      "size_bytes": 3507
+    },
+    {
+      "path": "test/test_wmj_v1_paired_attribution.py",
+      "sha256": "c6782d9389a66f15f214835423b0f2741df2998440835f43b711fdd1a3122559",
+      "size_bytes": 5541
+    },
+    {
+      "path": "test/test_wmj_v1_paired_history.py",
+      "sha256": "c58754adcf0ea13c936dff7e7325b903b4031d20597edf3a911f3e66a936c49d",
+      "size_bytes": 8582
+    },
+    {
+      "path": "test/test_wmj_v1_paired_precision.py",
+      "sha256": "79b2ce9d57ddfd2a39f61e45d06ff99d2e030d692f17096c271743d7af1546c2",
+      "size_bytes": 3819
+    },
+    {
+      "path": "test/test_wmj_v1_persistent_pool.py",
+      "sha256": "9b7e5fc0e32e8159fc1c9ad8dfd94ecbe42b2c1445aa1beaa5e4e699c3b77a44",
+      "size_bytes": 2786
+    },
+    {
+      "path": "test/test_wmj_v1_physical_events.py",
+      "sha256": "1ecb6218d370108af5002b084ff2a151ef80a7d67833195ac807a122c1a7a80d",
+      "size_bytes": 4354
+    },
+    {
+      "path": "test/test_wmj_v1_physics_fitting.py",
+      "sha256": "78729b4ef2db3c30d34c5a8eec9ab88f199e8f20cdd887e356f3fad58bc133eb",
+      "size_bytes": 2576
+    },
+    {
+      "path": "test/test_wmj_v1_physics_metrics.py",
+      "sha256": "837900658e5ab7f215abc1fc630b28c47c437f3e41789088b220f840b26a7d96",
+      "size_bytes": 1811
+    },
+    {
+      "path": "test/test_wmj_v1_pilot_contract.py",
+      "sha256": "417f97ead843191d8670e86432c71cac48bd6ab5077338845618f8f856e47729",
+      "size_bytes": 1794
+    },
+    {
+      "path": "test/test_wmj_v1_pilot_evaluation.py",
+      "sha256": "d1c7750fa6d25e1db6abdeb26cecad5d9b02d87a469dc0a0a05215ae84b89ff4",
+      "size_bytes": 1338
+    },
+    {
+      "path": "test/test_wmj_v1_pilot_learning.py",
+      "sha256": "4e922595c3182aac2752cb46d15c009919959d3ab1958abe6e43b1b020da62b6",
+      "size_bytes": 2451
+    },
+    {
+      "path": "test/test_wmj_v1_pose_margin.py",
+      "sha256": "7dd9fea1130c6a327c28a23b4aa1df30acf65bb7cb6d0fa6fa9c795f5310b91f",
+      "size_bytes": 4657
+    },
+    {
+      "path": "test/test_wmj_v1_pose_trial.py",
+      "sha256": "ef3d3918cf818d9ef985eebe6f8a2b511962cdb7c0213eca3a1061a6fbb256d3",
+      "size_bytes": 4823
+    },
+    {
+      "path": "test/test_wmj_v1_position_contact.py",
+      "sha256": "cd891b1f6544c0c8566191b76bb7d815a1cd83b00774de16b21c22f9df2a2ba1",
+      "size_bytes": 9692
+    },
+    {
+      "path": "test/test_wmj_v1_projection_consistency.py",
+      "sha256": "fc102c8e7e17830ad2c8d07a43bb8af993a2e7e645be49d4367c7d2d6aae9e85",
+      "size_bytes": 4717
+    },
+    {
+      "path": "test/test_wmj_v1_release_alignment.py",
+      "sha256": "107a029a80666c2d5946c929e4ec3e7f3e930b45b39229371815ce8e2989decc",
+      "size_bytes": 1468
+    },
+    {
+      "path": "test/test_wmj_v1_replay_overlay.py",
+      "sha256": "a13c08f2164603c69d78112be18dee238524baaacded06b158c71c3050ccb629",
+      "size_bytes": 1396
+    },
+    {
+      "path": "test/test_wmj_v1_reward_direction.py",
+      "sha256": "6548255a29a15d46cbd041d1c5922e84327fb32875824f543b05ff1369af37a7",
+      "size_bytes": 3789
+    },
+    {
+      "path": "test/test_wmj_v1_reward_direction_recovery.py",
+      "sha256": "caa3ded7466c82cd59033fcee1f2ef6d511188ae90d4e6a2606b6d7f719868e7",
+      "size_bytes": 3496
+    },
+    {
+      "path": "test/test_wmj_v1_rmp_lanes.py",
+      "sha256": "fc00ec82dfcd758f624ee27920227fed989f56abf6ecc6e901585d4f523db0ab",
+      "size_bytes": 2945
+    },
+    {
+      "path": "test/test_wmj_v1_robot_model.py",
+      "sha256": "a8f2c0861d97c46cad4af584b259c0ba112146852745f4848cf9c3a0f1302b78",
+      "size_bytes": 3411
+    },
+    {
+      "path": "test/test_wmj_v1_sampling.py",
+      "sha256": "a11d5ddfb83b652e7da6a1cea1f862b139095ae657f518305aaa78e9f2323aa2",
+      "size_bytes": 3912
+    },
+    {
+      "path": "test/test_wmj_v1_soft_contact.py",
+      "sha256": "c77ecdaed31d3c46e88b2371cf7c1978a6a0a15b4a619ec012f579bf9e413f2d",
+      "size_bytes": 7405
+    },
+    {
+      "path": "test/test_wmj_v1_solver_auxiliary.py",
+      "sha256": "d37399f432af32e4c51a2cd139c49d4d9e0a4389e8d96aa61d262340f335d8cb",
+      "size_bytes": 8267
+    },
+    {
+      "path": "test/test_wmj_v1_state_adapter.py",
+      "sha256": "3640c1c3fb73be234d5ae9c7a597442342d55cc6f924a991002e10fdcfcd1ba9",
+      "size_bytes": 2475
+    },
+    {
+      "path": "test/test_wmj_v1_supplement_reader.py",
+      "sha256": "56910e335a1f13833a63d5a2d749d2e384e783518cd768c8ba7c4f16f0478e33",
+      "size_bytes": 1040
+    },
+    {
+      "path": "test/test_wmj_v1_support_data.py",
+      "sha256": "64613ff503792158ea8de368d4406fc50cddd0cc97bad1db0c6ab483032528af",
+      "size_bytes": 3054
+    },
+    {
+      "path": "test/test_wmj_v1_support_execution.py",
+      "sha256": "129843aeee4e3a852b255c50bc1a0e044a4ec097f0f8e0aac621d508b01d54bd",
+      "size_bytes": 5100
+    },
+    {
+      "path": "test/test_wmj_v1_tangent_contact.py",
+      "sha256": "3fc0329296d504f09a549e4b26424cdfbbf626fdeeadc016a4f7a2ec2e5f4da0",
+      "size_bytes": 5007
+    },
+    {
+      "path": "test/test_wmj_v1_targeted_collection.py",
+      "sha256": "78da961be3e5eb9364db98a5d7208240e04276f93ab2a6360a568306c188eafa",
+      "size_bytes": 3739
+    },
+    {
+      "path": "test/test_wmj_v1_task_events.py",
+      "sha256": "688ec2831aefd54ab37c600aad7e5eabd7b843e18c8216a973f9843288113433",
+      "size_bytes": 4664
+    },
+    {
+      "path": "test/test_wmj_v1_teacher_initialization.py",
+      "sha256": "d7a981c7e7c8f456ede0799820e7b7185c5fa951b5fbe147f0712b45963cedcf",
+      "size_bytes": 2397
+    },
+    {
+      "path": "test/test_wmj_v1_teacher_trace.py",
+      "sha256": "5488a2aa4392444f2c4e0f1a62b8ccc835631000f8b4b527fdfd9099ed779f0f",
+      "size_bytes": 2579
+    },
+    {
+      "path": "test/test_wmj_v1_training_bank_reconstruction.py",
+      "sha256": "5a3d8b897b4eb8d63b7bc9614df9449d66757ab6ab9d5c5db82046791ef30967",
+      "size_bytes": 4147
+    },
+    {
+      "path": "test/test_wmj_v1_training_seed_bank.py",
+      "sha256": "821f7d96ab0b1085f8241e9d434bdd9ef44227e51bd89634274362412640c63a",
+      "size_bytes": 2582
+    },
+    {
+      "path": "test/test_wmj_v1_trajectory_data.py",
+      "sha256": "63f0d274e91b6832b3a3ca9cf0e476828e87241eda8b956d241b117f65bc405b",
+      "size_bytes": 7777
+    },
+    {
+      "path": "test/test_wmj_v1_validation_reservation.py",
+      "sha256": "640df85ec9f58adf45eb94ad2bab276715352dce79c8e82461ea09e7a7df4aab",
+      "size_bytes": 1790
+    },
+    {
+      "path": "test/test_wmj_v1_velocity_reward.py",
+      "sha256": "8433a06cbc942daabb0d2121648b009ebc6e3e7a6d46dc526129dbfc49aff199",
+      "size_bytes": 5007
+    },
+    {
+      "path": "test/test_wmj_v1_world_control.py",
+      "sha256": "d8b9a4876dc2601e70e749d82950803a016f0aee205b52bdf5a5ba6a351685f7",
+      "size_bytes": 4392
+    },
+    {
+      "path": "test/test_wmj_v1_world_observation.py",
+      "sha256": "238b4d62c957e27e0acf8cdd895907044f5d232b6b91259f59d91e27af46c7c5",
+      "size_bytes": 8588
+    },
+    {
+      "path": "test/test_wmj_v1_world_physics.py",
+      "sha256": "6b6747b2319e9a50cc2b3302a567c1c4280b716817bce0cac4c95d57182f4a0a",
+      "size_bytes": 5684
+    }
+  ],
+  "validation": {
+    "python_ast_files": 598,
+    "shell_syntax_files": 75,
+    "json_parse_files": 4,
+    "cpu_tests_passed": 87,
+    "cpu_tests_seconds": 12.52,
+    "test_files": [
+      "test/test_wmj_v1_contracts.py",
+      "test/test_wmj_v1_actor_migration.py",
+      "test/test_wmj_v1_paired_history.py",
+      "test/test_wmj_v1_critic_input_audit.py",
+      "test/test_wmj_v1_memory_pressure.py",
+      "test/test_training_memory_scope.py"
+    ]
+  },
+  "notes": [
+    "The original inventory and checks describe the earlier complete working tree and pre-commit documentation audit.",
+    "This file supplies exact source hashes for the local Git handoff; excludes itself to avoid a self-hash cycle.",
+    "Historical FPLC adapter sources are included as WMJ native-stack dependencies; no experiment is promoted.",
+    "Checkpoints, replay assets, recovered RMP reference tree, and bulk outputs require the separate asset transfer.",
+    "No runtime code or experiment configuration was edited during packaging.",
+    "Other task modifications, deletions, and untracked files remain in the original worktree.",
+    "Only source formatting change during packaging: removed one extra EOF blank line in each of two test files; earlier tests remain applicable."
+  ]
+}

@@ -1,5 +1,2397 @@
 # Training Curriculum Registry
 
+### 2026-11-05 — WMJ-V1 independent world-model research contract (implementation in progress)
+
+The user fixes the new namespace at `WMJ-V1`, profile `wmj_v1`, and authorizes
+the research plan supplied in the task attachment. The executable experiment
+configuration is `pingpong_controller/tools/rl_2real/WMJ_V1_CONFIG.json`; new
+code lives under `tools/rl_sim/world_model/`. Preserve all FPLC profiles,
+releases and existing edits. This entry is not a training qualification.
+
+Reuse V324 CONTACT `ball_racket_contact_real11_static_1ms_v1` and EXEC
+`mjx_topology_execution_v2` without changing their source or numerical recipe.
+WMJ requires its own paired qualification; V324's evidence does not qualify
+new collection shapes or a differentiable learned dynamics model. Initialize
+only the actor from the pinned V321 S4/u2097 release, SHA-256
+`889eb976b18567d607ab9f86f35457c89f901e2ecf221b9391128cb471f0d001`.
+Append one zero input row for `(goal_z-1.425)/0.10`; preserve tanh/tanh/linear
+and the first 72 observation slots, with independent task-goal XY at 69:71.
+Subsequent explicit QA extends this unreleased V1 to 969 actor inputs:
+the 73-value prefix plus 64 ball-indexed paired-history rows, each containing
+ball XYZ, same-source-time racket XYZ/rotation6D, age/0.640 and a validity bit.
+Only fresh ball samples create rows; the approximately 58 samples in the last
+640 ms are retained and expired/padded/unpaired rows are masked. The user
+explicitly rejects a dense 200 Hz racket stream and joint/action history as
+actor additions. High-rate encoder history is internal alignment state only;
+interpolate arrived encoder samples then FK, without future data. Preserve
+history across goals and clear it at physical resets. All added input rows
+are zero-initialized for actual V321 raw-action parity. Keep the 73-D builder
+as an independently checked prefix/migration diagnostic. The current method
+retains structured physical dynamics; latent compression is not yet enabled.
+On 2026-11-06 the user reconfirmed the direct 969->256->256->7 actor.
+The 73-prefix/128-feature temporal encoder and a complete latent world model
+remain candidates only; neither may be activated automatically. Imagined
+observations predict new physical state and advance the known camera/history
+pipeline. Previously observed ball/racket pairs and their realized noise are
+carried forward, not predicted again. The legacy eight slots advance at
+200 Hz (including holds and their original per-tick ages); the long-history
+buffer appends only fresh 90 Hz samples, recomputes source age at query time,
+and masks expired/unpaired rows. Complete camera RNG/phase and alignment
+buffers come from the initial seed; no future teacher observations correct
+an imagined rollout. Gradients through model-generated retained samples
+remain available within a training window. Long-history racket poses use
+same-time measured/predicted-q FK, not potentially pre-integration cached
+simulator site fields; the original 73-value prefix is unchanged.
+Rebuild the actor optimizer and train a fresh privileged critic. New-method
+actor/critic updates must use only imagination; real-MJX PPO is a separately
+labeled comparison method, never an update path for W0/W1 or B1.
+
+On 2026-11-06 the user approved expanding the training-only robot execution
+proxy from 35->128->128->14 to 47->128->128->26. The state order is RightArm-0..6
+then LegWaist-0..5; inputs append the six waist q and six dq, while outputs
+append their six position and six velocity residuals. Predict all thirteen
+joints recursively; commands remain seven-dimensional and waist hold targets
+remain exactly native. Actor969/action7, WMJ-V1, CONTACT and EXEC stay fixed.
+The previous arm-only component and its negative/incomplete evidence remain
+available as diagnostics, not qualification of the expanded world. Full-chain
+FK requires true same-time native pose/twist supervision and a separate audit
+of the numerically constrained base. Replay augmentation must preserve each
+new trajectory coherently and authenticate its original data; lossless byte
+differences are only a storage representation. This approval covers training
+code in this repository. It does not authorize edits to the separate robot
+repository or deployment of any additional RMP or learned execution proxy.
+
+The expanded execution module, true native preintegration pose/twist observer,
+lossless coherent replay overlays, full-chain data reader and supervised loss
+are implemented; the WMJ/resource CPU suite passed 194 tests. A one-trial
+1024x128-control replay completed in 160.85 s at at most 41 C with a clean
+resource-scope exit (`support_replay_20261106_a02`). Its first attempt stopped
+before replay because of a corrected local-name collision; retain that result.
+The two diagnostic overlay archives total 186,622,447 bytes. A 5,120-sample
+audit using measured arm+waist states gives native racket-site FK error P95
+0.03290 mm, maximum 0.08340 mm, and linear-velocity error P95 0.000959 m/s.
+The independent 64-seed CPU MuJoCo observer check has maximum position error
+0.377 micrometers and velocity error 1.12e-7 m/s. See
+`support_fk_audit_20261106_a01.json` (SHA-256
+`e6bf8c214c44fce1de0da050048178f43836da533f6d7143964bb5828e633d80`).
+These are measured-state FK/label diagnostics, not trained-model accuracy.
+Replayed first-step arm positions differ from original data by at most
+1.20e-7 rad, but some longer trajectories diverge substantially (up to 0.1351
+rad and changed contact edges). Both complete trajectories are retained;
+the overlay reconstructs every new value exactly rather than combining old
+ball/control labels with new waist states. Long-rollout equality is not claimed.
+The original seven-joint history seeds remain unqualified for the new full-chain
+history path. At that storage checkpoint, full 20-chunk augmentation and
+model fitting had not started: extrapolated storage exceeded the margin above the user's
+8 GiB free-space reserve. Continue only after the storage QA is answered;
+do not delete evidence, reduce required acquisition coverage, or call this
+diagnostic a completed world model.
+
+The user retained the 6 GiB output cap and 8 GiB free-space reserve, freed
+space, and resumed the active goal. At resume, free disk was 31,545,790,464
+bytes. Complete support replay is now `wmj_v1/support_replay_full_a01` with
+the same 20 chunks, original raw actions and fixed CONTACT/EXEC. The new
+guarded fitter is `run_wmj_v1_fit_support.sh`. Its preregistered first screen
+uses a fresh 47->128->128->26 model, fresh Adam, LR 3e-4, gradient clip1,
+256 windows, 256 single-step bootstrap updates then autoregressive H8 through
+update512. Retain the arm-only fitter/checkpoints independently. Arm q/dq
+loss scales are 0.01 rad/0.10 rad/s; support scales are 0.001 rad/0.01 rad/s;
+native racket position/velocity/rotation/angular-speed scales are
+0.003 m/0.05 m/s/0.01 rad/0.10 rad/s. Pose labels supervise predicted states
+at the same preintegration time, including during single-step bootstrap.
+Validation is frozen on held-out acquisitions at 1/8/32/64/128 controls and
+reports all represented regions; it compares predicted FK directly with
+native pose/twist, not target FK. The 3 mm/0.05 m/s P95 references remain
+unchanged. This component uses recorded delayed commands, so its results
+cannot qualify full feedback imagination or learned contact behavior.
+
+The contact fitter now has an explicit `--support-replay` input mode. It
+authenticates the full coherent replay, uses actual preintegration native
+geom pose and twist, and keeps the original arm-FK mode available. Its model
+and dataset signatures prevent cross-mode resume. The first native-pose
+screen keeps the 19->256->256->128->8 network, losses, Adam3e-4, 256-window
+P_model128/64/38/26 sampling and H8 recipe unchanged: 256 single-step then
+256 autoregressive updates. Only t=0 ball state initializes an autoregressive
+window; later ball states remain labels. This separates contact learning
+from robot execution error and does not qualify composed-world predictions.
+
+The completed full support replay contains 20 overlays (1,867,584,162 bytes),
+ran for 368.69 s and exited cleanly. `support_fk_full_a01.json` audits 51,200
+measured states: racket-position P95 0.03720 mm, maximum 0.12267 mm; linear
+velocity P95 0.001007 m/s. Its independent 640-state CPU oracle has maximum
+position discrepancy 0.631 micrometers. These remain label/FK checks.
+The fresh 512-update support fit was insufficient (H128 position P95
+139.71 mm). Continuing the same model to 6144 updates with the preregistered
+H8/16/32/64 schedule gives H1/8/32/64/128 position P95
+0.454/0.527/0.595/0.603/0.603 mm and normal-velocity P95
+0.02673/0.00536/0.00551/0.00563/0.00616 m/s. Several regional tails still
+exceed the reference budgets: worst H128 regional position P95 6.17 mm.
+These are uniformly sampled windows with recorded commands, not a dedicated
+precontact population or qualification of a composed world.
+
+Native-pose contact fits `contact_native_fit_a01` (512 updates) and `a02`
+(4096 updates) both failed the contact accuracy references. At 4096 updates,
+H8 outgoing-velocity/apex P95 are 0.7599 m/s and 0.1153 m; H128 gives
+2.4233 m/s and 0.1413 m. Preserve these negative checkpoints and results.
+Actor and critic have received no updates.
+
+On 2026-11-07, `contact_kernel_audit_a01.json` (SHA-256
+`09d56d0596c220338f33cfd80d079144c4e71aef4299302a3757c770658c4663`)
+compared 4779 training-only saved finite distances. Calling the actual V324
+MJX sphere/convex kernel reproduced distances within 9.32e-9 m maximum and
+had no overlap mismatches. The Euclidean prism used by the learned proxy
+had 6.293 mm P95 discrepancy and 176 extra overlap decisions. An independent
+CPU MuJoCo check agreed with that Euclidean calculation, demonstrating that
+the previous CPU geometry audit did not establish MJX contact equivalence.
+This diagnosis does not modify or recalibrate CONTACT/EXEC.
+
+The explicit `--contact-geometry v324_mjx` fitter option now uses the native
+merged-face ordering, signed distance, contact point and normal. Geometry is
+prepared once from the authenticated MJB; each model step evaluates only the
+ball/racket pair, with no robot mesh scan or rigid-body solve. The old exact
+prism diagnostic remains selectable and has exact-output regression tests.
+Native-geometry checkpoints have a distinct structure signature containing
+the mesh and dependency source hashes; they cannot resume a prism checkpoint.
+An exact, hash-bound import-only compatibility rule preserves old prism
+checkpoint resume. The first candidate screen is fresh 512 updates, same
+seed/data/network/P_model/H8/optimizer as `contact_native_fit_a01`. Compare
+held-out outcome/event errors and complete wall time; all original regional
+accuracy references remain in force. Finite differences match native geometry
+inside smooth face and rim modes. A recorded example near a face/edge switch
+is discontinuous under a 10-micrometer perturbation; do not interpret its
+cross-mode finite difference as a smooth gradient or hide it by changing the
+teacher collision kernel.
+
+The 512-update native-kernel screen completed in 67.78 s (45.28 s fitting),
+versus 67.66 s for its matched prism baseline. H8 outgoing-velocity/apex P95
+improved from 1.0845 m/s / 0.1595 m to 0.8803 m/s / 0.1316 m; entry misses
+fell from 45 to 12 of 556 and release misses from 324 to 276 of 534.
+H128 errors remain 2.8907 m/s / 0.2379 m. This is a partial correction, not
+contact qualification. Continue the same candidate/Adam/RNG through update4096
+to match the prior baseline's budget; keep all other settings fixed and audit
+single-step versus recursive error separately. The applicable CPU suite
+passes 205 tests (51.60 s). No actor/critic training has occurred.
+
+The matched native-kernel continuation to4096 finished in307.06 s. H8
+outgoing/apex P95 are0.7145 m/s /0.09532 m (prism baseline0.7599 /0.1153);
+H128 remains2.3953 m/s /0.14039 m. The one-step audit samples up to512 native
+contact and512 free-flight points per trial/partition without replacement,
+never the final test. At256 bootstrap updates, contact velocity-error P95
+was0.3362(train)/0.3738(validation) m/s; after256 additional recursive
+updates it worsened to0.4793/0.5051. Free-flight P95 remains4.05e-6 m/s.
+The next single-factor screen increases single-step bootstrap from256 to2048
+updates, keeping total4096, native geometry, seed, all data, optimizer and
+H8 unchanged. Save the2048 checkpoint for a one-step audit, and compare final
+recursive validation to the4096 baseline above. No outcome threshold is
+relaxed and no model component is promoted by these diagnostics.
+
+The longer-bootstrap screen completed4096 updates in328.84 s. H8 outgoing
+velocity P95 improved to0.6370 m/s, but apex P95 was0.1023 m; H128 was
+1.8871 m/s /0.1586 m. It therefore does not dominate the earlier candidate
+and still fails the accuracy references. At the2048 bootstrap checkpoint,
+one-step contact velocity P95 was0.2486(train)/0.2756(validation) m/s;
+after the recursive phase it worsened to0.3029/0.3663. Preserve both stages
+and `contact_one_step_a03.json` as negative/incomplete model evidence.
+The next design proposal was a cheap finite-duration soft-contact prior plus
+a learned residual, using the same existing physical parameters and corrected
+MJX geometry. On2026-11-07, after discussing both structures, the user approved
+comparing this approach with the pure-neural model. This approval does not
+promote the candidate, change teacher physics, or relax task metrics.
+
+The explicit `--contact-response neural|soft_only|soft_residual` modes preserve
+the neural default and checkpoint semantics. The prior uses recorded episode
+mass0.00400000019 kg, isotropic inertia6.4e-7 kg m², and the actual reference
+inverse-mass sum371.599609375 kg^-1. That regularizer reference remains separate
+from physical mass: native mass randomization changes mass/inertia but not
+compiled body_invweight0. Positive solref/solimp determine the same stiffness,
+damping and penetration-dependent impedance as the teacher. The approximation
+solves the normal row with ball-side effective mass, then caps tangential
+forces in the existing anisotropic friction ellipse. Racket acceleration and
+dynamic recoil are omitted from the prior, explicitly left as modeling error.
+Condim remains3; spin arises from contact-force torque, with no additional
+rolling/torsional friction invented. This is a1 ms finite-duration prior,
+not an instantaneous restitution model or a full MJX solve.
+
+Preregistered comparison: evaluate soft_only with zero optimizer updates;
+train a fresh19->256->256->128->8 residual with the exact same512-update,
+256-bootstrap/H8 recipe and seed as contact_kernel_fit_a01; if finite and
+useful, continue to4096 for comparison with contact_kernel_fit_a02. Existing
+data, losses, event-balanced sampling and frozen regional validation remain
+identical. Do not add auxiliary-loss changes to only one side of this first
+structure comparison. Report base-only, neural and hybrid outcome errors,
+events, complete wall time and retained negative results before promotion.
+
+The approved comparison completed on2026-11-07. All rows below use the same
+native-geometry data, validation seed and recorded racket conditioning. H is
+the number of5 ms controls; each control retains five1 ms contact updates.
+Numbers are outgoing3-D velocity / analytic next-apex P95, in m/s and m:
+
+| Contact response | Updates | H8 | H32 | H64 | H128 |
+| --- | ---: | --- | --- | --- | --- |
+| Neural, matched256-bootstrap recipe |4096|0.714534 /0.095316|0.721558 /0.112064|0.990973 /0.106205|2.395322 /0.140393|
+| Soft prior only |0|0.425578 /0.091770|0.466028 /0.115001|0.522152 /0.094411|2.342053 /0.128437|
+| Soft prior + residual |512|0.394727 /0.082364|0.459923 /0.100485|0.573408 /0.089218|2.041986 /0.135197|
+| Soft prior + residual |4096|0.356182 /0.077868|0.372213 /0.084459|0.961677 /0.104965|2.079099 /0.149798|
+
+Runs are `contact_soft_only_a01`, `contact_soft_residual_a01` and
+`contact_soft_residual_a02`. The latter's metadata checkpoint SHA-256 is
+`39cc5974874998bf5b263f16ae3503dbdc55f3558cbe117379e9fef7ebc33dc3`.
+The512-update hybrid and matched neural runs took68.773/67.779 s including
+their validation. Continuations512->4096 took314.742/307.064 s. Both sides
+retain all intermediate checkpoints and exactly the same loss recipe. H8
+hybrid release misses are181/534 vs neural245/534 at4096 updates; these counts
+penalize even a1 ms edge shift and are not episode failure rates. The prior
+alone has161/534, so the trained residual does not dominate it on every metric.
+The hybrid improves short-horizon outcomes but does not meet the0.08 m/s and
+0.01 m references; long-horizon apex error and release timing remain deficient.
+No component is promoted, and actor/critic updates remain zero.
+
+`contact_soft_one_step_a02.json` (SHA-256
+`4106a92ad9eafc5a363696276312639b1aba653b5f57502868319d1a69c42445`)
+uses the same5120 validation contact samples as previous single-step audits.
+Hybrid validation velocity P95 at256/512/4096 updates is
+0.336971/0.370390/0.356606 m/s. Recursive fitting thus still degrades this
+metric relative to the bootstrap endpoint. The independent training-only
+acceleration oracle uses recorded future robot velocity solely to diagnose
+missing acceleration; it is never a model input or imagined correction.
+On5120 contact samples, prior error P95 is0.402377 m/s and adding this oracle
+gives0.405608 m/s. Stored normal-force integration discrepancy is only
+0.000632 m/s P95, while the prior can substantially overpredict normal force.
+Artifact `contact_soft_acceleration_oracle_a02.json`, SHA-256
+`eb88d624eaff13d599667898ee39bc020b42d0822b49e2f3a7f48602b1c53849`.
+Its first extended attempt failed before producing results because the generic
+contact reader intentionally omits the force stream; the diagnostic now reads
+that authenticated stream explicitly. No training data or fitter was changed.
+
+A bounded follow-up `run_wmj_v1_audit_contact_solver.sh` replays only the first
+128-control acquisition using the unchanged V324 stack. It observes native
+normal Jacobian velocity/acceleration, aref, regularizer, force and solver
+iterations. Metrics use training lanes only and exclude other-ball-collision
+tails. Compare native coefficients to the reduced prior and inspect the force
+balance residual before blaming network capacity or adding any model state.
+This is a read-only diagnostic, not a solver change or world qualification.
+The applicable WMJ/resource suite passed212 tests in60.30 s before these
+additional diagnostic-only readers; the soft-prior tests include independent
+CPU MuJoCo normal-contact agreement and finite multi-step derivatives.
+
+Native solver diagnostics `contact_solver_a01/a02` completed in136.36/136.10 s
+with clean scope exits. The second run observed6835 valid training contact
+substeps. Native reference acceleration and regularizer match the prior within
+ordinary FP32 differences (P95 0.000488 m/s² and0.002441 kg^-1). However, the
+native contact Jacobian applied to robot `qacc` before implicit integration
+has absolute P95 1110.93 m/s²; applying it to the actual integrated
+`(dq_after-dq_before)/dt` gives10.55 m/s². This is an internal solver quantity,
+not evidence that the physical racket moves at the former acceleration.
+MJX `forward.implicit` recomputes the acceleration used for velocity integration
+from the velocity-derivative-modified mass matrix after contact solving.
+
+In the same6835 samples, the normal-force-equivalent one-step velocity error
+P95 is0.397598 m/s when robot acceleration is omitted,0.401178 when the
+integrated-velocity acceleration is substituted, and0.009177 when the native
+pre-implicit solver acceleration is supplied as an oracle. Positive-force-only
+values are0.466491/0.467424/0.012010 m/s over5352 samples. This identifies a
+major missing coupling in the current reduced model. It is training-data
+diagnosis of one normal component, not a learned prediction or a passed3-D
+outgoing/apex gate; true future solver outputs cannot enter imagined rollouts.
+The native solver_niter field remained zero; it does not establish that the
+solver performed zero iterations. The a01 force_with_measured_robot_acceleration
+field used solver qacc despite its name; a02 corrects that name and explicitly
+compares it to integrated velocity acceleration.
+Evidence: `contact_solver_a02/result.json`, SHA-256
+`1dc3efa7e5d787fde43e7470dca12d9c70ff5571d9584b6c24d0fccdd4994ccb`.
+
+The concrete next proposal, pending user QA and not implemented, appends the
+existing47 execution features to the19 contact features: RightArm q/dq14,
+delayed target-q error7, delayed target dq/ddq14, and LegWaist q/dq12.
+Compare neural and hybrid contact models with66->256->256->128->8 networks,
+using existing data first. Imagined inputs must use the world's predicted
+current joints and its own delayed commands. The robot proxy47->128->128->26,
+actor969, actions7 and all teacher physics remain fixed. This proposed input
+change may help the network represent control-dependent contact response;
+the oracle does not prove that the expanded network will learn it accurately.
+Combined comparison/proposal: `contact_response_comparison_20261107_a02.json`,
+SHA-256 `8291db41cc197661bfa23ed3d6bf49891fd5e7afd1327ca9532414a4baaf6bff`.
+No66-input model may be fitted before the user answers this design QA.
+
+On2026-11-08 the user superseded that66-input proposal and approved only
+39->256->256->128->8 for the next contact comparison. Append13 joint positions
+(RightArm-0..6 then LegWaist-0..5) and7 delayed position-target errors to the
+unchanged19 ball/racket features. Do not add joint dq, command dq or ddq to
+this contact network. The user explicitly retains the existing47->128->128->26
+robot proxy, including its already-present command dq/ddq inputs. Actor969,
+action7, WMJ-V1 and V324 CONTACT/EXEC/physical parameters remain fixed.
+
+Select the new path only with `--contact-inputs joint_positions` alongside
+native geometry/coherent replay. Preserve all19-D neural/hybrid defaults and
+checkpoint signatures. New20-D normalization uses finite valid training lanes
+only, frozen mean/std with0.1 mrad floor; the old19 fixed SI scales remain
+unchanged. Inputs use same-substep q and delayed q_command-q, never future
+states or solver qacc. In a composed world both q and commands must come from
+the world's own recursive execution state. This component comparison still
+uses recorded robot motion and does not qualify that composed world.
+
+Preregistered39-D screen: fresh pure-neural and hybrid models with seed
+2026110606, batch256, Adam3e-4/clip1,256 single-step updates followed by256 H8
+recursive updates; if finite, continue both to4096 total updates. Keep data,
+sampling, losses, event counts, regional validation and1/8/32/64/128 horizons
+identical to the earlier comparison. Report normalization and total wall time,
+not only kernel time. Existing datasets supply the position targets; no new
+physics collection or robot deployment is authorized by this input change.
+
+The39-D implementation passed all217 applicable WMJ/resource tests in64.77 s,
+including zero-padded legacy output parity for both physical responses,
+position-target derivatives, training-only normalization and exclusion of
+joint/target dq/ddq and future joint positions from the new inputs. At512
+updates, `contact_position_neural_a01` gives H8 outgoing/apex P95
+1.017187 m/s /0.149577 m in85.103 s including8.141 s normalization.
+`contact_position_hybrid_a01` gives0.314250 m/s /0.069528 m in88.411 s including
+8.987 s normalization. Both used identical statistics from5,189,485 valid
+training substeps, matched sampled trial sequences and identical validation
+event populations. The hybrid improves on the19-D512-update hybrid's
+0.394727 m/s /0.082364 m, while the fresh neural model initially worsens.
+Keep both results; neither qualifies the world. Their metadata checkpoint
+SHAs are respectively
+`037470ffce53b098259ec950a3720d9113ddf1573b2a9727a00d8a731e3f5518`
+and `6ff6279f911f559b6f59bf5f4ae3447459529cffbfa845ccb18c78105141527c`.
+
+Both39-D continuations completed4096 cumulative updates. The neural/hybrid
+H8 outgoing/apex P95 are0.708561/0.086298 and0.264252/0.045935 in m/s/m;
+H32 are0.788110/0.116551 and0.314037/0.058212; H64 are
+1.045816/0.107460 and0.449360/0.057633; H128 are
+2.494543/0.175577 and1.480268/0.100989. The hybrid improves all these
+outcome errors over the matched19-D hybrid, but remains unqualified.
+Continuation wall times are353.029/365.866 s; complete first+continuation
+wall times are438.132/454.278 s, including normalization and both validations.
+H8 release misses are247/534(neural) and160/534(hybrid), with exact1 ms timing.
+Checkpoint metadata SHAs:
+`310a589a264538ac935e98a2f1753b12e0ce4bccf2c5e47f30af478c029f4827` and
+`cf700255b6e63aa59b972f38f7048b79eb71a6596253f30ba078f76585d4c223`.
+
+The held-out single-step audit remains negative:39-D neural validation P95
+0.459230 m/s at4096;39-D hybrid at256/512/4096 gives
+0.272129/0.314852/0.291004 m/s. The final hybrid training P95 is0.244217,
+so substantial fitting error is present before full recursive composition.
+`contact_position_one_step_a01.json` SHA-256:
+`5d3761756c2c3eafbf8b9a5412e1d9ab3859e1adcaf38a466af60840630843af`.
+
+Next bounded single-factor fitting diagnostic retains the approved39-D hybrid
+and all inputs/data/seed/losses/optimizer, but uses2048 bootstrap updates and
+2048 H8 recursive updates (4096 total). Compare against the39-D256-bootstrap
+hybrid and retain the2048 checkpoint for a separate single-step audit. This
+is an additional fitting-schedule diagnostic, not a new architecture comparison
+against a differently trained neural baseline. Reference error budgets and
+world qualification remain unchanged; no dq/ddq input is added.
+
+The additional39-D hybrid diagnostic `contact_position_bootstrap_a01` completed
+on2026-11-09 with4096 updates,403.942 s total wall time including6.841 s
+normalization,42 C peak GPU temperature and2,775,097,344 bytes peak scope
+memory. It exited normally without a resource stop. H1/8/32/64/128 outgoing
+velocity P95 are0.187075/0.266861/0.302607/0.680819/1.921157 m/s; corresponding
+apex P95 are0.036687/0.044579/0.049977/0.064251/0.095050 m. Longer bootstrap
+improves H1 but does not improve H8 velocity and worsens H64/H128 velocity;
+do not promote it over the256-bootstrap candidate. H8 exact1 ms release
+misses are145/534, with147 extra release edges. Data, normalization and frozen
+validation populations match the prior39-D hybrid. Checkpoint metadata SHA:
+`569510300b67a869bb725bb5f3880f3794eda890678ded4a4d068084f32732f0`.
+
+The separate fixed5120-contact validation audit gives one-step velocity P95
+0.199206 m/s at2048 and0.236608 m/s at4096; training P95 are0.165929/0.197977.
+These diagnose fitting and recursive-training tradeoffs without qualifying the
+composed world. Audit `contact_position_one_step_a02.json` SHA:
+`2b7cd14ff267a7d6cc8692aa90ca7771b49035a7f99013bdafb3c922fa360587`.
+Combined evidence `contact_position_comparison_20261109_a01.json` SHA:
+`8845b8f85ed4408b92c10838841e49991141f0771abdc1da01595bc8fec0649b`.
+All contact candidates remain unqualified; actor/critic updates remain zero.
+
+A further input change is pending user QA, not implemented: optionally append
+seven current delayed right-arm velocity errors `dq_command-dq` to the approved
+39 features, giving46->256->256->128->8, with no ddq. The frozen V324 actuator
+includes velocity feedback, so this is a plausible missing conditioning term;
+the present evidence does not prove it is the sole cause or that46 inputs will
+improve validation. Simple PD algebra applies away from actuator target clipping.
+Imagined joint velocities and command velocities would come from the existing
+world execution state; no future teacher state or hardware interface would be
+added. The alternative is to retain39 features and continue fitting work.
+No46-input code or experiment may begin before the user answers.
+
+On2026-11-09 the user answered: retain39 inputs and optimize fitting. This
+rejects the46-D proposal above; no velocity tracking error, new joint/command
+dq or ddq is added to the contact network. The existing robot proxy remains
+unchanged. The source input/transition/loss modules of the earlier comparisons
+remain preserved; the next change is an explicit fitting-only objective.
+
+At the2048 bootstrap checkpoint, three fixed training batches show recursive
+gradient norms270.950/383.720/315.325 versus single-step0.688/0.535/0.437,
+with cosine0.633/0.070/0.673. This small diagnostic motivates a meaningful
+single-step auxiliary weight; it is not validation or proof of generalization.
+Evidence `contact_position_gradient_a01.json` SHA-256:
+`5fc163b7960eeee68ac89de7a612d9a01eb30f00b0042ed49ecbab92440e6f10`.
+
+Preregister the39-D hybrid auxiliary comparison from the exact saved2048
+bootstrap checkpoint: add256 times the independently teacher-forced loss to
+the unchanged recursive loss, with the same data order, RNG, parameters,
+Adam moments,3e-4 learning rate, clip1 and H8. The auxiliary branch uses the
+same physical scales and batch; it never replaces or corrects the recursive
+state trajectory, validation rollout or deployment inputs. Default weight0
+returns the original objective exactly. Bootstrap gradients remain identical.
+Resume permits this recipe addition only before any recursive update has
+executed; later changes are rejected. Record auxiliary supervised uses
+separately without counting the reused labels as new collected transitions.
+
+First run256 new updates (2304 cumulative); if finite and resource guards pass,
+continue to4096 cumulative. Compare to `contact_position_bootstrap_a01` on
+the same fixed validation populations and to the prior best39-D candidate.
+Target H8 outgoing/apex P95 below0.266861 m/s /0.044579 m while preserving
+H32/64/128 outcomes and inspecting regional/event tails. Audit one-step error
+against the parent's0.199206 m/s and final baseline's0.236608 m/s. A partial
+improvement does not qualify the full world or relax0.08 m/s /0.01 m
+reference budgets. The reference simulation, actor and hardware path do not
+change. All trials use unique run directories and retain negative results.
+
+The auxiliary implementation passed219 applicable tests in71.39 s. Its
+2048-step restart preserved all25 numeric parameter/Adam arrays and sampler
+RNG exactly. `contact_position_aux_a01/a02` completed256+1792 new updates,
+with63.763/209.996 s wall time. At4096 cumulative updates, H1/8/32/64/128
+velocity P95 are0.206492/0.240636/0.299318/0.573040/1.801397 m/s and apex P95
+are0.035656/0.044524/0.060675/0.067922/0.101291 m. H8 velocity improves over
+the matched long-bootstrap baseline, but H32/64/128 apex errors regress;
+this is a partial improvement, not a promoted or qualified model. Checkpoint
+metadata SHA `95665d84c312e470569c9d771899217db4fb98f2b7eb27a89c513be52a64f0f1`.
+
+Preregister a continuation to8192 cumulative updates with the exact same
+auxiliary objective, optimizer, data and network, after a separate one-step
+audit of4096. The training losses are still decreasing, so this bounded
+continuation tests fitting convergence without adding inputs or changing
+reference budgets. Retain prior checkpoints. Require improvement in H8
+outgoing/apex and inspect all longer horizons/regions/events before adopting
+a candidate; partial gains remain explicitly unqualified. Total updates
+remain below the existing20000 initial-fit ceiling.
+
+The contact fitter now also accepts an optional `--window-schedule` using the
+original8->16->32->64 control-window progression. The default remains the
+old constant window. A continuation may append only future boundaries;
+changing any already executed window is rejected. Sampler rows rebuild when
+the physical window changes, and checkpoints separately count actual primary
+and auxiliary substep uses at each window length. This adds no model input
+or teacher-state correction. Two regression tests cover past-update rejection,
+the complete unchanged prefix and mixed-window sample accounting. Activation
+of a longer window awaits the8192 validation result and a bounded preregistered
+continuation; adding CLI support does not graduate any model.
+
+At8192 cumulative updates, `contact_position_aux_a03` completed in421.185 s
+additional wall time. H1/8/32/64/128 outgoing P95 are
+0.154038/0.234877/0.338282/0.434242/1.325764 m/s; apex P95 are
+0.028331/0.039000/0.055731/0.062035/0.091761 m. H8/H64/H128 improve relative
+to4096, while H32 velocity regresses. Reference accuracy remains unmet.
+Checkpoint metadata SHA:
+`496a03d84ebf6815ffafd6746bc965763c02a204e93a5b07b2e3a2537ee59e13`.
+
+Preregister a paired1024-update fitting screen from this exact8192 checkpoint:
+one branch retains H8; the other appends `--window-schedule 2048:8,8192:16`.
+Both finish at9216 with auxiliary weight256 and the same Adam state, seed,
+model/input dimensions and fixed held-out validation population. The changed
+window necessarily changes eligible training windows and sample uses; report
+that cost rather than claiming equal substep counts. Target improvement of
+H32/64/128 outgoing/apex without degrading H8, and retain regional/event
+failures. Neither branch is promoted on loss alone. The comparison remains
+inside the user's explicit39-D-only fitting scope.
+
+Before further fitting, preregister a read-only timing diagnostic on8192 and
+both9216 candidates: fixed seed2026110902,128 independent-event sampled H16
+windows per trial, validation split only. For native controlled releases with
+at least10 ms left in the window, compare the identical event population at
+offsets0/1/2/5/10 ms on the same physical clock. Record velocity, ballistic
+apex-proxy error, native/model/both-free fractions, all excluded right-edge
+events and any native recontact. Do not remove cases where the model remains
+in contact. This distinguishes transient release-time discrepancy from a
+persistent outgoing-state error; it changes neither the original fixed
+validation nor its reference budgets and does not qualify the full world.
+
+The paired9216 screen completed normally in138.046 s(H8) and153.289 s(H16).
+H8/H16-trained models give validation H8 velocity/apex P95
+0.233481/0.039915 versus0.236603/0.042723. H16 training improves H32 velocity
+0.324035->0.274531, but worsens H64 velocity0.464283->0.533558 and H128
+1.572786->1.795594, with apex regressions; do not adopt that window change.
+Both starting parameter/Adam leaf manifests and sampler RNG match8192 exactly.
+Frozen event populations also match. H16 metadata checkpoint SHA:
+`ed962e051bbfe3b14000de7631152801445d7d4bb24c0471f71fdb2f09d3bbbc`.
+
+The timing audit contains524 controlled releases;64 right-edge events lack
+the full10 ms tail and are explicitly censored. The460-event common cohort
+represents360 root-family/impact pairs and has no native recontact in10 ms.
+For the H8-trained9216 model,0/10 ms velocity P95 are0.229516/0.229485 m/s
+and apex-proxy P95 are0.043583/0.043588 m. Model-free fractions rise from
+88.26% to99.57%, while error persists. This rejects a small timing shift as
+the main explanation; all original validation failures remain retained.
+Audit SHA `70fae96c951b8f4185d6028d13f4bac7cf9c3a259d1fa27d0349d26a6309e33a`.
+Combined fitting evidence `contact_position_fitting_comparison_20261109_a01.json`
+SHA `f0d177cc3994c7583aa7f629c631d213b274cd10264c44666cf8d0604d41251e`.
+
+Next preregister a1024-update learning-rate comparison from the same8192
+checkpoint, reusing the H8 branch as the3e-4 control. The new branch uses
+`--learning-rate-schedule 0:0.0003,8192:0.0001`, H8 and auxiliary weight256,
+ending at9216. Keep network39->256->256->128->8, data/RNG, Adam moments and
+all physical scales unchanged. Checkpoints reject rate changes in consumed
+updates and report the actual rate; default constant-rate execution remains
+unchanged. Seek improved H8 outgoing/apex with retention of longer horizons
+and regional/event outcomes. Reference budgets and world qualification are
+not relaxed. This is a fitting parameter change authorized by the user's
+instruction to keep39 and optimize fitting, not another input proposal.
+
+The lower-rate branch `contact_position_lr_a01` completed9216 total updates
+in137.494 s incremental wall time. H1/8/32/64/128 outgoing P95 are
+0.151143/0.230177/0.308849/0.514047/1.629549 m/s; apex P95 are
+0.032618/0.041438/0.050152/0.058377/0.081935 m. Compared with the matched
+3e-4 H8 branch, this is mixed improvement, not a uniformly superior candidate.
+Checkpoint metadata SHA `f9994665587f716530731110938f90651f826136a75d387cd8db7b5e8a848414`.
+All228 applicable tests passed in71.41 s before this experiment. Input39,
+the existing robot47->26 model and all teacher contracts remain unchanged.
+
+Proceed with the originally planned joint/ball model composition rather than
+declaring component accuracy sufficient. `world_model.world_physics` advances
+the current13-joint state, full-chain FK and39-D ball contact state together
+at1 ms, preserving five ticks per external control step and state across
+window boundaries. No future measured state corrects the recursive physics.
+It consumes delayed arm commands; recorded-command validation is explicitly
+not a complete policy-feedback world. Projection/RMP/observation/task assembly,
+action-effect validation and coupled fitting remain required before policy
+training. Three focused tests passed in6.58 s, covering analytic free flight,
+support-joint feedback, unchanged fixed-robot contact output, split-window
+continuity, a finite-difference command gradient and input-contract rejection.
+
+The actual-checkpoint CPU composition smoke completed in5.49 s using16 held-out
+H8 contact windows. All joint and ball states were finite and continuous;
+this is a runtime check, not a population accuracy pass. Evidence is
+`wmj_v1/coupled_physics_cpu_a01.json`. The next bounded diagnostic is
+`run_wmj_v1_evaluate_physics.sh` / `world_model.evaluate_physics`, using the
+existing robot6144 and contact auxiliary8192 checkpoints, canonical support
+replay and seed2026120607. On the same128 validation windows per trial and
+H1/8/32/64/128, compare recorded native robot conditioning with recursively
+predicted13-joint/FK conditioning. Both branches receive recorded delayed
+commands, so this cannot qualify policy/RMP feedback. Retain nonfinite counts,
+missed/extra events and all selected regional/cohort denominators. Report
+native-time outgoing velocity and analytic-apex errors plus precontact0..25 ms
+racket position/normal-velocity errors. Compare against the unchanged reference
+budgets and existing component metrics; no promotion or policy updates follow
+merely from a successful execution. Budget900 s on the registered GPU1 with
+the existing storage, memory, PSI and temperature safeguards. Five focused
+physical-recursion/metric tests passed in7.13 s before this experiment.
+
+`coupled_physics_gpu_a01` completed all10 trials in44.58 s,1280 paired windows
+per horizon, with no nonfinite predictions. The recorded-native branch
+reproduces the earlier auxiliary8192 validation populations, event counts and
+P95 metrics within1e-5. With predicted robot state, H1/8/32/64/128 outgoing
+P95 are0.210105/0.301552/0.355452/0.675676/1.692017 m/s and apex-proxy P95
+0.023975/0.055653/0.073134/0.071267/0.096958 m. H8 precontact position/normal
+velocity P95 are0.485 mm/0.010716 m/s; the maximum regional precontact position
+P95 across these horizons is0.836 mm. Good precontact robot accuracy does not
+make the coupled contact model accurate. Result SHA
+`c21e1df6c01ace7533ca71959d4e8cacec4e6c0615befe22671a890cb39ffb2c`.
+The applicable CPU suite passed233 tests in74.40 s.
+
+Preregister `run_wmj_v1_fit_physics_contact.sh`: from the same8192 contact
+checkpoint, preserve parameters, Adam moments, sampler RNG and frozen training
+normalization; retain robot6144 exactly. Execute1024 further H8/256-window
+updates with LR3e-4, clipping1 and the existing auxiliary weight256. Only the
+recursive contact branch receives own-state predicted13-joint/FK motion;
+the separate single-step auxiliary retains native robot/ball conditioning.
+This is the first frozen-execution portion of combined autoregressive fitting,
+not joint optimization of robot parameters. Contact inputs remain39, with no
+additional joint/command dq/ddq. Compare identical held-out paired windows
+against `coupled_physics_gpu_a01` and preserve native-robot accuracy as a
+secondary measure. Record event/regional failures; unchanged .08 m/s/.01 m
+references still apply. Budget1800 s on GPU1 with existing resource guards.
+
+`contact_coupled_fit_a01` completed9216 updates in163.90 s (120.64 s fitting).
+Initial parameters, Adam leaves and sampler RNG match8192 exactly. Additional
+evaluation `coupled_physics_control_gpu_a01` compares the already-trained native
+H8/9216 branch on identical window hashes. Coupled velocity P95 changes
+control->candidate at H1/8/32/64/128 are0.200502->0.235754,
+0.295159->0.268647,0.382887->0.318658,0.773562->0.654274,
+2.151507->2.101314 m/s; apex changes are0.026916->0.027745,
+0.055840->0.044833,0.065771->0.054526,0.073368->0.064857,
+0.098727->0.094679 m. Both models remain finite; native-conditioning apex
+regressions are retained. The coupled candidate checkpoint SHA is
+`8fec63466cacc2c48395f754323335013c3e7f0e6e85623a61718a122f681507`.
+Do not promote it. Preregister one3072-update continuation to12288 under the
+exact same frozen-robot H8/256/LR3e-4/aux256 recipe and1800 s wall ceiling;
+check the same coupled regional/event/horizon outcomes, retaining every negative.
+
+The default-off `world_model.world_control` composes the already-tested
+bounded reference projection with native five-tick RMP and three separate
+output-delay buffers. It preserves the accepted normalized previous action,
+episode RMP parameters and per-lane ring phases. Two CPU checks passed in6.19 s
+against native RMP/output-history values and a delayed-action finite difference.
+Actual full-native seed/control replay and joint/ball integration remain pending;
+these checks alone are not end-to-end qualification.
+
+Preregister the CPU `world_model.audit_world_control` check: restore complete
+original128-control trial-start RMP/reference/delay state from authenticated
+seed leaves, choose32 validation lanes per each of10 trials with seed2026110904,
+and replay raw actions with the canonical recorded13-joint projection feedback.
+Compare accepted actions, references and all five delayed q/dq/ddq commands.
+Maximum practical tolerances are normalized action0.002, q/reference0.0001 rad,
+dq0.001 rad/s and ddq0.02 rad/s2; nonfinite results fail. This validates the
+known controller only, not model-driven feedback. No physics/control values
+or task gates change, and no meshes/IK run inside these control steps.
+
+The first CPU replay failed; retain `native_control_replay_a01.json` SHA
+`0a04f5682fde6650114e7e44d34da527048f672002c22279ca10da791e192697`.
+Some different hold decisions accumulated large reference differences. A
+first-trial diagnostic applying a native-current-pose rigid correction did
+not remove the discrepancy (`control_base_diagnostic_a01.json`, SHA
+`e65aaf3b2d31b0e2ac030d324aa3bab57180cef69a34d1d437b4dc3d98c2a7e8`);
+that correction is a diagnostic oracle and is not a world input. Independent
+full-qpos CPU MuJoCo FK at first-step lanes49/84/200/296 agrees with the new
+projection to2.4e-7 rad, while both differ from recorded GPU outputs by up to
+9.21e-5 rad. This does not establish a control-logic omission. Preregister the
+same32-lane/10-trial/128-control audit on GPU1, same seeds and tolerances,
+through guarded `run_wmj_v1_audit_world_control.sh`, budget900 s. Preserve
+CONTACT/EXEC and all native projection settings; no acceptance threshold is
+relaxed because of the negative CPU comparison.
+
+The GPU counterpart also failed (`native_control_gpu_a01/result.json`, SHA
+`af3268d8d0152e730d422af7bbd228587ac74888dcf0ff0de7b13e5961e0eee0`,65.12 s).
+Inspection found the world projection omitted V324 EXEC's unroll24 transform.
+`control_execution.projection_v324` now privately reuses the authenticated
+EXEC transformation and original projection function without mutating shared
+modules. `ProjectionContract.from_native` selects24; explicitly constructed
+legacy contracts still default to1. Physics, constraints, sweep count and
+tolerances remain unchanged. Five focused CPU projection/control tests passed
+in17.39 s, including comparison with the actual V324 scoped transformation.
+Repeat the same registered GPU control audit as `native_control_gpu_a02`.
+
+The repeated audit still failed its practical continuous-replay gates
+(`995f2cf16ef16da5d38d40f4dabdf0d1275e69b18399eec2ad636545dce8d362`).
+The omitted EXEC transform was corrected, but it does not explain the main
+discrepancy. Next diagnostic `native_projection_seed_a01` restores the actual
+first full1024-lane seed and compares native scoped GPU projection, world
+projection and recorded first-step labels. This is a bounded900s code-identity
+probe with the existing resource guard, no model or policy updates and no
+changed physical/control tolerance. Report validation separately from all-lane
+identity diagnostics; neither population is used for fitting in this probe.
+
+A regression test also exposed the full-chain observation adapter replacing
+the inherited73-value prefix's cached native racket pose with current FK.
+The prefix now retains its original native clock; only the sparse paired
+history uses current full-chain FK. The failing test was recorded before the
+fix, and12 focused observation tests passed. Earlier arm-only collected seeds
+remain unchanged and are not relabeled as full-chain observation seeds.
+The pre-change complete suite passed237 tests in79.43 s.
+
+`native_projection_seed_a01` reproduces recorded native first-step references
+exactly; world projection differs in25/1024 hold decisions (2/103 validation
+lanes). A second same-seed diagnostic exposes the inputs: position component
+P95/max differences0.488/0.977 mm, Euler-angle max0.001056 rad, with quantized
+differences characteristic of reduced-precision matrix products. This is a
+hypothesis, not yet a demonstrated cause. Preserve both diagnostics (SHA
+`882e5072dfdbb81a83e257184d9a326a6cd3c4cde131ef83427581b00064729a` and
+`4037f4ac32efa2c914ef7c047fc0fa703244d17e376a9ca8563b397bd5d6e9f3`).
+Next compare a private ancestor-chain FK using native MJX quaternion arithmetic
+against the existing matrix FK. Use the same raw compiled transforms, joints,
+projection constraints and original GPU precision settings. It is a control
+implementation diagnostic only; existing physics-model FK/checkpoints and
+native CONTACT/EXEC remain untouched. First require CPU MuJoCo agreement and
+derivative checks, then repeat the bounded full-seed GPU comparison before
+considering this implementation for control recursion.
+
+`native_projection_seed_a03` isolates full FP32 for private matrix FK only;
+native simulator and projection arithmetic remain at their original settings.
+All25/1024 first-step hold disagreements disappear. Reference maximum error is
+3.10e-6 rad and normalized-action maximum is1.19e-4; validation has no hold
+disagreement. Report SHA
+`da6eb9ab60ec7f30aeb5952302de029cbd5f3f65fc26666880206a5d803f7c20`.
+This confirms reduced-precision private FK as a major source of the initial
+discrepancy. `ProjectionContract.from_native` now selects local FK precision
+`highest`; explicitly constructed legacy contracts retain their default.
+The contact/robot fitting FK and native CONTACT/EXEC are unchanged. Repeat
+the registered continuous control replay as `native_control_gpu_a03`, same
+data, seed, tolerances and900s wall budget. The quaternion alternative remains
+unselected: CPU pose/Jacobian/derivative checks pass, but its first full-chain
+CPU compilation was manually interrupted after about3min; do not claim its
+compiled throughput or GPU fidelity. Three focused CPU checks passed13.48s.
+
+The FK precision result also motivates one evaluation-only physical-component
+probe: frozen robot6144 and coupled contact12288, same held-out windows and
+seed2026120607, with explicit full-FP32 dot precision throughout the learned
+component computation. Use `--diagnostic-matmul-precision highest`, run
+`coupled_physics_fp32_gpu_a01`, budget900s, report all H1/8/32/64/128 outcomes
+and regions against `contact_coupled_fit_a02`. No checkpoint is rewritten or
+promoted, and no native-MJX setting changes. This tests numerical sensitivity
+before choosing another fitting experiment; contact inputs remain39.
+
+The FP32-FK continuous replay `native_control_gpu_a03` improves substantially
+but still fails (SHA `81c3c6f1891efb045779036440d78f567d0adc35c9ed8d45ef6d5c818aaed207`).
+For example, trial1 reference max is7.74e-5 rad while delayed-command max is
+0.00369 rad. Preregister `native_control_gpu_a04 --component-diagnostics`,
+same320 validation lanes and128 controls: separately feed recorded references
+to unchanged native batched RMP, per-lane RMP, and full-FP32 per-lane RMP;
+compare projection with recorded same-time reference input. These teacher
+inputs isolate arithmetic/representation discrepancies and cannot qualify
+an imagined rollout. Preserve the original continuous-replay failure and all
+tolerances. No RMP/control parameters change; budget900s with existing guards.
+
+The component diagnostic completed (SHA
+`aee55293efbce2bd0adf7d187842678193936503f668cc3f8d1f5f80ccd306bb`).
+Given recorded references, the existing per-lane RMP/output delay reproduces
+all1433600 values of each delayed q/dq/ddq stream exactly. Changing RMP to
+full FP32 or another batching representation creates differences; retain the
+existing RMP path and scope precision changes strictly to learned physics/FK.
+Recorded-reference projection P95 is7.15e-7 rad, but rare hold disagreements
+remain (maximum0.02618 rad), so the continuous replay is not qualified.
+
+Frozen physical full-FP32 evaluation completed47.34s (SHA
+`4a888240f7efc22c359d76a026e3bd114c5b57930e63cb812ace32f29c353d31`).
+Predicted-robot H1/8/32/64/128 outgoing P95 are
+0.189941/0.240521/0.288291/0.503177/1.513981 m/s; apex P95 are
+0.025113/0.041541/0.054336/0.063093/0.081493 m. Native-robot results barely
+change; composed FK/robot numerics are the main sensitivity. These remain
+unqualified inference diagnostics, not new fitted checkpoints.
+
+Preregister a matched1024-update pair from coupled12288 to13312: original
+precision versus explicit full-FP32 learned-component fitting. Preserve the
+same contact39 parameters, full Adam state, normalization, sampler RNG, frozen
+robot6144, H8/batch256/LR3e-4/aux256 and validation windows. The new precision
+stage requires `--matmul-precision highest --start-precision-stage`; its
+checkpoint structure/signature and recipe both record precision, and its
+loader/rollout/evaluator must honor that setting. RMP/native MJX stay unchanged.
+Use `contact_coupled_precision_control_a01` and `contact_coupled_fp32_a01`,
+each1800s ceiling and normal guards. Primary outcomes are held-out H8 outgoing
+velocity/apex P95, with all longer horizons, regions, events and nonfinite
+counts retained. No promotion on training loss alone. Six focused tests pass
+in7.78s, including refusal of silent precision/recipe changes.
+
+The full WMJ/resource CPU suite passed240 tests in93.33s; the physical/control
+hashes remain `aa23ac9fe5f6a828e4624fa3adca339ffdd1d2fd56898c773af9829b96a600d8`
+and `7db85a5c7e3a529a9168059b196524a7688f749d309233a06f4082301d29f091`.
+The FP32 branch completed13312 updates in178.15s (131.62s fitting). Initial
+parameter/Adam leaf manifests and sampler RNG match the12288 parent exactly.
+Predicted-robot H1/8/32/64/128 outgoing P95 are
+0.185510/0.255866/0.278505/0.504034/1.752770 m/s, and apex P95 are
+0.030921/0.043676/0.054406/0.064297/0.084228 m. Some improve and others regress
+against frozen12288 FP32 inference; retain this negative/mixed result, SHA
+`1fc542a7d99ce443c021a301f5503eb1838b7bde9325b42033a7915fa7352be9`.
+The matched original-precision branch is still required before attributing
+the result to the precision change.
+
+Both13312 branches are now complete on identical validation-window hashes and
+final sampler RNG. Original-precision H1/8/32/64/128 coupled outgoing P95 are
+0.243009/0.256767/0.312560/0.692424/1.954291 m/s; apex P95 are
+0.024040/0.050572/0.060693/0.065358/0.082595 m. Its report SHA is
+`4f69b316101cc0fdc6fa720dd6e730d4e64f6f2933f25077ea90d4903954d92a`.
+FP32 improves several coupled outcomes but remains mixed and unqualified;
+its fit overlapped the93s CPU test suite, so wall times are not an isolated
+throughput comparison. Authenticated FP32 checkpoint restore passed without
+changing global precision (`precision_checkpoint_restore_a01.json`, SHA
+`a1a67e5cffa323589462f8744adacfa05bd25e64ea2c6b41b46b0f1f1f3e7005`).
+
+The extended CPU single-step diagnostic accepts coupled checkpoints while
+explicitly labeling native pose as teacher forcing. Same512-contact-sample
+per-trial/per-split population gives train/validation velocity P95 at
+parent12288:0.09981/0.16866; FP32-13312:0.09654/0.16652;
+original-13312:0.09682/0.16673 m/s. It uses no final-test samples and cannot
+qualify recursive prediction. Preserve `coupled_contact_single_step_a01.json`
+SHA `cdce5aa5ef56dabedbd0496c0be1c0e85a8b6d4c2e86ba5576ae95dca19145fd`.
+These results justify investigating remaining local fit/generalization errors
+before another blind continuation.
+
+`contact_conditioning_a01.json` (SHA
+`7d555228c3e251e189e4f054677c29b2fcba9cb82a2ec25be6ed9ee3f55afffa`)
+shows FP32-13312 validation velocity P95 of0.19596 m/s on contact ages2--7ms
+(3465 samples); center and rim both have substantial error and overlap mismatch
+is zero. Final-hidden tanh saturation fraction (absolute activation>0.995)
+averages0.6340/0.6312 on training/validation contacts, versus0.0096/0.0060 in
+the first layer. Saturation may impede fine fitting; this is a hypothesis,
+not proof of an irreducible39-D input limitation.
+
+Preregister one matched1024-update activation-regularization pair from
+FP32-13312 to14336. Preserve39->256->256->128->8, tanh, input statistics,
+contact physics, frozen robot, full Adam/RNG and the existing H8/aux256 recipe.
+Candidate alone adds0.01 times the mean squared final-hidden preactivation
+excess above absolute2, evaluated on valid native-contact rows of the already
+allowed auxiliary branch. It adds no inference operation or observation.
+Runs `contact_activation_control_a01` and `contact_activation_penalty_a01`
+use1800s ceilings and existing guards. Primary outcomes remain held-out H8
+outgoing/apex P95; retain all horizons/regions and track saturation separately.
+Resume requires an explicit activation stage and cannot simultaneously change
+precision or another recipe field. Zero penalty must preserve loss and gradients.
+
+The activation pair completed14336 updates with identical initial parameter,
+Adam and RNG leaves and identical validation windows. Control versus penalty
+coupled H8 outgoing/apex P95 is0.253531/0.039898 versus0.257650/0.041475 in SI
+units, so the penalty did not improve its primary registered outcomes. Other
+horizons are mixed; retain both. Report hashes are
+`7167754cd7899f0bdc64edfdac75439b5c7d1a91a4822c9a1c300a4225c9d2e5`
+and `5d1111bec50c6beea61a397723ab5c1d1cae3d9e6009158a12e821aa848593ff`.
+Combined `activation_fit_comparison_20261109_a01.json` SHA
+`86dbf1fbe585f491604752515bdf045f59dc1738731384412f42dfdc9f7a7fb0`.
+Validation final-hidden saturation decreases0.63463->0.62182 and single-step
+contact velocity P95 decreases0.16811->0.16590 m/s, but these secondary changes
+do not qualify the recursive model. Conditioning report SHA
+`9e70da284ece5d0c221042a66e0340813f2d61e5f45fdcb1d3defcd6f2880228`.
+The complete applicable CPU suite passed243 tests in98.85s. All runs are
+finished; actor and critic updates remain zero. No main-training readiness is
+claimed. A separate auxiliary execution-state acceleration predictor would
+change the internal model structure and requires user QA before implementation.
+
+The user subsequently authorized the independent auxiliary-prediction experiment
+only. WMJ-V1 now has an opt-in diagnostic47->128->128->6 tanh/linear model;
+the existing47->128->128->26 execution proxy, contact39, actor969, actions7,
+V324 CONTACT/EXEC and all task contracts remain unchanged. No world transition
+imports this auxiliary. Inputs are precisely the existing execution features,
+including current dq and delayed dq/ddq commands. Outputs are world-frame
+geom-origin linear/angular J*qacc terms from the native solver, including base
+ancestors and excluding Jdot*dq. They are not measured finite-difference
+accelerations. Targets/normal-force/geometry used by the diagnostic are never
+additional network inputs.
+
+Preregister `solver_aux_labels_smoke_a01` (one existing128-control acquisition)
+then `solver_aux_labels_a01` (all ten), each1024 native lanes, with the same
+complete initial seeds and continuous recorded actions. Preserve original
+family splits; final-test rows are excluded from exported labels and fitting.
+Retain every valid overlap and an independent2% sample of valid nonoverlaps;
+report invalid/other-collision exclusions and saved sample probabilities.
+Observe six terms without modifying the original physical carry. Require
+their normal-contact projection to reproduce native efc_J*qacc's robot term
+within0.1m/s^2 maximum, then fit on these internally coherent labels.
+
+Preregister two4096-update seeds2026110909/2026110910,
+`solver_aux_fit_a01/a02`, batch512, Adam3e-4/clip1, FP32 highest matmul,
+six-component training-only normalized MSE, half overlap/half nonoverlap,
+family-uniform within each bin. Preserve checkpoints/full Adam/RNG every1024
+updates. Compare zero, training mean, training-only affine47 and native-label
+oracle. Primary independent screen: finite outputs, validation linear/angular
+component RMSE each <=half the training-mean baseline, and positive-force
+scalar-equation normal-velocity error P95 <=0.08m/s and <=half zero baseline.
+This scalar one-substep teacher-conditioned screen is not the H8 outgoing3D
+velocity gate and cannot qualify world rollout. Report all regions/contact
+strata, all checkpoints, both seeds and negative outcomes. Do not integrate
+into the soft-contact prior without a separate decision after these results.
+The collector has1800s and each fit900s wall ceilings, with existing GPU UUID,
+memory/PSI/78C/storage guards; reserve300MiB within the unchanged6GiB cap.
+Four focused input/label/loss tests pass in2.83s before native replay.
+
+The first label smoke stopped at81.81s during tracing because a static NumPy
+contact-address array was indexed by a JAX tracer; a failing regression test
+was added before the explicit JAX conversion fix. The second smoke completed
+128-control replay at138.97s but the initial0.1m/s^2 raw closure threshold
+failed:7428 overlap rows, mean/P95/max0.14824/0.67821/2.36584m/s^2. Preserve
+both negative runs. Before fitting, refine this numerical-label check into
+its actual scalar-equation velocity bound: abs(delta J*qacc)*dt/mass divided
+by(1/mass+native regularizer). Require P95<=0.001m/s and max<=0.005m/s;
+retain raw acceleration closure, and recompute the bound from authenticated
+arrays in the fitter. This is a numerical-label budget, not relaxation of
+the model's0.08m/s screen or the H8 world-model gates. Save diagnostic labels
+before any failure so exclusions/results remain inspectable. Recheck the first
+acquisition inside `solver_aux_labels_a01`; its per-trial gate must pass before
+continuing the other nine, avoiding another redundant compilation. All247 preexisting+initial-new
+tests pass in100.74s; the expanded6-test auxiliary suite passes in2.49s.
+
+The complete label replay `solver_aux_labels_a01` finished214.80s on GPU1
+UUID `GPU-e74458ec-002a-1bac-e0be-d0a5713b661e`; result SHA
+`73d26e51e713fd0a21ca8152f21d142e448a05457e4f0a7fde9fb5316cc75fa1`.
+It retained190365 rows (169060 training /21305 validation), spanning8145/1054
+disjoint root families and119 validation regions. Of the native substeps,
+5861074 were eligible,26286 became invalid after other-ball collisions, and
+666240 final-test substeps were excluded. There are75124 retained overlaps
+(67084 train /8040 validation), including6233 positive-force validation rows.
+Raw normal-term reconstruction P95/max is0.66271/3.32068m/s^2; all ten
+per-trial velocity-bound checks pass, with global maximum0.0016587m/s.
+No tolerance or reference target for model prediction was changed.
+
+Both independent47->128->128->6 fits completed4096 updates and passed all
+preregistered aggregate screens. Seed2026110909 versus2026110910 validation
+linear-component RMSE is54.187/52.843m/s^2, angular-component RMSE
+392.115/370.110rad/s^2, compared with training-mean281.220/1925.547.
+Positive-force scalar one-step velocity P95 is0.035420/0.033854m/s,
+versus zero0.479202, training mean0.466228, affine47 baseline0.093947,
+and native-six-term oracle0.012129. This is approximately92.6%/92.9% lower
+than zero, not an H8 outgoing3D velocity result. Fit processes took10.43/10.44s
+(8.28/8.31s fitting); label collection, failed probes and validation remain
+part of total research time. No actor/critic updates occurred.
+
+Retain regional negatives:7/5 of119 regions have positive-force P95>0.08m/s,
+including regions19 and53 in both seeds. Some regions have only9--22 force
+samples; do not infer reliable regional qualification from the aggregate pass.
+Inputs in this experiment are native current q/dq and delayed commands; use
+with autoregressed robot states has not been validated. Both full checkpoint
+restores and an independent recomputation of saved prediction metrics pass.
+Every preexisting world-model source file matches the pre-experiment a11
+hashes; CONTACT/EXEC/control/actor and the39-D contact network are unchanged.
+
+First fit report SHA
+`ce2413fa3d4ae1c5a7fd33ffc1e0b7e5151be08962fa9fd95c8a64a8a10678ff`,
+second `17935cd12109be83d603c2a64ab1fb8a484d3c7479d09ca4fc6848ec8e4ba2db`.
+Combined evidence `solver_auxiliary_comparison_20261109_a01.json` SHA
+`d84a5c90415e1f01a7ac1a59c3efa8ecb246c283e9cc6efe2175a5079e80468d`.
+Primary diagnostic checkpoint is `solver_aux_fit_a01/auxiliary_u004096.json`,
+SHA `4e748ff2fc3f4fdc7ea5946d0ba4b908e83150ba06d7931ce54e6d465c4e6974`;
+seed2 remains the confirmation, not a replacement selected after looking at
+validation. Six focused tests pass in2.88s after final loader changes.
+No auxiliary is installed in the world. A proposed next opt-in experiment
+would freeze this predictor, add its predicted normal acceleration term to
+the soft prior, and refit the unchanged39-D residual against a matched-budget
+original-prior control. Directly adding it to a residual trained to compensate
+the old prior risks double compensation. That integration is NOT authorized
+by the completed independent-only experiment and awaits explicit user QA.
+
+The user then explicitly authorized the normal-prior plus39-D-residual paired
+comparison. Preregister `normal_prior_base_a01`, followed by
+`normal_contact_control_a01` and `normal_contact_candidate_a01`, each under
+1800s and the unchanged memory/GPU/storage limits. Both fitted branches start
+at `contact_activation_control_a01/contact_coupled_u014336.json` SHA
+`4293c96b65aae31d68edbbce64ccbef19b5ca0c3c4fbb95500d2c9d2a842e981`,
+with full identical contact parameters, Adam, normalization and sampler RNG,
+and add4096 updates to18432. Freeze robot6144 and primary auxiliary4096.
+The H8/batch256/LR3e-4/clip1/single-step-anchor256 recipe remains unchanged;
+matmul stays highest, with no activation penalty or new contact inputs.
+
+New opt-in modules leave all authenticated old physical/model sources intact.
+The auxiliary affects only the soft prior's normal desired force. Tangential
+desired force is unchanged; its existing Coulomb cap follows the new normal
+load. The39-D neural residual is computed separately and never sees the six
+auxiliary terms. Robot/auxiliary state derives from initial q/dq and its own
+predictions; the recorded-native-robot branch and separate training anchor
+are explicitly diagnostic/teacher-forced. No future solver labels enter
+prediction. Existing evaluation gains only an optional predictor callback;
+fixed event-family windows, seeds, metrics, nonfinite accounting and all
+H1/8/32/64/128 strata remain identical.
+
+First compare zero-acceleration versus corrected base with residual disabled,
+then run the full matched refit pair. Primary outcomes are held-out own-robot
+H8 outgoing3D velocity/apex P95, references0.08m/s and0.01m. Retain per-region,
+all-horizon, contact-event and nonfinite results; an aggregate gain alone does
+not promote a world model. Register normal-only checkpoints in an independent
+schema referencing the frozen auxiliary and original parent. The legacy
+loaders and checkpoints must remain usable. Normal correction stays opt-in;
+no actor/critic or full feedback/control qualification is implied.
+
+The complete applicable suite passed255 tests in103.02s, with11 focused
+normal/physical-recursion tests passing11.63s. The initial combined base
+process completed all ten zero-acceleration trials and saved that result,
+then the existing conditional-PSI guard interrupted the normal branch after
+trial6 at87.12s (scope6.37GB, host available14.41GB below13.5GiB, no OOM).
+Do not call its partial normal branch complete. Preserve the finished
+`normal_prior_base_a01/base_zero_acceleration.json`; after CPU tests finish,
+run `normal_prior_base_a02 --base-selection normal` in a separate process.
+Host available memory recovered to about21.7GB. No guard or model criterion
+is relaxed; the optional branch selector only avoids redundant completed work.
+
+The isolated normal-base verification completed62.26s; result SHA
+`e69e126b8c778d8d58ccb56c853168850ed0204bb450dcb6f0f634cbf49a7b45`.
+All five horizon window hashes match the preserved zero-base branch exactly,
+with no nonfinite windows. Own-robot zero versus corrected base H1/8/32/64/128
+outgoing P95 is0.585914/0.425856/0.462173/0.544215/2.208463 versus
+0.104154/0.302751/0.318307/0.340898/1.375518m/s; corresponding apex P95
+is0.136330/0.091770/0.116320/0.094115/0.129148 versus
+0.022652/0.064809/0.062848/0.067237/0.119186m. Native-robot and own-robot
+conditions both improve, but the base remains unqualified. Proceed with the
+authorized residual comparison after `normal_contact_smoke_a01` verifies two
+finite updates/checkpoint writes and the full held-out evaluation. The smoke
+does not replace either4096-update paired branch.
+
+The two-update normal smoke completed88.09s including22.46s initial fitting/
+compile, SHA `c8878724c721bb8a205adac47e2d206058baecb595c7f5855b099428ee64fefe`.
+All five horizons were finite. Its H8 outgoing/apex P95 remains0.41497m/s /
+0.08426m, which is expected to need residual adaptation and is not a promotion.
+The independently loaded14338 checkpoint retained39->256->256->128->8 and
+authenticated the fixed robot/auxiliary/parent; restore report SHA
+`e52da30b8adf6b615e1668c9d4de0b79b0367f50f1b3b2ee7bafc0b9b22269ee`.
+Start the formal control branch from14336, not from the smoke, then run the
+normal branch from exactly the same14336 parameters/Adam/RNG.
+
+The authorized normal-prior comparison completed both4096-update branches
+at18432. Initial parameter/Adam leaves and sampler RNG match, final sampler
+RNG and recorded draw reports match, and all five held-out window hashes,
+sample counts and native event counts match. Both final checkpoints restore
+through the authenticated loader. Robot6144 and auxiliary4096 remain frozen;
+contact input stays39-D, and no actor/critic updates occurred.
+
+Own-robot outgoing3D velocity / analytic-apex P95 results are:
+
+| Control steps | Original prior, m/s / m | Normal-corrected prior, m/s / m |
+| --- | --- | --- |
+| 1 | 0.192126 / 0.041208 | 0.101699 / 0.016120 |
+| 8 | 0.258725 / 0.045453 | 0.192934 / 0.032815 |
+| 32 | 0.294528 / 0.054032 | 0.244665 / 0.037269 |
+| 64 | 0.602484 / 0.076121 | 0.355549 / 0.053210 |
+| 128 | 1.596240 / 0.085880 | 1.322791 / 0.086483 |
+
+All horizon/mode windows remain finite. H8 primary errors improve about25.4%
+and27.8%, but remain above0.08m/s and0.01m. H128 apex and endpoint metrics
+do not improve. At H8, release missed/extra decreases141/133 to68/79;
+entry extra increases15 to23 (exact1ms edge matching also counts timing
+shifts). Of111 regions containing sampled controlled releases,73 improve
+and38 worsen for each primary metric. Counts are small and may include
+repeated windows; these are not111 independent qualification populations.
+Region88 has only5 sampled release labels and outgoing P95 rises0.198 to
+0.813m/s. Overall outgoing/apex maxima worsen0.514 to0.992m/s and0.141 to
+0.185m. Retain these negatives; do not promote the candidate.
+
+The separate frozen H8 component audit uses exactly the same windows and492
+controlled-release labels. Normal/tangent velocity P95 changes0.175097 /
+0.185152 to0.061736 / 0.177252m/s; apex XY/Z P95 changes0.032556 /
+0.025391 to0.031803 / 0.008012m. Normal/Z gains explain most of the overall
+improvement. The remaining H8 error is predominantly tangential/XY, but
+this does not establish that the auxiliary's tangential terms are accurate.
+Independent recomputation differs at most1.35e-5m/s in primary velocity P95
+and3.73e-8m in apex P95; accept these negligible compilation differences.
+
+Control/candidate process wall time is510.14/536.06s, including464.34/478.36s
+fitting; the component audit takes36.38s. These include process-specific
+compilation and are not a standalone throughput benchmark. Existing
+memory, temperature and storage limits remain unchanged. The earlier
+partial base run remains recorded as interrupted, with its complete zero
+branch paired to the isolated completed normal branch.
+
+Combined evidence `normal_prior_comparison_20261109_a01.json` SHA
+`1d34c2f1f46365eb3d978f2fe992308fafc835e24a6bc3c3c4084f333fc045b6`.
+Control/candidate report SHA respectively
+`cbebcb905814f13b873fd1b5b1562217a96abf1efb7ff9a23aec38015210168c` and
+`7459479af8d3b77b2759a42164473be6a27411cf66baf9cfe2d0cee81e77c208`.
+Candidate checkpoint `normal_contact_candidate_a01/contact_normal_u018432.json`
+SHA `c32f87b5b9cb9b8fe9b41f51df019e6b6d8cdb50bfd06728ea1d11dc569566bf`.
+Component audit SHA
+`3d7e06255fc23c585f6be945a8ddeb076f6748cd1abf67a447ac6150ec6f197e`;
+final restore report SHA
+`832454ad83bd5002a175608507b20c6f5fc17bd57b0ec0c4c229bfdc3ec2b6df`.
+The opt-in normal candidate stays unqualified. A proposed next experiment
+would test the existing frozen six-term auxiliary in the two tangential
+prior rows, retaining39 neural inputs and the existing friction cap, then
+compare a same-parent/same4096-update fit against this completed normal-only
+branch. This extends the authorized normal-only information path and awaits
+explicit user QA; no tangential integration or further fitting is started.
+
+The user subsequently authorized the tangential diagnostic and matched refit.
+Preregister `tangent_prior_diagnostic_a01`, `tangent_prior_base_a01`, and
+`tangent_contact_candidate_a01`. The diagnostic reuses all existing held-out
+overlap rows, comparing zero, predicted-normal, predicted-full, native-oracle
+normal and native-oracle full priors at identical before-states. Authenticate
+the labels and verify their time-aligned execution features. Native solver
+terms remain diagnostic labels only; the final-test population stays sealed.
+Then compare the full-prior base to the recorded normal-only base on the same
+fixed windows. The learned branch starts from the same original14336 parent,
+parameters, Adam and sampler RNG, adds at most4096 updates to18432, and uses
+the completed normal-only branch as the equal-budget comparator. Freeze
+robot6144 and auxiliary4096; preserve H8/batch256/LR3e-4/clip1/anchor256 and
+highest matmul precision. No contact dq/ddq features are added.
+
+Only the prior numerator changes: project existing predicted geom-origin
+linear/angular J*qacc to the contact point, then include all three contact
+coordinates instead of only the normal coordinate. Preserve the existing
+normal clamp, anisotropic friction cap, ball integration,39-D residual and
+all V324 teacher physics. New modules and checkpoint schema isolate the
+experiment; the normal-only sources and checkpoints remain authenticated.
+Primary metrics remain H8 outgoing3D/apex P95 with0.08m/s and0.01m references;
+also retain normal/tangent and XY/Z decomposition, H1/8/32/64/128, regional
+tails, contact events and nonfinite windows. No automatic promotion follows
+an aggregate gain. Launchers retain1800s maximum process budgets and the
+unchanged GPU UUID, temperature, conditional-PSI, memory and storage guards.
+
+The236 WMJ regression tests pass in98.07s; ten focused normal/full-prior
+tests pass in8.90s. The initial joined-record diagnostic stops at12.32s:
+the independently compiled solver-label and support replays share root seeds
+and source but accumulate small state differences. Trial0 held-out q/dq
+maximum differences are0.000125rad/0.00104rad/s, while target-ddq differs
+up to0.1175rad/s^2. This is not a physics-contract failure; it means those
+two recordings cannot constitute an exact solver-oracle pair. Preserve the
+failed `tangent_prior_diagnostic_a01`. Replace only the diagnostic mechanism
+with `tangent_prior_diagnostic_a02`: one read-only native replay observes
+current state, solver terms, and actual next ball velocity in the same
+interval, on the original validation families. No training dataset, model,
+physical setting or acceptance threshold changes. The new diagnostic saves
+summary evidence instead of duplicating the large teacher data.
+
+The same-replay diagnostic completes219.87s with8025 held-out contact
+overlaps across119 regions and no nonfinite predictions. Predicted-normal
+versus predicted-full one-step tangent velocity P95 is0.077692 versus
+0.010780m/s; corresponding3D P95 is0.085962 versus0.032620m/s. Normal P95
+remains0.030593m/s. The native six-term oracle gives0.001413m/s tangential
+and0.009456m/s3D P95, versus0.077890/0.080167 for its normal-only version.
+This supports the added tangential terms at native before-states, not yet a
+multi-step or policy result. Full-prior tangent P95 improves105/119 regions;
+retain the14 other regions and their sample counts. Native-oracle inputs
+are never supplied to a fitted model. Result SHA
+`ec7f72d0ba5a9da2ec73cdcf0a500785d8c563afe6741a4d5fe5791c0cf28683`.
+
+The full-prior base completes60.48s on exactly the same held-out window
+hashes as the previous normal base. With neural residuals disabled, own-robot
+H1/8/32/64/128 outgoing P95 is0.026658/0.056352/0.082448/0.115195/0.403444m/s
+and apex P95 is0.003642/0.011584/0.017618/0.019435/0.044962m. Preserve this
+strong base as a separate comparator: additional neural fitting must show
+value rather than be presumed better. The authorized4096-update full-prior
+residual fit starts from the unchanged14336 parent, not from zero residuals
+or from the normal-only18432 checkpoint.
+
+The full-prior39-D residual branch completes all4096 added updates at18432,
+taking536.76s total and476.70s fitting. Its initial parameter/Adam leaves,
+initial/final sampler RNG, recorded draw reports and recipe match the
+normal-only branch. Frozen components, all horizon window hashes, metric
+sample counts and true event counts match. The final checkpoint restores.
+Own-robot primary P95 results are:
+
+| Control steps | Normal + residual, m/s / m | Full + residual, m/s / m | Full base only, m/s / m |
+| --- | --- | --- | --- |
+| 1 | 0.101699 / 0.016120 | 0.043431 / 0.007777 | 0.026658 / 0.003642 |
+| 8 | 0.192934 / 0.032815 | 0.115935 / 0.015369 | 0.056352 / 0.011584 |
+| 32 | 0.244665 / 0.037269 | 0.189477 / 0.021885 | 0.082448 / 0.017618 |
+| 64 | 0.355549 / 0.053210 | 0.391374 / 0.035989 | 0.115195 / 0.019435 |
+| 128 | 1.322791 / 0.086483 | 1.005089 / 0.073917 | 0.403444 / 0.044962 |
+
+The added tangential physical term is effective, but this residual continuation
+does not add aggregate value over the full base: both primary P95 metrics are
+worse at every horizon. H64 outgoing P95 also worsens relative to the normal
+residual. H8 full-base versus full-residual tangent P95 is0.045723 versus
+0.109298m/s, and apex XY/Z P95 is0.008753/0.006914 versus0.014239/0.007051m.
+These decompositions use the same492 controlled-release labels. Independent
+recomputations match the saved primary metrics to negligible float precision.
+All horizon/mode windows remain finite.
+
+Keep the exceptions: full residual improves H8 outgoing P95 in7/111 sampled
+release-containing regions and apex P95 in8/111. Region140's outgoing P95
+falls0.275643 to0.044594m/s on8 sampled releases. Nevertheless, full-base
+versus full-residual region counts within0.08m/s /0.01m are104/93 versus
+74/73. These counts do not certify regions with sparse/repeated samples.
+Full base still exceeds the H8 combined-apex reference slightly and has
+substantial long-window/event and rare-region errors. This is not completed
+world, control-feedback, policy or hardware qualification. It also does not
+prove that another39-D residual training method cannot help.
+
+Combined evidence `tangent_prior_comparison_20261109_a01.json` SHA
+`d3a661c9e5f8a99985894932c6eb15c2fd3e93471fd5a927208f3fe9bea0b88b`.
+Fit report SHA
+`da482c57f83d30ed8e243210a479a0246478255e359977e06e0ac9c3a580b6bf`;
+final `tangent_contact_candidate_a01/contact_tangent_u018432.json` SHA
+`a1ddb34c0a1c47373baea197d47be8216d6053fbe7e16bd6f191c6190ad4aed0`.
+Final restore report SHA
+`4a842c50e3bafe835f26ce3bcca9f9b058da19512f8b68c18a046f23becbf5dd`;
+three-way H8 component report SHA
+`2913dd0928dd1ae69c25838309eb6ed9e683a774c887325fd7cbc622bf0be6a0`.
+The two-way component audit took35.47s and the additional base-inclusive
+diagnostic36.31s. Retain both. The rejected joined-record CLI is removed;
+its immutable failed-run snapshot preserves it, while its unchanged equation
+helper serves the coherent replay launcher.
+
+Propose the full-prior base as the next integration/verification candidate,
+with only the39-D contact residual disabled; the47->26 execution proxy and
+47->6 auxiliary remain learned and frozen. Retain the residual checkpoint
+and all negative evidence. This selection changes the next model contract
+and awaits user QA. No default world path is promoted and no actor/critic
+updates have occurred. Next qualification still includes full control/history
+assembly, regional outcomes and action-effect validation.
+
+The user subsequently selected the full-prior candidate with the contact
+residual disabled and authorized integration verification. This supersedes
+the pending selection above, not its negative evidence or the actor-training
+restriction. The opt-in `world_model.full_prior_world` accepts only complete
+initial physical/control/camera/history memory and raw actions. It composes
+native projection/RMP/delay, frozen13-joint execution, frozen six-term
+auxiliary and full soft prior, five1 ms ticks per200 Hz action. Its interface
+has no contact-residual parameters and no future teacher correction. Keep
+native RMP arithmetic outside the learned-component full-FP32 scope. Preserve
+the inherited cached-site prefix timing; sparse ball-indexed history uses
+full13-joint FK at the camera source timestamp. CONTACT/EXEC and WMJ-V1 remain
+fixed. No training, model refresh or default-path promotion is authorized by
+this selection.
+
+Integration acceptance is staged: component parity and split/resume tests;
+coherent held-out replay with own control feedback and paired history; then
+same-state action perturbations. Retain H1/8/32/64/128 errors, event mismatch,
+nonfinite counts and regional tails. The existing0.08 m/s and0.01 m outcome
+references remain visible; smaller floating-point differences alone are not
+failures. Projection hold-switch disagreements and their propagated effects
+must be separated from continuous numerical error, without changing native
+limits or silently discarding boundary cases. Actor/critic updates stay zero.
+
+Preregister `full_prior_integration_a01`:32 validation lanes per acquisition
+trial, seed2026110913, first1 trial as a bounded integration screen, then the
+same10-trial population if the screen runs correctly. Each H1/8/32/64/128
+window uses one continuous native full-state branch per selected lane;
+choose a window containing a controlled release when available, otherwise
+uniformly over the available starts. This is a new explicit population, not
+the earlier128-windows-per-trial contact comparison. Reconstruct camera and
+13-joint history from time0, and controller memory using recorded references;
+authenticate and compare replayed delayed commands/camera before admitting
+seeds. During imagined windows all control and physical states recurse from
+their own predictions. Compare against the frozen common-command full prior
+on the identical physical starts and preserve every selected lane, including
+misses and invalid tails with their original label masks. Report boundary
+switches separately. Use the guarded GPU1 launcher
+`run_wmj_v1_full_prior_integration.sh`, at most1800s per invocation. Save new
+evidence only; no model or optimizer update is part of this audit.
+
+The first screen stopped before world evaluation because the audit passed
+time/lane rotation axes directly to a legacy(N,3,3)-only conversion helper.
+Retain `full_prior_integration_a01` as an implementation failure, not physical
+evidence. Add a time/lane shape regression and flatten/restore only those
+leading axes in the audit. Retry the unchanged single-trial screen as
+`full_prior_integration_a02`; no model/control/contact arithmetic changes.
+
+The repaired single-trial screen completed in122.97s. Reconstructed camera
+samples, all delayed q/dq/ddq values and paired source-time poses match their
+recorded/looked-up values exactly. H1/8/32/64/128 are finite. This32-lane
+population has14 H8 release labels; common-command and own-control outgoing
+P95 are both0.09132 m/s, apex0.01877 m. At H128 the own-control tail grows:
+outgoing P950.15587 m/s versus0.12829, maximum racket error0.27263 m, despite
+recorded-state projection max reference error only6.97e-5 rad and no material
+hold mismatch in this trial. Retain this as a meaningful feedback-tail risk,
+not a tiny numerical mismatch or an actor qualification. Expand the same
+registered audit to10 trials as `full_prior_integration_a03`, adding only
+diagnostic per-lane first-divergence, hold-switch and native task-eligibility
+records. No physical/model/control limits or population exclusions change.
+
+`full_prior_integration_a03` was interrupted after six trials by the existing
+conditional PSI guard (host available fell below13.5 GiB while PSI persisted;
+no OOM). It is incomplete and has no final outcome aggregation. Preserve its
+scope log and failure report. The audit now saves cumulative evidence after
+each completed trial and releases only its just-read immutable archive files'
+OS cache using the existing per-file `discard_file_cache` helper. This changes
+I/O lifetime only; resource thresholds, all numerical functions and sampled
+windows remain unchanged. Retry the full10 trials as
+`full_prior_integration_a04`; no safety limit is relaxed.
+
+The per-file cache hint alone did not prevent PSI interruption: a04 saved
+three complete trial progress reports before stopping during trial4. Its
+peak scope memory was7.126 GiB, host available minimum12.887 GiB, no OOM.
+Next retry `full_prior_integration_a05` selects the same32 lanes immediately
+after each authenticated read, before concatenating1024-lane trial arrays,
+and returns unused glibc heap arenas after compilation/each trial. Preserve
+all numerical computations and sample RNG draws; compare the saved initial
+three trials to a04. This reduces temporary storage, not data coverage or
+resource protection.
+
+Preregister the authorized action-effect screen `full_prior_action_effect_a01`:
+one trial,48 held-out non-robot-identification lanes selected independently of
+outcomes with seed2026110914. The parked-ball robot-identification generator
+cannot supply an impact effect and is counted explicitly as out of population;
+all selected task/directed-contact/miss/boundary cases remain, including absent
+outcomes. Native MJX retains1024 lanes, original full reset/model/RNG state,
+CONTACT and EXEC. Compare baseline and +/-single-joint normalized pulses
+(epsilon0.005/0.01/0.02,10/20 ms), followed by the identical recorded raw-action
+sequence through128 controls. Apply each pulse to both native and own-feedback
+world from matching complete initial states; no teacher corrections inside
+the imagined rollout. Balance the42 joint/epsilon/duration cells across48
+cases. Record clipping, release presence/ID/time, actual apex censoring,
+analytic apex, invalid physics and event-count changes for every branch.
+Report paired central-difference vector error, cosine, magnitude ratio and
+direction agreement; separate same-event-count cases. Direction summaries
+use native effect norm >0.001 m/s or >0.0001 m to avoid interpreting near-zero
+signals, and retain the small-signal counts. These are diagnostic reporting
+floors, not qualification gates. First verify the one-trial implementation,
+then expand to ten trials if informative;1800s/invocation, unchanged guards,
+zero actor/critic updates, no default promotion. This tests common raw-action
+continuations, not an adapted closed-loop policy or hardware behavior.
+
+The full10-trial integration retry a05 completed in181.99s, with zero
+nonfinite windows. Camera, all delayed q/dq/ddq reconstruction, and source-time
+paired pose checks are exact across all320 lanes. Early lane selection
+preserves the first three a04 window selections and control diagnostics;
+largest aggregate numerical difference is1.70e-5 in an apex maximum, which
+does not change any conclusion. Own-control H1/8/32/64/128 outgoing P95 are
+0.02310/0.07967/0.08934/0.08937/0.98768 m/s; analytic-apex P95 are
+0.00554/0.01674/0.01998/0.01905/0.05756 m. These are178/178/184/197/271
+release labels on the new32-lane population. Recorded-state projection has
+9 material hold-switch differences across40960 lane-controls. The worst
+H128 racket error0.27263 m starts in an ineligible boundary-failure lane,
+but an initially eligible boundary lane also diverges before native task
+failure; keep both. This establishes functioning full control/history
+assembly, not full model qualification. Report SHA
+`ed458c606de8ec47d801b8676366bb5df72d292af04832a0efac2433ea732d95`.
+
+The one-trial action-effect screen completed in170.76s (report SHA
+`f118606b34fa4e74ee686dd259209111d14bf811f6ca45ef29872f25b3eb14b7`).
+Of48 cases,39 have a paired first release in all branches and23 have an
+informative outgoing-velocity effect. All23 directions agree, mean cosine
+0.94855; outgoing delta-error P95 is0.00431 m/s. Actual-apex effects have
+24 informative pairs,23/24 directions agree, mean cosine0.91701; delta-error
+P95 is0.000930 m. Retain9 missing-native-release cases,9 missing-world cases,
+small effects and event-count differences. Baseline event-aligned errors
+remain meaningful (first-release velocity P950.08085 m/s, actual-apex
+P950.01936 m); effect agreement does not erase absolute or regional errors.
+Expand the unchanged preregistered action experiment to all10 trials as
+`full_prior_action_effect_a02`, keeping all sources, parameters, random draws
+and reporting floors unchanged.
+
+Preregister a read-only control implementation comparison
+`full_prior_projection_variants_a01`,900s, after the action-effect worker.
+Reuse exactly the320 validation lanes and128 controls in integration a05.
+With recorded q13/reference/raw actions, compare the existing private matrix
+FK (local highest precision) and the previously CPU-tested native-quaternion
+FK. Projection constraints, hold rule, native records, RMP and physical-model
+FK remain fixed. Report numerical reference/accepted-action errors and every
+material hold mismatch against recorded native references. No variant is
+selected automatically, and no physical network/source changes. This isolates
+the remaining9 recorded-state branch differences from prediction-feedback
+drift before choosing the next integration candidate.
+
+The ten-trial separate-batch action audit a02 completed in402.93s (SHA
+`42af9050a13a76ed545cf48f0db41cb4da732e407923e34528dca48cdf915173`).
+Its provisional480-case summary has355 paired releases, outgoing direction
+205/219 and actual-apex direction220/231 above the registered signal floors.
+However, a negative-control review found54 cases whose +/-raw pulses clip to
+identical effective commands;38 have paired releases. Most show native
+differences below0.00034 m/s, but trial5/lane337 has0.005226 m/s plus a large
+later accepted-action difference despite identical clipped input. The
+separate-batch comparison therefore mixes small action effects with numerical
+branch sensitivity. Preserve all a01/a02 results as provisional diagnostic
+evidence; do not use their direction rates as a qualified action-effect gate.
+
+Preregister `full_prior_action_effect_a03 --paired-native-batch`, first one
+trial, then the same480-case population if the negative control passes.
+Copy each selected complete native state, model parameters, RNG and event
+memory into four48-lane blocks (baseline,+,-,duplicate baseline) inside the
+unchanged1024-lane native execution. Remaining lanes are deterministic
+fillers. Advance all four branches in one shared solver invocation, with
+identical original continuation per source case. No native physics, solver
+configuration, control or model is edited. Reject unknown unbatched state
+axes; a regression verifies copying model/RNG leaves and shared scalar phase.
+Check duplicate-baseline event/accepted-action maximum differences <=1e-6
+and retain its diagnostics before any qualification. Preserve the original
+48-case selections, pulses and reporting floors. The frozen learned world
+still receives only its own state and action sequence. This repairs the
+counterfactual method, not the world dynamics or acceptance target.
+
+The one-trial same-batch a03 duplicate check also failed: entry/release flags
+match, but maximum release velocity differs0.007564 m/s and accepted action
+0.001182. A one-substep apex timestamp shift makes raw event-gated arrays
+look much worse than the actual event-aligned outcome. Preserve the failed
+repeat gate; it does not qualify the previously reported action directions.
+Preregister a04 on the same480 cases to complete this negative-control
+diagnosis, retaining original/repeat per-case outcomes, endpoint q/qvel/action
+differences and initial clone equality. Report all effects and a separate
+stratum exceeding max(original signal floor,3x observed repeat difference),
+with clipped-zero pulses explicitly separate. This stratum is a sensitivity
+diagnostic, not a statistical error bound or replacement qualification gate.
+Do not alter CONTACT, EXEC, precision, physical parameters or the constraints
+to force identical replicas. No actor/model training is authorized.
+
+The newly added full-prior world initially used the last1 ms before-state
+(4 ms) for its current actor site prefix. Source review disproved this timing
+assumption: pinned V324 `_step_impl` performs an unconditional final
+`batched_forward` after all five ticks (source line17179), so the correct
+prefix is the5 ms endpoint. Correct only the new integration module, first
+demonstrating a failing timing test, then comparing the repaired endpoint
+against independent CPU MuJoCo FK. Add native recorded endpoint pose checks
+to every reconstructed integration seed. Sparse history still uses the ball
+source timestamp and contact FK still uses substep before-states. Preserve
+a01-a05 evidence with this prefix limitation; their physical/control metrics
+use fixed raw actions and did not depend on the erroneous actor prefix.
+Preregister corrected ten-trial integration a06 on the identical a05
+population. Actor and critic updates remain zero, residual remains disabled.
+
+Integration a06 stopped at its newly added3e-6 prefix comparison before
+physical evaluation. Offline native-record verification confirms the5 ms
+choice: on512 endpoints, XYZ component P95/max are0.0149/0.0640 mm, versus
+0.921/2.800 mm for the4 ms state; rotation component maximum is5.25e-5 versus
+0.00522. The initial micro-level audit tolerance was inappropriate for native
+GPU versus private full-FP32 FK arithmetic. Retain this diagnostic and use
+3e-4 m/rotation-component tolerances for retry a07 (one tenth of the3 mm
+initial position reference); all actual errors remain reported. This changes
+only the diagnostic tolerance, not pose timing or physical/control code.
+
+Corrected integration a07 completed all10 trials/320 initial states in185.57s,
+report SHA `badc754d9c9a2b9dd0772dceebbef7419a1efd48986b6c75334d42823f0417a1`.
+All windows remain finite; camera, delayed commands and source-time paired
+history checks are exact. Native endpoint prefix component maximum is1.23e-4,
+within the registered tolerance. Window selection is unchanged from a05;
+largest physical-metric summary change is5.59e-8. Thus the new prefix repair
+does not affect the fixed-raw-action dynamics evidence. The independent
+projection diagnostic found9 matrix versus8 quaternion hold mismatches in
+40960 controls, with the same reference-error P957.15e-7 rad; neither variant
+eliminates boundary sensitivity, and no variant is promoted.
+
+Interpret these metrics precisely: `physics_metrics.ball_metrics` samples
+predicted outgoing velocity/apex at native release timestamps, retaining every
+native label even when model contact timing differs. Its H128 outgoing P95
+0.98768 m/s mixes physical outcome, timing and contact-mode error. The same-tick
+entry/release mismatch counts likewise include shifted events. They cannot
+be presented as event-aligned first-release error or as counts of physically
+absent impacts. The action audit separately reports matched first releases
+and their corresponding actual apex, with missing events kept explicit.
+All246 WMJ tests pass (115.55s); three new launchers pass bash syntax checks.
+
+The same-batch480-case action audit a04 completed in270.40s (SHA
+`363c578deb2b59dc4e71f3da745e77e2f720657b3a07032900708053976c29e2`).
+355 cases have paired first releases and351 corresponding actual apexes.
+Keep125 missing-release cases and54 clipped-zero pulses in the original
+480 denominator. Event-aligned baseline outgoing P95 is0.078490 m/s,
+actual-apex P950.015726 m (maximum0.067816 m). Directed-contact actual-apex
+P95 is0.007324 m; closed-loop-source0.017181 m; boundary/failure0.024627 m.
+Thus aggregate error does not certify all regions.
+
+Duplicate-baseline event-aligned velocity drift P95/max are0.000372/0.005266
+m/s and actual-apex drift0.0000763/0.0005799 m. These quantify numerical
+sensitivity in this graph; they do not turn the original strict duplicate
+gate into a pass. Above the registered signal floor and3x observed repeat
+drift, outgoing directions agree206/216 (95.37%) and actual-apex directions
+218/226 (96.46%). Keep264/254 remaining cases as missing, clipped-zero or
+unresolved, not successful predictions. Ten velocity reversals remain,
+including three initially task-eligible cases. Keep all named cases in the
+summary. No new model fit, constraint relaxation or numerical mode change was
+performed. The320-lane H128 audit also retains17 racket-error-over1cm cases,
+five initially task-eligible; some diverge before native task failure.
+
+Combined immutable evidence:
+`pingpong_controller/outputs/rl_sim/wmj_v1/full_prior_integrated_verification_20261109_a01.json`
+SHA `e516fdb7889229e90eed7d23dcc494883a058d9b81fdf7523ad3cbae3d753037`.
+Recorded worker time for this integration phase including failed/negative
+attempts is1974.43s; this excludes earlier collection/fitting and is not T90
+or warmed throughput. The residual-free integration is implemented and
+diagnosed, not promoted or declared fully ready. Actor/critic/model updates
+in this phase are all zero. Await user QA on the next implementation versus
+model-refinement scope; preserve WMJ-V1, CONTACT and EXEC.
+
+The user subsequently chose implementation of the imagined learning system
+with no weight updates, and approved independent goal-reward candidate
+calibration plus a fresh full-control-memory256->256->1 critic initialized
+to zero output. Actor969/action7 and all frozen physical components stay fixed.
+Register this scope in `WMJ_V1_CONFIG.json/imagination_implementation`.
+The current candidate release terms are +2 for a unique controlled release,
+minus log1p squared XY/Z apex error with scales0.10/0.05 m and unit weights,
+plus a unit local precision bonus at0.02/0.02 m. A0.25 log horizontal-speed
+penalty at0.05 m/s is smoothly enabled within0.04 m of the goal. Dense rates
+are survival+1/s, action-difference cost0.02/s, projection cost0.10/s and a
+small descending-flight interception cost0.20/s over the last0.15 s; physical
+failure costs10 once. These are explicit candidates for frozen scale and
+gradient calibration, not empirically selected training weights. Task success
+remains16 contacts with the existing2 cm/0.05 m/s and stability timing rules;
+there is no old fixed-anchor task penalty. Physical contact remains the sole
+source of hit events; approach shaping cannot create hit or task credit.
+
+Critic inputs retain every native RMP field, target/output filter sample,
+per-lane ring index and q/dq/ddq output-delay sample, plus episode control
+parameters, physics, current969-D actor observation, camera phase/AR1 memory,
+task/event progress and episode clock. Fixed physical divisors are published
+per field. RNG keys and future teacher labels/observations are excluded.
+Candidate coefficient changes may be calibrated within this authorized
+no-update phase; actual actor/critic/model optimization remains unauthorized.
+
+The bounded no-update GPU diagnostic is launched only through
+`run_wmj_v1_imagination_no_update.sh <unique-output-directory>`. Preregister
+the first trial's first32 (or all available) initially task-eligible validation
+lanes, chosen before rollout, for frozen64-step reward/feature calibration.
+Retain every later failure and absent hit; this conditional population is not
+a global success evaluation. Four initial lanes additionally exercise64-step
+reverse mode and4-versus2 environment gradient accumulation. Require finite
+gradients, report their norm and nonzero count, and compare accumulation with
+absolute tolerance1e-4 plus1% of the largest gradient component; discrepancies
+remain evidence rather than grounds to change frozen forward semantics.
+Record compile-inclusive and warmed forward times separately. Save the full
+learner, optimizers, persistent pool, RNG and frozen models, then require
+identical same-graph continuation after recovery. Hash all frozen trees before
+and after. Actual optimizer counts must remain zero. This diagnostic does not
+claim1024-lane throughput, task convergence, T90 or hardware validation.
+
+No-update diagnostic `imagination_no_update_a01` completed in144.47 s with
+all frozen parameter/optimizer digests unchanged. The authenticated critic
+layout is2596->256->256->1. The32 initially eligible validation lanes yielded
+1157 active transitions,25 controlled releases,7 attributed apexes and27
+physical failures, with no model truncation. This population includes difficult
+identification seeds and is not the fixed task qualification set. Four-lane
+actor gradient norm is27.0033;4-versus2 accumulation maximum difference is
+0.004074 (0.290% of the maximum component). Critic norm is23.6086; its fresh
+zero-output initialization correctly limits this first gradient to the last
+layer. Full learner recovery gives identical continuation, including one
+still-active lane. All261 WMJ regression tests pass in158.30 s.
+
+Extend the no-update diagnostic in a new directory with128-step uninterrupted
+versus64+64 continuation (maximum state difference1e-4), full snapshots at
+observed flight/precontact/incontact5 ms boundaries, and output-bias directional
+finite differences at normalized perturbations0.001 and0.0003. Preserve
+unobserved phases as NOT_OBSERVED. Report event-tick changes separately; a
+same-event derivative relative error above10% remains unresolved. This adds
+no optimizer update and does not change frozen inference or reward weights.
+
+Extended a02 completed in172.30 s. Flight, precontact and incontact recovery
+are exact, and128 versus64+64 state difference is zero. Output-bias finite
+differences agree in direction but differ in magnitude by22.3%/36.6% at
+0.001/0.0003 despite identical recorded200 Hz event ticks. Preserve this as
+unresolved amplitude evidence; those ticks do not establish identical1 ms
+contact or projection branches. A03 additionally checks0.003/0.01/0.02,
+retaining all five scales rather than replacing the small-scale negatives.
+The two new red regressions exposed unchecked nonfinite actions and missing
+event memory at contact forks. The imagined wrapper now classifies invalid
+actions/control as model truncation with zero reward/bootstrap and unchanged
+world memory, and rejects incomplete contact/task seeds on the host. No frozen
+model/control/CONTACT/EXEC source changed. Nine affected tests pass in47.24 s.
+
+Final no-update a03 completed in173.58 s with unchanged frozen tree hashes,
+no model truncations on valid inputs, and all three phase-resume checks exact.
+Cross-window maximum state difference remains zero. Actor accumulation
+difference is0.288% of its maximum component. All five finite-difference scales
+agree in direction;0.02 agrees in magnitude to1.67%, while0.0003/0.001/0.003
+still differ36.6%/22.3%/17.8%. At0.01 the error is9.32% but recorded event
+ticks change. Report the complete mixed evidence; this is not certification of
+every internal contact/projection branch or a reason to declare learning ready.
+Candidate reward coefficients are retained after this scale calibration;
+their effect on training remains untested. Model, actor and critic update
+counts are all zero. The three GPU diagnostic workers total490.34 s including
+compilation, separate from earlier collection/fitting and CPU tests.
+
+Combined evidence is
+`pingpong_controller/outputs/rl_sim/wmj_v1/imagination_no_update_verification_20261109_a01.json`,
+SHA `86f8338e87500167d47f794b0ccfd609eff5b6b15961fcd7df2c51db632430a2`.
+Current config retains the validated numerical resume signature. All prior
+a21 frozen source hashes remain unchanged. Core reward/critic/gradient/pool
+primitives and recovery are implemented; full1024 curriculum-pool integration,
+multi-stage goal/pulse scheduling, full-size performance and any optimizer run
+remain outstanding. The existing0.64 s teacher trials contain no registered
+goal-switch or recovery branch seeds. Ask before changing the attachment's
+P_start128/64/64 proportions: propose course-dependent activation with explicit
+cold-start reassignment, without inventing task history or successful hits.
+
+The user approved course-dependent P_start: S01 uses256 precontact branches;
+S02/S03 use192 precontact plus64 goal-switch branches; S04/S05 use128/64/64.
+Missing enabled categories temporarily move to precontact, with actual counts
+and probabilities logged. If compatible precontact seeds are absent, stop.
+`course_sampling.py` implements this opt-in path while the strict legacy
+sampler remains unchanged. The final test partition is always rejected.
+
+`branch_bank.py` stores complete CPU states and RNG, bound to model identity,
+course and observation-noise mode, with bounded FIFO capacity per category.
+Goal-switch seeds require an observed switch and consistent task counters;
+recovery seeds require a scheduler pulse-applied event and remain unverified
+recovery candidates. Restore rejects model/course mismatch. The1024-lane
+window preparation retains continuing persistent lanes, resets ended lanes,
+and redraws all256 branches. Only reset lanes receive new future RNG; realized
+noise and timestamp-aligned history are retained. No geometry/IK queries are
+introduced. Eleven applicable CPU tests passed in11.92 s, including the actual
+1024-sized reset mask, lossless cache reconstruction and unchanged strict
+sampling. This is CPU state/contract validation, not GPU pool throughput or a
+continuous learned-task result. Actor/critic/model updates remain zero.
+
+The user approved continuous four-goal training groups in S04/S05, with one
+pulse uniformly selected among the three internal goal switches. Physical,
+control and observation state remain continuous across group boundaries.
+Early failure or the30-second limit records an incomplete group, without
+forcing an undelivered pulse. The pulse starts on the next1ms boundary after
+the detected actual apex (logged onset discrepancy<=1ms), lasts20 ticks and
+retains the approved delta-v bounds. Critic input appends six current values:
+completed goals/4, pulse-used, remaining ticks/20, forceXYZ/0.02N, giving2602
+inputs with256->256->1 hidden/output layers. RNG and future unapplied pulse
+or goal values remain excluded. The previous2596 diagnostic path is retained.
+Actor969, action7, frozen models, CONTACT/EXEC and WMJ-V1 are unchanged.
+
+The opt-in course modules implement cached XYZ-distance goal sampling, causal
+complete-state event capture, current external-force physics and persistent
+pool integration. Eleven numerical tests pass, including active-pulse resume,
+continuous split windows and atomic rollback of invalid model intervals.
+`run_wmj_v1_course_pool_no_update.sh` is a guarded1024-lane GPU diagnostic,
+with768 persistent lanes plus256 resampled branches, H64/microbatch256 and
+four frozen critic-gradient batches of8192/microbatch2048. It applies no Adam
+updates. Repeated physical seeds are counted separately from logical lanes;
+this is a throughput/state diagnostic, not global coverage or qualification.
+
+The first1024-lane attempt `course_pool_no_update_a01` stopped with a
+nonfinite actor gradient and zero updates. Checked autodiff on the same first
+256 lanes localized it to the native RMP braking bound
+`sqrt(2*braking*max(safe_max-q,0))`: forward values were finite, while zero
+cotangents multiplied the infinite derivative at sqrt(0). Preserve this
+negative result and `course_pool_gradient_diagnostic_a01`. The WMJ-only
+`course_control.py` source-pins native RMP/lane/control functions and changes
+only the two sqrt derivative rules: native forward, native positive derivative,
+zero convention at the clamped zero. Shared RMP, CONTACT/EXEC, all old paths
+and frozen weights remain unchanged. A genuine boundary is nonsmooth; this
+convention does not claim a classical derivative there.
+The first retry `course_pool_no_update_a02` completed1024x64 actor gradients
+(norm7.42188; first39.042s, warmed5.847s, exact repeat), but the approved
+conditional PSI rule stopped the worker before critic/resume checks. Peak
+scope memory was7.675GiB with host available below13.5GiB; no OOM occurred.
+The subsequent implementation computes detached critic returns per microbatch,
+retains only active critic rows and complete endpoint/event states, and drops
+consumed next-feature arrays. It preserves the logical1024x64 batch and all
+loss/discount/microbatch weights; resource thresholds are not changed.
+
+`course_pool_no_update_a03` completed in161.247s on GPU1, with a clean
+resource-scope exit, peak scope5.297GiB, sampled GPU allocation2739MiB and
+maximum39C. The1024x64 gradient/return preparation took41.483s initially and
+7.191s warmed, with exact repeated gradients. All four critic8192 batches
+(microbatch2048) were finite; warmed batch times were0.709--0.721s. No Adam or
+EMA update ran. The first window had32167 valid transitions,600 releases,
+163 apexes and903 physical failures; the second had28820 valid transitions.
+These are32 independent native train-partition seeds repeated into1024 lanes,
+not full-domain or learned-task evidence. No16-hit goal completed and no
+course pulse was delivered in this GPU run; pulse timing and active-force
+restore remain numerical unit-test evidence.
+
+All92 continuing persistent lanes retained their exact state. The next window
+reset676 ended persistent lanes and all256 branches. Full learner/pool/causal
+bank/optimizer/RNG save and restore reproduced both rollout and future branch
+sampling exactly. Frozen parameter/optimizer SHA before and after is
+`4561a8825e101d224d2e732b3568b051864ee2dfefa9dedcbf3edf73720e88d2`.
+Checkpoint: `wmj_v1/course_pool_no_update_a03/course_pool.json`, SHA
+`5492f2577a0210c4d2298bc19e9b9d4556792373948da742cc04594b2968b680`.
+Evidence: `wmj_v1/course_pool_verification_20261109_a01.json`, SHA
+`3b2db05e2854b27f38af2dd5cd7d908a15e0497f4e0209ca94d2c7c95550a91a`.
+The full WMJ suite passed280 tests before the focused derivative/compaction
+work; three additional cases and applicable follow-ups pass,283 distinct cases
+in total. All a23 registered source hashes remain unchanged. The next fixed
+128-case task evaluator still needs concrete group distributions and initial
+serve conditions; current counts/group labels alone do not specify them.
+Actor/critic updates remain unauthorized, and task qualification/T90 remain
+unachieved. No hardware test or new MJX learned-policy task evaluation ran.
+
+The next user QA approves explicit frozen-case distributions:32 nominal
+XYZ-stratified full-domain cases,32 near-side starts withY[-.38,-.28],32
+whole-sequenceX mirrors of nominal with independent robot admission, and32
+boundary starts within2cm of candidate-box faces. Each group covers the
+registered apex-height range. Cases are generated before admission/policy
+results; UNKNOWN cases and any shortfall remain explicit. Initial ball serve
+is a stationary, zero-spin release from the first goalXYZ, with an independently
+admitted nearby racket pose and actual native controller warmup. The initial
+apex never scores; subsequent physical/control/history state is continuous.
+No actor/critic update is authorized by this evaluation-contract approval.
+
+The fixed manifests are now implemented by `world_model/frozen_cases.py` and
+registered by SHA-256 in `WMJ_V1_CONFIG.json`. The first offline static audit
+admitted113/128 starts: nominal30, near-side29, mirror29, boundary25;15 remain
+UNKNOWN. The initial audit attempt stopped on an incorrect ball-body metadata
+lookup, corrected by using the authenticated native body name. Cases were
+written before admission; no policy output selected any goal or initial pose.
+
+`run_wmj_v1_frozen_evaluation.sh` now runs the private native task evaluator.
+It retains V324 wrappers, CONTACT and EXEC, reads actual1ms contact/apex events,
+scores finite1/2/2/4/4-goal sequences, and applies the approved20ms external
+force through native `xfrc_applied`. Goal publication preserves robot, camera,
+history and controller state. Initial apexes never score, physical failures
+end cases, and the independent evaluation timeout is60s. No geometry query or
+IK runs in a policy tick. The endpoint failure check also covers a goal that
+finished in that same control tick; nonfinite diagnostic labels remain explicit
+nulls in JSON failure evidence.
+
+The provisional S01 baseline `frozen_native_s01_a02` admitted60/128 starts
+after actual zero-action controller warmup; neither deterministic nor sampled
+mode completed a16-hit goal. Their hit1/hit3/hit12 counts were18/3/0 and16/1/0.
+A prior repeat admitted61: one marginal pose changed from pitch1.99925deg to
+2.00703deg. To prevent admission changes between future evaluations, the first
+implementation of complete-state persistence freezes `frozen_native_s04_a01/`
+`warmed_seed.json` (SHA-256
+`548741a86d982d48452a4d48face4cd98a9b583455ba545240e69ad00cd2abd0`).
+It retains the actual native model, robot, full controller queues/phases, RNG
+and offline admission. This canonical population has61 admitted starts
+(16/18/19/8 by group) and67 UNKNOWN. It was selected for complete-state
+reproducibility, not policy performance; the preceding S01 physical starts are
+not a paired AR1 comparison. These artifacts are frozen validation only.
+
+S04 and S05 completed both modes on the canonical128 planned cases. S05
+restored the exact S04 warmed population without repeating warmup or geometry
+admission. Neither completed its first16-hit goal. S04 deterministic/sampled
+hit1/hit3/hit12 counts were18/4/0 and16/1/0; S05 counts were20/4/0 and16/1/0.
+The dominant physical failure was the registered2deg racket-orientation
+bound; there were no nonfinite-state, other-ball-collision or joint-position
+failures. The actual goal-triggered disturbance was not reached by these
+untrained baselines. A separate native free-flight diagnostic delivered exactly
+20 force ticks in51 complete cases, with maximum delta-v error4.04e-5m/s;
+interrupted/UNKNOWN diagnostic cases remain recorded. This is force-path
+validation, not recovery success. S05 logged2812/2413 fresh camera samples;
+the AR1 state changed by exactly zero on held-camera ticks.
+
+Early pairing attempts stopped on minor compiler differences; one also
+recomputed actor outputs separately. Pairing now feeds the same compiled raw
+action to both paths. The private evaluator uses explicit task-scaled checks:
+qpos1e-5, generalized qvel1e-3, ball linear velocity1e-5, reference-q1e-5,
+accepted-action1e-5, and unchanged discrete state. The previous1e-4 qvel smoke
+result remains visible, including failures. This follows the user's explicit
+instruction not to block on insignificant floating-point differences; it does
+not change V324 physics, EXEC, or prior execution evidence. Full-population
+position differences were below1micrometer, and ball velocity, reference-q,
+accepted action and discrete states matched in the reported checks.
+
+The applicable WMJ plus memory-scope suite passed320 tests in214.63s; the shell
+launcher syntax check passed. Actor/Critic/world updates remain zero. The
+canonical initialization deficit, global training-seed coverage, actual native
+goal-switch/recovery success, and S02/S03 native runs remain unresolved. No
+course, T90, deployment or world-model qualification is claimed. The next
+QA was answered on 2026-11-09: prioritize offline warmed-state initialization
+search, preferring flatter racket poses while preserving the fixed goals,
+2deg/workspace constraints, native control/physics and WMJ-V1. The opt-in
+`run_wmj_v1_initialization_search.sh` searches bounded horizontal-pose IK,
+audits original meshes offline, and admits only actual states after128 native
+zero-action controls. Up to8 candidates per case cover different legal site
+positions; complete native model/controller/history/RNG lanes are cached.
+The original61 admitted lanes remain fallbacks. Selection uses admission,
+0.1deg orientation bands and centring, never policy scores. This phase makes
+no Actor/Critic/world updates and adds no geometry work to runtime ticks.
+Promotion requires improved admission and flatter orientation on the unchanged
+parent population, preservation of every parent admitted case, unchanged goals
+and exact complete-state restoration.
+
+`flat_initialization_search_a01` passed these initialization-only checks in
+1278.08s on GPU1. Across8 native warmup rounds, admission rose61->112/128
+(nominal30, near-side28, mirror29, boundary25); all original61 admitted cases
+remain admitted. On that unchanged61-case population, maximum absolute
+roll/pitch P95 fell1.81543->0.37867deg (mean1.14676->0.22630deg). Across all112
+new admitted cases the maximum is0.88691deg. The selected complete native
+state was saved and restored exactly; no policy output chose a candidate.
+The fixed case list is unchanged;16 cases remain UNKNOWN, not proven
+unreachable. Only the new static-initialization reference and warmed-state
+reference are promoted for opt-in frozen evaluations, with the parent retained.
+
+`flat_initialization_nonexact_a02` separately checked existing IK results that
+missed the proposed racket-site position. Such a proposal is not itself a task
+constraint: actual finite-face geometry, limits and collisions are still
+authoritative. Twelve potentially usable poses in3 remaining cases all failed
+the original-mesh collision audit. The95.12s diagnostic added no admitted
+cases and therefore was not promoted; all112 parent states stayed exactly
+unchanged. Its preceding a01 attempt was manually stopped during setup after
+a config-registration script used an incorrect metadata key; no search or
+model update occurred. The failed attempt remains in the evidence directory.
+The frozen S01 replay `frozen_native_s01_flat_a01` restored the selected cache
+without warmup or repeated geometry checks and completed in215.37s. The
+deterministic/sampled modes reached hit1/hit3/hit12 counts53/11/0 and55/13/0
+among112 admitted cases. Neither completed a16-hit target; orientation failures
+were84/80, ball-domain failures19/22, and racket-workspace failures9/10.
+There were no nonfinite, other-ball-collision or joint-position failures.
+On the60 admitted case IDs common with the earlier S01 run, hit1/hit3 changed
+18/3->28/6 (deterministic) and16/1->29/6 (sampled); initial poses changed and
+the policy did not. These are baseline diagnostics, never pose-selection data.
+The applicable WMJ plus memory-scope suite passed326 tests in215.35s; launcher
+syntax and new-module compilation checks passed. Peak process-scope usage was
+8.36GiB and recorded maximum GPU temperature40C. All pre-existing WMJ module
+hashes match the preceding evidence snapshot; this phase adds offline tools,
+tests and configuration/evidence references only. No course, world-model,
+T90 or deployment qualification is implied; the16 UNKNOWN starts still block
+complete frozen-population admission under the existing evaluation contract.
+
+The user next authorized an independent global training-seed bank and frozen
+world-model checks at the new poses, still without Actor/Critic/world updates.
+`training_seed_plan_a01` audited the existing training partition across all10
+native acquisition trials. Of2173 initially task-valid candidates with measured
+first-contact lead>=80ms,2138 passed the offline original-mesh/ball-clearance
+and actual-pose checks. Region-balanced sampling selected1024 unique source
+families, with conditional inclusion probabilities recorded. It covers105 of
+119 source-atlas regions; missing regions5/14/17/20/26/32/41/56/77/80/101/102/
+104/125 remain explicit. This is source-region coverage, not a proof of the
+whole candidate task domain. The591.48s CPU audit used no validation source.
+
+The independent new-pose diagnostic uses
+`run_wmj_v1_new_pose_audit.sh`:128 controls from the fixed flat S01 cache,
+the frozen migrated actor, and native1ms labels. The world model receives the
+same raw actions but recurses its own robot, ball, controller and observation
+state for1/8/32/64/128 controls. Actual future states are labels only. Windows
+center on the first observed controlled release; no-release cases retain
+their reset seed. Primary metrics stop at the first physical/task-bound
+failure; finite post-failure trajectories are reported separately. UNKNOWN
+cases and nonfinite predictions remain explicit. This diagnostic never sends
+validation states to the training bank and performs no parameter update or
+automatic model promotion. Its preregistered P95 references remain3mm racket
+position,0.05m/s racket normal velocity,0.08m/s outgoing velocity and1cm apex.
+
+`run_wmj_v1_training_seed_bank.sh` reconstructs actual controller memory and
+640ms full-chain camera/racket history using the authenticated native replay.
+Stored fresh-task sources begin at actual control0: their one real reset sample
+and invalid older-history padding are retained, never fabricated. Computational
+padding to64-lane reconstruction batches does not become duplicate bank rows.
+S01 first goals are over the actual finite racket face with independently
+stratified Z1.30--1.45m; task/event counters begin at zero before first contact.
+The bank excludes every fixed128 validation source, requires exact complete-state
+restore, and has no runtime geometry queries. `training_seed_bank_a02` completed
+all1024 sources in20 reconstruction batches. Camera positions, delayed q/dq/ddq
+and timestamp-paired FK lookup matched the replay exactly; native endpoint
+site/FK differences stayed below1.22e-4 in their recorded components.
+Each source starts with1 real history row; all reconstructed640ms endpoints
+contain58 fresh rows. The first a01 attempt exposed a surface-wrapper interface
+bug and saved no bank. The a02 archive passed direct restoration but its public
+loader redundantly rebuilt a128-step one-lane trajectory, whose differently
+shaped RMP computation failed a command check. The loader now reads only the
+authentic reset as a shape template and restores every stored value.
+`training_seed_bank_restore_a01` verified the existing archive, ordering, RNG
+and metadata exactly in14.67s without rebuilding or changing any source.
+The failed attempts remain recorded. The bank has1024 unique families across
+105 regions, a5.45MB compressed archive, and no parameter updates. New-pose
+model-error results are recorded below.
+
+`new_pose_world_audit_a01` completed in227.07s on GPU1. The112 admitted
+fixed cases were retained,16 UNKNOWN cases stayed separate, and all five
+prediction horizons remained finite. Task-prefix outgoing velocity P95 for
+H1/8/32/64/128 was0.08137/0.08943/0.09038/0.07116/0.10829m/s;
+analytic-apex P95 was1.6336/1.7246/1.9666/1.6017/2.0128cm.
+Complete task-prefix windows numbered54/49/42/36/17; endpoint metrics at
+different horizons therefore describe different surviving subsets. Event
+metrics also retain earlier valid releases in subsequently failed windows.
+H8 precontact racket position/normal-speed P95 was0.340mm/0.01958m/s.
+The near-side group's8 controlled releases had velocity/apex P95 of
+0.60329m/s/8.852cm, driven by a difficult edge-contact case; aggregate P95
+must not be read as regional qualification. H128 included large errors at
+some second contacts. Finite post-task-failure diagnostics are stored under a
+separate scope and never count as task success.
+
+`new_pose_event_audit_a01` reused authenticated complete branch states and
+saved raw actions, with no additional native collection. It completed in74.67s.
+Ordinal own-release diagnostics at H8 paired53 valid-prefix outcomes with
+one extra predicted upward release; the equal-release-count subset contained
+52 outcomes with velocity P95 of0.07175m/s. The changed-count edge case
+remains an explicit ambiguous correspondence, not a successful prediction.
+H128 paired72 valid-prefix releases without missing/extra upward outcomes;
+velocity/apex P95 was0.07676m/s/1.6943cm, but the boundary_04 second contact
+still differed by1.98571m/s and49.9068cm in analytic apex. Event timing thus
+explains some same-clock errors, but does not remove the contact-mode and
+rare large outcome errors. The model is not promoted or qualified.
+
+This phase passed334 applicable WMJ/memory-scope tests in217.77s and two
+additional release-alignment tests in0.33s. Previous world-model/control source
+hashes remain unchanged. Maximum recorded process-scope usage was8.96GiB;
+no memory protection limit was relaxed. All Actor/Critic/world updates remain
+zero. Training-seed coverage is still105/119 source regions, with independently
+stratified first-goal X support only[-0.37977,0.29162]m in this bank; neither
+source-region counts nor coordinate extrema prove the full candidate domain.
+
+The user subsequently authorized one independent targeted supplemental batch:
+at most1024 native environments by128 controls, committed as two64-control
+chunks, followed by frozen model-error diagnostics. No Actor/Critic/world
+parameter update is authorized. V324 CONTACT/EXEC, WMJ-V1 and the6GiB/8GiB
+storage limits remain fixed. `run_wmj_v1_targeted_pose_plan.sh` searches fresh
+seeded flat poses near all189 atlas nodes, using two proposals per node and
+up to four IK starts each. A10mm inward proposal offset and3mm jitter are
+search choices inside the existing workspace, not new admissibility limits
+or collision clearances. The fixed validation cache is never a source.
+Actual states after128 native zero-action warmup controls must pass offline
+geometry and task-pose admission. Invalid initialization proposals remain
+reported; any replacement copies a complete admitted native lane, records
+the changed source region/probability, and cannot count as covering the
+missing region. The collection mixture is half globally balanced regions,
+half declared gap/near-side/XY-boundary regions; the registered generator,
+incoming-speed, contact-offset and zero-initial-spin contracts are retained.
+Full support-joint and native racket pose/twist labels are captured directly,
+avoiding a duplicate replay overlay. Clones of a complete warmed source share
+one root/session partition while their new-ball episodes remain distinct.
+The frozen audit uses64-lane computational batches at H1/8/32/64/128,
+centering on the first observed controlled release and retaining misses from
+their reset. It reports train/validation, region, generator and contact-offset
+strata; final-test outcomes are excluded. The0.08m/s outgoing and1cm analytic
+apex P95 references remain diagnostics, and pooled metrics cannot certify
+regional coverage. First-task-failure prefixes and finite post-task-failure
+physics are kept separate, including changed event-count ambiguities.
+`targeted_pose_plan_a01` found270 static candidates across136/189 regions,
+including all14 previously missing source regions. Actual native warmup
+admitted915/1024 proposals across132 regions;109 substitutions retain their
+actual donor identity and partition. Region20 remains absent among the14
+prior gaps. All1024 final incoming-ball placements passed offline geometry.
+
+`targeted_collection_a04` completed the single131072-transition acquisition
+as two64-control chunks in158.56s, with peak scope8.63GiB. It restored the
+authenticated control0 saved by a03, preserving the original draw and action
+schedule. Earlier attempts remain recorded: a01 failed JSON serialization
+before trial recording; a02 was interrupted before recording to fix cloned
+source partitioning; a03 stopped at the first contact because a bitwise replay
+check rejected floating differences. No earlier chunk was committed. Full
+serialized-state recovery is exact; the recorded physical comparison passes
+qpos/qvel maximum differences1.725e-6/9.516e-4, with ball velocity, accepted
+action and reference exactly equal and discrete events unchanged. Internal
+solver differences remain recorded, without a bitwise-physics claim.
+There were1010 physical entries,1000 releases,913 controlled releases and905
+actual apex events. The partition contains825 train,99 validation and100
+sealed test lanes; copied warm sources never cross partitions.
+
+`targeted_world_audit_a01` completed in150.47s. It audited924 train/validation
+episodes from822 independent root families and never queried test-model
+outcomes. All H1/8/32/64/128 predictions remained finite. Task-prefix outgoing
+velocity P95 was0.02793/0.09209/0.08864/0.09859/0.10532m/s and analytic-apex
+P95 was0.5167/1.6569/1.7798/1.9088/1.9383cm. Complete-prefix window counts
+were406/376/217/67/8, so endpoint metrics do not describe a common survivor
+population. H8 paired306 own-clock releases without missing/extra outcomes;
+H128 paired336, with2 missing and2 extra releases. H128 own-clock outgoing
+P95 was0.09683m/s and the worst paired difference remained0.66781m/s.
+The H8 validation-only36 release pairs gave0.05937m/s and1.3754cm P95;
+neither small-sample held-out results nor pooled results establish coverage.
+Actual finite-polygon geometry identified229 near-edge entries (radial
+fraction0.90--1.05),92 before first task failure, separately from proposal
+classes. Reconstructed camera and timestamp-paired racket history matched
+exactly; delayed q/dq/ddq maxima were1.669e-6/2.861e-6/2.670e-5, and native
+endpoint FK difference was1.424e-4. No observation or control contract changed.
+
+The new data contain368 train-source candidate episodes across121 regions,
+including13/14 earlier missing regions. These are not yet installed in the
+existing105-region training bank; region20 and full-domain qualification
+remain unresolved. The world remains unqualified, contact residual stays off,
+and Actor/Critic/world parameter updates remain zero. The applicable suite
+passed344 tests in215.40s;9 focused reporting/sampling tests then passed,
+including one additional nonfinite-report case (345 distinct checks total).
+Previous world-model/control sources remain unchanged. See
+`outputs/rl_sim/wmj_v1/targeted_supplement_verification_20261109_a01.json` and
+`implementation_progress_20261109_a28.json` for hashes, all attempts and
+unapproved next-step proposal. No model or training-bank promotion occurred.
+
+On2026-11-10 the user authorized that next step: replay the same supplement
+for compact solver-stage supervision, then fine-tune only the existing
+47->128->128->6 auxiliary for at most4096 additional Adam updates. Parent
+weights, Adam moments/count and normalization come from
+`solver_aux_fit_a01/auxiliary_u004096.json`. Batch512 contains256 old and256
+new training rows, with each source split equally into contact/noncontact
+and sampled uniformly by independent root family. LR3e-4, clip1 and the
+existing normalized six-component loss remain fixed. Cloned supplemental
+sources share one family; validation/test rows cannot enter fitting.
+Label replay keeps1024 native environments and the existing128-control
+actions, retains all valid overlaps plus2% nonoverlaps, and records its
+numerical trajectory difference from the source. Its inputs and labels both
+come from that self-consistent native replay. No new independent scenario,
+Actor/Critic/robot-proxy update, contact-residual reactivation, CONTACT/EXEC
+change or WMJ version increment is authorized. Parent and final candidate
+will be compared on identical old/new validation windows at H1/8/32/64/128;
+all regional and negative results remain visible. The6GiB output cap and
+8GiB free-space floor remain unchanged; no automatic promotion is implied.
+
+`targeted_aux_labels_20261110_a01` completed in138.43s with18638 retained
+rows (16807 train/1831 validation). Solver-label closure in velocity units
+had P95/max0.000260/0.001209m/s and passed the existing0.001/0.005m/s gates.
+Replay features and targets are internally coherent. Source-trajectory
+differences remain explicit: arm q/dq norm P95 was0.000252rad/0.004451rad/s,
+ball position/velocity P95 was0.154mm/0.001184m/s, while rare long-window
+divergences reached0.232m/2.529m/s. These tails are not called roundoff or
+exact replay, and original future states were never mixed with replay labels.
+
+`targeted_aux_refit_20261110_a01` completed exactly4096 additional updates
+in10.34s total, restoring Adam count4096 and ending at8192. It consumed
+1048576 old and1048576 new training rows and preserved normalization exactly.
+Teacher-conditioned normal-equation velocity P95 improved from0.03542 to
+0.02810m/s on old validation and0.04518 to0.02689m/s on new validation.
+These scalar diagnostics alone do not qualify a world model. The final
+candidate is `auxiliary_u008192.json`; the four intermediate checkpoints,
+optimizer states, RNG and parent/source identities remain saved.
+
+`auxiliary_refresh_paired_20261110_a01` completed in221.81s on identical
+parent/candidate windows over1054 old and99 new validation episodes. All
+H1/8/32/64/128 predictions remained finite. Candidate task-prefix same-clock
+outgoing P95 was0.02686/0.05208/0.06229/0.06707/0.06938m/s on old sources
+and0.02117/0.03723/0.04077/0.04091/0.05244m/s on new sources. Corresponding
+analytic-apex P95 was0.435/1.212/1.388/1.417/1.813cm and
+0.395/0.896/0.914/0.943/0.916cm. Complete-prefix counts were
+283/258/137/44/8 old and51/46/28/14/3 new; endpoint metrics do not describe
+a common survivor population. H8 own-release-aligned velocity P95 changed
+0.06352->0.05398m/s old and0.05939->0.03723m/s new, without missing/extra
+events. H8 apex P95 stayed about1.21cm old and fell1.376->0.896cm new.
+
+Aggregate improvement is mixed at the region/tail level: among34 old regions
+with at least3 H8 events,25 improved velocity P95 and22 improved apex P95.
+At H128 the old parent missed3 releases and predicted3 extras; the candidate
+missed1 and predicted2 extras. In old trial3/lane968 the parent missed the
+third release; the candidate predicted it6ms late with1.1006m/s velocity and
+47.34cm apex error. This is not an apples-to-apples increase from the parent's
+smaller paired-event maximum, which omitted that missing event. New H128
+own-release velocity/apex P95 was0.04026m/s/0.916cm, with one extra release
+for both models. Rare mode errors and old regional regressions remain.
+
+All349 applicable tests passed in213.73s. Actor/Critic, robot execution proxy,
+39-D residual-off state, V324 CONTACT/EXEC and WMJ-V1 remain unchanged.
+The candidate has not replaced the default world model or entered the
+training seed bank. Full evidence and next-step QA are recorded in
+`outputs/rl_sim/wmj_v1/auxiliary_refresh_verification_20261110_a01.json`
+and `implementation_progress_20261110_a29.json`.
+
+On2026-11-10 the user authorized a conditional S01 pure-imagination pilot:
+first recheck the updated auxiliary against the authenticated480 native
+counterfactual cases and validate actor/critic gradients, then at most20
+Actor updates with4Critic updates each and frozen paired128-case native
+validation every10updates. The diagnostic freezes the candidate8192 auxiliary,
+robot proxy and residual-off world; the default world stays unchanged.
+Logical1024=768persistent+256branch, H64, actor LR1e-5, critic LR1e-4,
+registered rewards, existing1024-source bank and6GiB/8GiB budget are fixed.
+Microbatch may be reduced for memory without changing the logical batch.
+No new source-bank merge, curriculum advance or global qualification is implied.
+The action screen is preregistered before candidate results: each velocity/apex
+family must retain at least100 informative cases and90% of the parent's
+informative count, reach90% direction agreement, and lose no more than5
+percentage points from the parent. Missing/unresolved cases remain reported.
+Gradient admission requires finite nonzero actor gradients, the existing
+1e-4+1% microbatch tolerance, and at least one same-recorded-event finite
+difference with relative error<=10%; all tested scales stay visible. This
+is a bounded diagnostic admission, not certification of every Jacobian or
+of the world-model error budgets. The saved native action forks are reused;
+only the updated world is rerun. No parameter update precedes these checks.
+
+`pilot_actions_20261110_a01` stopped during CUDA pinned-host allocation
+before producing an action result or updating parameters; no OOM/guard stop
+occurred. The unchanged retry `pilot_actions_20261110_a02` completed in
+110.58s, replaying the candidate on all480 authenticated native forks with
+zero new native rollout steps. Repeat-resolved direction agreement was
+207/216=95.83% for outgoing velocity and218/226=96.46% for actual apex,
+versus206/216 and218/226 for the parent. Missing/repeat-unresolved cases are
+retained. The preregistered bounded-pilot action gate passed.
+
+`pilot_gradients_20261110_a01` completed in188.67s with no updates. The
+1024-lane/H64/4x256 gradient had norm4.63414,190471 nonzero entries and no
+nonfinite entries;35146 valid transitions,680 valid releases and886 physical
+failures were retained. The initial frozen Critic gradient norm was23.0676.
+Four-lane versus2x2 gradients differed by0.000140816max against the registered
+1e-4+1% tolerance. Output-bias finite differences at epsilon0.0003 had0.875%
+relative error with the same recorded event ticks; epsilons0.001/0.003 had
+62.97%/23.71% error despite matching200Hz event ticks, and0.01/0.02 changed
+recorded modes. All scales remain reported; only the bounded gradient gate
+passed, not a full piecewise derivative certification. All354 applicable
+CPU tests passed in217.07s before starting any pilot optimizer update.
+
+The authorized pilot completed20Actor/80Critic updates in two segments,
+`pilot_train_20261110_a01` (u1-10,240.33s worker wall) and
+`pilot_train_20261110_a02` (full-state resume u11-20,262.05s). World parameters
+were frozen and the default world/Actor were not replaced. Both boundaries
+saved Actor/Critic/target/Adam/pool/RNG/counters and verified exact numeric
+restore plus identical subsequent pool sampling. All training returns and
+transitions came from imagination; native states were reset seeds only.
+
+Frozen native runs `pilot_native_u010_20261110_a01` and
+`pilot_native_u020_20261110_a01` took213.42s/215.24s and reused the same112
+admitted initializations,16UNKNOWN cases, goals and action RNG as the baseline.
+Baseline/u10/u20 hit3 counts were11/20/24 deterministic and13/22/26 sampled;
+mean hits over112 admitted cases were0.920/1.286/1.348 and1.027/1.321/1.455.
+No run reached hit12 or completed a16-hit goal. The u20 maximum was8hits.
+This is not task convergence: on the31/32 cases with a first apex in both
+baseline andu20, mean absolute Z error increased12.962->13.825cm and
+12.755->13.759cm, while mean XY error decreased1.527->1.401cm and
+1.692->1.529cm. Overall observed apices remain about18cm below their targets.
+These paired subsets and the differing full-event populations are kept
+separate. The candidate must not be promoted on hit count or return alone.
+
+In nominal_23, both u20 modes reached8 low bounces and then a non-racket ball
+collision, whereas the baseline/u10 ended earlier on racket orientation.
+The u20 deterministic apices descended1.2388->1.1797->1.1412->1.1121->
+1.1053->1.1059->1.1006m against a1.39691m goal. The precise other collision
+geometry is not present in these logs; do not invent its identity. U20 still
+had75/112 racket-orientation failures in each mode, plus32 ball-domain,
+4 racket-workspace and1 other-ball-collision failure. No numerical or joint
+limit failure was observed. Further training/reward changes are unapproved.
+
+An automatic review initially rejected the u11-20 launch pending fresh
+resource confirmation. Read-only checks showed the previous native worker
+had exited0,20.75GiB host memory available, and GPU1 free with no compute
+process; the unchanged guarded resume was then approved. No guard limits
+were bypassed. Afteru20,28.48MiB remained under the6GiB output cap. Pure
+native evaluation generated3.63MiB in the preceding run and creates no
+teacher/learner archive, so this entry alone reserves16MiB at startup;
+legacy workers retain32MiB. Every actual write still enforces the identical
+6GiB hard cap and8GiB free-space floor. Fourteen affected tests passed,
+including2 new default/reservation hard-quota checks, after the earlier354
+full applicable tests. Memory, temperature, conditional PSI and physics
+contracts remained unchanged. Final evidence is in
+`outputs/rl_sim/wmj_v1/pilot_verification_20261110_a01.json` and
+`implementation_progress_20261110_a30.json`. Proposed next work is a frozen
+model/reward/gradient and collision-attribution diagnostic, at most8MiB new
+output, pending user QA; there is no authorization for further updates.
+
+The coupled39-D continuation `contact_coupled_fit_a02` completed12288 total
+updates in394.67 s, with352.40 s fitting. Coupled H1/8/32/64/128 outgoing
+P95 are0.215514/0.258930/0.294612/0.761894/1.867726 m/s and analytic-apex
+P95 are0.029727/0.047772/0.052847/0.064712/0.084036 m. This remains mixed
+and unqualified; do not promote or continue merely on lower training loss.
+Checkpoint SHA `edf13921cef254d2b78b064682d3b05be8c477b29830c30edc6e5314059cbcc2`.
+Combined report `coupled_contact_comparison_20261109_a02.json` SHA
+`0aa7fd3c3b1e471529c021c14a2cf243690d8136abe05da522108cff04e4b9d2`.
+
+`world_model.control_projection` now performs the native bounded-QVEL reference
+projection with full arm+waist FK, the unchanged shared linear projector and
+native nonlinear hold rule. Two focused CPU tests passed in5.89 s: all12
+outputs on120 nominal/audited configurations (including perturbed waist
+states) were compared with the authenticated frozen method using independent
+CPU MuJoCo FK; all boolean acceptance/hold decisions agreed. Numeric tolerances
+are1e-5 for references/violations and1e-3 for velocity/norm diagnostics, with
+rtol1e-4. Smooth-mode action gradients also matched finite differences, and
+unsafe references held. This is a module-level numerical comparison with a
+shared fixed-base context, not full native GPU feedback replay or qualification
+of the remaining base constraint residual. Native constructor attributes are
+copied explicitly when building the projection contract.
+
+User QA fixes the candidate goal region at X +/-0.38 m, Y[-0.75,-0.28] m,
+Z[1.30,1.45] m. Racket Z remains [1.00,1.15] m and roll/pitch +/-2 degrees.
+Expand this experiment's simulated XY visibility to the candidate XY region;
+this is an explicit simulation assumption, not measured camera coverage.
+Admit goals/transitions using compiled-geometry and reachability evidence,
+never by deleting tasks a policy cannot solve. Each goal lasts 16 contacts,
+including transition contacts. Ten consecutive actual apexes must satisfy
+XY/Z error <=0.02 m and vxy <=0.05 m/s, starting no later than contact three;
+all remaining contacts must survive. Physical state persists on goal changes.
+
+S01--S04 cover global local holds, adjacent transitions, longer transitions,
+then continuous sequences/recovery, all with zero observation noise. The
+user's later QA explicitly supersedes the earlier initial-AR1 choice: S05
+alone adds V324's full 1x 90 Hz AR1 and consolidates the unchanged S04 task
+domain. Major version, contact and execution versions remain fixed. Model
+refresh counters, checkpoint hashes and unique run IDs may change without
+silently changing this experiment contract.
+
+Further user QA fixes transition distances as XYZ Euclidean distance (S02:
+0.02--0.08 m; S03: 0.08--0.20 m plus farther audited-feasible transitions).
+S04/S05 use one external ball-force pulse per sequence at an actual-apex goal
+switch: 20 ms duration, horizontal velocity-change norm <=0.05 m/s and
+absolute vertical change <=0.10 m/s, with balanced directions. Preserve all
+control/camera history; the next valid contact begins the new 16-contact goal.
+Each stage uses 128 fixed paired deterministic/sampled validation cases,
+32 each nominal/near-side/mirror/boundary, with a 60 s per-case maximum.
+S01/S02/S03/S04/S05 require 1/2/2/4/4 complete goals respectively. Each group
+and mode must reach 90% success; first physical failure fails the case while
+retaining the denominator. Unknown reachability remains separately recorded.
+
+MJX collection remains 1024x64 with cumulative 20/40/80-round budgets.
+Imagination has 768 persistent plus 256 branch environments, initially H64
+and microbatch256. Total run wall time is at most 12 hours, including initial
+data/model preparation and necessary validation. All new outputs share a
+6 GiB cap under `outputs/rl_sim/wmj_v1`, retaining at least 8 GiB disk free;
+insufficient storage must stop and return to user QA, never delete evidence
+or silently reduce required collection. No hardware run is authorized by
+this implementation. Component, end-to-end, GPU and full-training evidence
+remain separate and must be recorded before any completion claim.
+
+The 2026-11-05 reset geometry review corrects an initial self-collision false
+alarm. On the identical compiled model and recorded reset, the waist03/right02
+convex hull query returns -3.196905 mm, but the original 35,794/59,498 triangle
+surfaces are disjoint with a certified separating-axis clearance lower bound
+of 5 mm. The torso hull witness is about 20.009 mm from its original surface;
+the query filled a mesh void near the shoulder. This is not observed arm/leg
+interpenetration. Preserve the initial negative diagnostic and its correction
+under `outputs/rl_sim/wmj_v1/collision_geometry_a02/`. The broad-phase checker
+now records unverified mesh-hull overlaps and zero-distance queries as UNKNOWN;
+it cannot classify them as actual collision or silently pass them. The full
+domain's refined self-collision admission contract was confirmed on 2026-11-06:
+convex broad phase followed by original-triangle surface and containment
+checks, with ambiguous cases retained as UNKNOWN and no added clearance.
+The user additionally confines this work to offline initialization-range and
+seed selection. Cache its results in the atlas/seed bank; never execute mesh,
+self-collision or IK scans inside policy rollout, learned dynamics or runtime
+reset. Runtime reset selects preaudited seeds. Preparation wall time remains
+part of total T90 cost. This does not certify subsequent motion trajectories.
+CONTACT, EXEC, native collision masks and reset semantics remain unchanged.
+
+The first offline 9x7x3 racket-position scan completed in 264.24 s with four
+IK starts per point: 119/189 points have at least one admitted static pose;
+70 remain UNKNOWN. Do not interpret this as an apex-target or dynamic
+transition feasibility result, remove unknown targets, or claim a warmed
+complete-state seed bank already exists. Evidence is
+`wmj_v1/domain_atlas_20261106_a01.json` with preserved partial reports.
+The following four-lane CUDA probe of the substep-observed/history-augmented
+step did not achieve byte identity between native and V324 EXEC paths: 66
+leaves differ on the first control tick (maximum generalized-position/
+velocity differences approximately 3.26e-9/9.23e-7). Acceleration and solver
+state also differ. The probe stopped before phase restoration tests; preserve
+`wmj_v1/gpu_replay_20261106_a01/` as INCOMPLETE with a failed execution pair.
+It does not qualify the 1024x64 collector. Do not silently loosen tolerances,
+change CONTACT/EXEC, or present this small-shape result as a conclusion about
+the actual collection graph. Subsequent user QA explicitly accepts these
+tiny floating-point differences and rejects byte identity as an operational
+gate. Preserve the original result but assess physical state at 1e-5 position,
+1e-4 velocity/other-observable absolute numerical smoke tolerances; solver
+working arrays remain diagnostics. Shapes, identities and discrete-event
+semantics still matter. Do not recompile or repeat large comparisons merely
+to remove insignificant floating-point differences. Complete the outstanding
+state-restoration checks using the accepted execution evidence, then proceed
+with collection/model implementation. These thresholds are numerical smoke
+checks, not substitutes for the registered model/task accuracy gates.
+
+The 2026-11-06 common observation-transition check passed 200 native camera
+ticks each for S01 and S05, including complete seed restoration and 59 valid
+paired samples per lane at one second. Quiet observations matched exactly;
+the AR1 fused graph differed by at most 2.981e-8, within the recorded 1e-6
+observation tolerance. RNG, clocks and masks matched exactly. Evidence is
+`wmj_v1/history_rollforward_native_20261106_a02.json`; its scope is the actual
+camera pipeline with supplied ball trajectories and a stationary robot,
+not learned dynamics or task-training performance. The first attempt stopped
+on an obsolete floating-point byte comparison; it is not a physics failure.
+The data layer now supports immutable numeric chunks with continuous 200 Hz
+states, distinct action streams, five physical substeps, full-seed locators,
+stable acquisition-group partitions and train-only normalization. This does
+not establish that the full-domain collector or model trainer is complete.
+
+The independent P_collect/P_model/P_start/P_goal samplers are implemented.
+P_model balances independent events before overlapping windows; missing
+required model/start buckets stop with an explicit collection shortage.
+P_goal records redistribution to global coverage before a frontier or review
+population exists. All fitting/branch data are train-only, and final test
+data cannot guide active collection. Physical labels now track 1 ms contact
+edges, duration and integrated normal force across control/chunk boundaries;
+held setup releases and force-free geometric touches do not count as
+controlled hits. Actual apex labels interpolate observed velocity crossings.
+The finite ball/racket prism feature module uses the actual compiled polygon.
+Its 128-point CPU comparison against the original compiled MuJoCo model
+passed with maximum signed-distance error 7.694e-8 m, including 10 overlaps;
+see `wmj_v1/contact_surface_20261106_a01.json`. This is contact-feature
+geometry evidence, not a change to CONTACT or a learned collision result.
+The corresponding WMJ CPU suite passed 119 tests. Subsequent user QA confirms
+incoming world vertical velocity [-3.5,-1.0] m/s, horizontal speed norm <=0.5
+m/s and an 80--160 ms proposed contact lead. Every new ball initialization
+has exactly zero angular velocity, with no random initial spin. Natural
+collision-induced rotation remains unchanged and recorded; it is neither
+clamped away nor exposed to the actor. The user additionally adopts the
+existing FPLC-supported simulation/contact/control baseline as a highly
+similar proxy for hardware. Reuse it and focus new model-fidelity work on
+learned-versus-MJX action/outcome prediction; retain truthful MJX/hardware
+evidence labels. No full-domain collection or world-model fitting is claimed
+from these component checks alone.
+
+The guarded `run_wmj_v1_collect.sh` / `world_model.collect_teacher` entry now
+executes cached-pose setup, 128 real control-chain warmup ticks, actual future
+racket previews, zero-spin ball placement, and continuous 64-step chunks.
+New trials invalidate old ball/camera history but retain warmed q_ref, RMP
+state, delays and shared phases. The first 4-lane attempt exposed and fixed a
+native cache interface error: `ball_obs_valid_pos/vel` are last-valid vectors,
+not boolean flags. Preserve its INCOMPLETE artifact. The second attempt,
+`wmj_v1/teacher_collection_20261106_a02`, recorded 512 transitions, four
+controlled releases and four actual apexes in 160.75 s including startup.
+The outstanding precontact full-seed replay passed (qpos max 9.03e-9, qvel
+max 1.82e-5, equal contact edges). Initial spin is zero; naturally generated
+rotation is recorded. This diagnostic does not qualify 1024-lane coverage,
+all four generator strata, a holdout split, or model accuracy. All four lanes
+happened to fall in the training partition. The 127-test CPU suite passed;
+the subsequently added task-bound labeling test also passes.
+
+Collection stores task-bound violations separately from numerical/other-body
+collision masks, retaining physically useful misses and failures. Out-of-task
+initial states are not eligible as normal imagination task starts. The two
+chunks of a trial preserve controller and paired-history continuity. Dataset
+readers can join continuous chunks for 128-step validation, but reject episode,
+context and endpoint discontinuities. Robot self-collision remains offline.
+
+The 1024-lane `teacher_collection_20261106_b03` worker committed all 20 rounds
+in 428.74 s: 1,310,720 transitions, 10,089 physical entries, 9,946 releases,
+9,064 controlled releases and 9,110 actual apexes. All 119 admitted static
+regions were sampled; the 70 UNKNOWN atlas regions remain separate. Unique
+acquisition groups split into 8,145 train, 1,054 validation and 1,041 test.
+The integrity audit authenticates every chunk and full seed, verifies identical
+shared chunk endpoints and five-substep endpoints, and confirms zero initial
+spin in all 10,240 trials. Only 3,447 initial states satisfy task bounds; remote
+robot-ID balls and out-of-task trials are retained as dynamics data, not normal
+task-start seeds. Ball-model labels are valid in 6,525,349/6,553,600 substeps.
+See `wmj_v1/collection_integrity_20261106_b03.json`.
+
+Resource qualification of b03 is **not clean**: the memory supervisor requested
+SIGINT, but the logging pipeline kept a shell as its child and failed to pass
+the signal to Python. The worker completed; the supervisor correctly returned
+75 with `stop_requested=true`, and there was no OOM. Preserve both statuses.
+The launcher now replaces that shell with the worker and retains tee through
+process substitution; a real-process regression reproduces the old timeout
+and verifies the fixed signal/exit/log behavior. Immutable archive writes and
+reads now release their own file cache after fsync/loading, without changing
+files or relaxing limits. Do not discard the authenticated teacher data or
+claim a clean resource-guard run from it. The b02 attempt stopped on an
+under-recorded repeated replay threshold; b03 records max qpos/qvel differences
+1.95e-6/1.03e-3 with identical contact edges as a diagnostic, preserving the
+original tighter numerical-smoke status rather than repeating byte comparisons.
+
+The structured robot and finite-contact network modules now exist. Robot
+inputs remain 35 measured-state/delayed-command values; outputs are 14 q/dq
+residuals. Contact uses 19 physical local features, including contact age,
+with six velocity/spin increments and two auxiliary event heads. Far-field
+and lateral-miss impulses are exactly zero; native ball-local angular velocity
+is converted to world coordinates. Synthetic CPU checks verify robot command
+learning/gradients, own-state recursion, frame conversion and finite geometry.
+These are unqualified model components, not a fitted world model or actor
+training result. No learned dynamics or imagination update has run yet.
+
+The next opt-in entry is `run_wmj_v1_fit_robot.sh` / `world_model.fit_robot`.
+It fits the registered 35->128->128->14 execution component on the immutable
+teacher snapshot, with train-only normalization, batch256, Adam3e-4 and gradient
+norm1. The initial short probe is 512 updates: 256 explicit single-step
+bootstrap updates followed by 256 own-state, eight-control-step recursions.
+This module conditions on recorded delayed commands; it is not a composed
+measured-feedback world. Losses use q/dq scales0.01rad/0.10rad/s, racket
+position3mm and normal speed0.05m/s. Fixed validation samples report endpoint
+errors for1/8/32/64/128 controls by region, with no final-test access and no
+world-readiness claim. Checkpoints contain parameters, Adam, normalizers,
+CPU/JAX RNG, source/data hashes and active sampling chunk. Resume rejects
+changed data/model/loss/sampler semantics. The corrected exec/tee launcher and
+per-file cache release retain all existing resource limits.
+
+The first two robot-fit attempts (`robot_fit_20261106_a01/a02`) both stopped
+during train-only normalization, before any optimizer update. Their memory
+supervisor correctly delivered SIGINT and the workers wrote INTERRUPTED
+reports. Peak scope usage was0.69/0.99GiB with at least20GiB host memory
+available; the stop cause was sustained cgroup PSI pressure, not capacity or
+OOM. A02 selected only robot streams and retained input cache, but still hit
+the existing PSI-only rule. On 2026-11-06 the user approved a WMJ-V1-only
+conditional PSI rule: sustained PSI triggers a stop only when scope usage is
+at least8GiB OR host available memory is at most13.5GiB. Otherwise elevated
+PSI is logged as a warning. The explicit `--wmj-v1-conditional-psi` launcher
+flag preserves the shared supervisor's independent-PSI default for all old
+callers. PSI bands and three-sample streak,10/11GiB kernel limits,9.7GiB
+proactive stop,6GiB/two-sample host stop,zero swap,temperature and storage
+guards remain unchanged. No physics, CONTACT, EXEC or model version changed.
+
+The conditional-PSI robot probe `robot_fit_20261106_a03` completed512 updates
+and validation in40.62s, peak scope3.984GiB,24 recorded PSI warning samples,
+32C maximum GPU temperature and no stop/OOM. Overall validation racket-position
+P95 at1/8/32/64/128 controls was0.404/1.210/7.959/43.280/169.017mm;
+normal-speed P95 was0.0286/0.0283/0.0817/0.3301/0.8407m/s. This is a
+short-horizon component result, not a qualified world. The saved update512
+checkpoint SHA is `da7f2de59fe5595ad3e1c9d4528f3a5e11e5c57405d6d1b88772ce01736f8788`
+(metadata JSON). The next component continuation retains Adam/scales/RNG and
+extends the preregistered8->16->32->64 window curriculum at zero-based updates
+256/1024/2048/4096, initially ending at6144. Resume checks every consumed
+update's window and rejects retroactive changes; no actor/critic is updated.
+
+The continuation `robot_fit_20261106_a04` completed through update6144 in
+229.15s, peak scope2.707GiB, with no resource stop. Overall racket-position
+P95 at1/8/32/64/128 controls became0.441/0.401/0.455/0.452/0.498mm;
+normal-speed P95 became0.0256/0.00454/0.00356/0.00392/0.00510m/s.
+Regional tails still exceed3mm (worst regional P95 at128 controls5.82mm),
+so this is not a regional or composed-world qualification. Checkpoint metadata
+SHA: `803ce14418cd5260c20f65ae124080ffa9c436e73629fac20b91509aa7f189ac`.
+
+`run_wmj_v1_fit_contact.sh` adds the independently trained contact component
+using the same guarded resource contract and recorded robot FK. It predicts
+1ms contact dv/domega and entry/release auxiliary logits; its own ball state
+and geometric contact age propagate across all substeps. Actual finite mesh
+overlap gates impulses. No future real ball state corrects autoregression.
+P_model draws128 contact,64 miss/failure,38 robot-ID and26 free-flight
+windows, with exclusive primary labels and independent-event balancing.
+Failed valid trajectories remain data; invalid physics is masked and missing
+buckets fail explicitly. The initial probe uses256 single-step-bootstrap
+updates then256 eight-control-step recursive updates, batch256, Adam3e-4,
+gradient clip1. Normalized losses cover position3mm, velocity0.08m/s,
+spin30rad/s, balanced entry/release BCE and observed-release outgoing velocity
+and analytic no-drag next apex1cm. Fixed validation reports1/8/32/64/128
+controls and regional errors; no final-test data, teacher actor supervision
+or world-readiness claim is permitted. Source/optimizer/RNG/data identities
+are saved for exact continuation. CONTACT and EXEC remain V324-exact.
+
+Contact attempt `contact_fit_20261106_a01` stopped before updates because the
+chunk checker treated native FP32 ball-quaternion renormalization (maximum
+1.19e-7, with identical position/q/dq/velocity) as a discontinuity. The checker
+now permits equivalent quaternion differences up to1e-6 while retaining exact
+translational and joint endpoints; a regression protects real discontinuities.
+`contact_fit_20261106_a02` completed512 updates in48.48s, peak2.128GiB and
+no resource stop. Its8-control outgoing-velocity/apex P95 errors were
+0.990m/s/0.140m;128-control errors were3.343m/s/0.254m. These are negative
+component results, far outside the registered budgets. Metadata checkpoint
+SHA `59e712bbcc35681ee0d1f9c843e4ffe82dace61e76922af71379b9e5eee13b78`.
+The next same-recipe continuation extends fitting to4096 updates within the
+20000-update budget before any architectural or physics change is considered.
+
+`contact_fit_20261106_a03` finished4096 cumulative updates in200.03s. Its
+8-control outgoing/apex P95 improved to0.758m/s/0.107m, but remains a clear
+negative result;128-control P95 is2.436m/s/0.172m. Metadata SHA:
+`69942f4c14ba7aafd96b2cb98f1928bd129c56ea5786ac35fd602af3ac2da715`.
+No contact model or actor is promoted. Historical fitter `full_update_s`
+fields through these runs timed GPU execution plus transfer, excluding CPU
+sampling/I/O. Their total training/run wall times remain correct. New records
+separate `kernel_update_s` and the full data-read/sampling/transfer/update time.
+
+The subsequent real-trajectory FK audit found a structural omission in the
+current seven-joint proxy: native `LegWaist-0..5` move slightly while holding
+their references. Treating all non-arm ancestor coordinates as one fixed
+context produces global-context position P95 around0.95--1.20mm and maximum
+3.54mm over3456 sampled endpoint poses. Freezing each lane's own support
+state still leaves up to5.56mm drift within a320ms chunk. At384 actual full
+seed poses, including all measured q restores native FK agreement to at most
+0.51micrometers. The prior robot-component error figures compare two FK
+outputs under the same approximate support context; they do not certify
+absolute native racket pose or contact geometry. This is one identified
+contact-input error source, not proof it explains all contact-model error.
+Evidence: `wmj_v1/fk_context_20261106_a01.json`, SHA
+`2cd8fe8b9c13d50214fd883c9cf7043056cf5f97c7f5f60ae2a55cf733435439`.
+Adding the six support-chain q/dq states to the internal execution model and
+using native full-chain contact labels is pending user QA. Actor969/action7,
+the V324 simulator, CONTACT/EXEC and WMJ-V1 would remain fixed. No such model
+expansion or data replay has been implemented or started.
+
+`world_model.control_rmp` now represents native RMP ring indices per lane and
+vmaps unchanged singleton native calls. Three distinct buffer phases match
+separate native executions; per-joint output delay and its derivative are
+tested independently. This prepares mixed-phase imagination seeds but does
+not yet constitute the complete projected-reference world control path.
+
+The current full WMJ CPU suite passes139 tests (29.34s). It includes archive
+subset authentication, no future-state correction in autoregressive loss,
+and rim/underside contact normals and contact-point spin velocity. Finite
+contact features now use the actual closest prism normal and midpoint rather
+than the upper-face normal at every rim. This affects only the unqualified
+learned model's features; the V324 collision implementation is unchanged.
+
 ### 2026-10-10 — V173 GPU0 checkpoint resumed on GPU1
 
 The user explicitly requested moving the stopped GPU0 continuation into
@@ -23475,3 +25867,1100 @@ are retained in `actual_dual_training_start.json` in the admission directory.
 GPU1's post-reexecution console did not refresh although CSV updates continued;
 `pp_gpu1:57` also contains a read-only CSV progress pane (`%185`). It does not
 send commands to or modify the trainer.
+
+WMJ-V1 2026-11-10 frozen attribution (user-approved after the bounded pilot):
+reuse baseline/u10/u20 and the existing fixed128 S01 population; no parameter,
+reward, constraint, CONTACT or EXEC changes. The registered plan is
+`wmj_v1/attribution_plan_20261110_a02.json` (a01's pre-run `near` group-name
+mistake is corrected to canonical `near_side`; both records are retained).
+Native replay remains128 lanes, both modes, seed2026110925. Thirteen existing
+cases are selected for model attribution, explicitly conditioned on recorded
+apex availability plus nominal_23; this subset is not a new success benchmark.
+The optional native numerical observer reports already-computed collision
+geometry and release position, defaults off, and cannot overwrite task labels.
+Every write shares the original6GiB/8GiB contract and an additional8MiB phase
+cap including scope logs. No optimizer is invoked.
+
+The frozen phase is complete, without promotion or task qualification. Evidence:
+`wmj_v1/frozen_attribution_verification_20261110_a01.json`, SHA-256
+`1618831cd8664a3d6a62a3d1e25a979a8a6893c92cff61db5a8dfae91ed9f106`;
+progress `wmj_v1/implementation_progress_20261110_a31.json`, SHA-256
+`5610dfb48d38e12729135ec0e4650669c32abcf850cd35645a1c3b7ab3aa2b84`.
+
+In the13 conditioned diagnostic cases, u20 first-release velocity error P95
+is0.02781/0.02764m/s and first actual-apex3D error P95 is0.00319/0.00434m
+(deterministic/sampled). Longer own-recursion still diverges; neither these
+conditional values nor more hits qualify the full fixed128 domain. The model
+also predicts the reduced first apex. Native nominal_23 deterministic u20
+receives hit+16 versus apex-height cost-26.41; the lower bounces already have
+negative reward. In H64 deterministic output-bias probes, target-bootstrap
+summed gradient norms are0/0.0077/0.0073 for baseline/u10/u20, while apex-height
+norms are22.32/7.60/4.45. This local diagnostic does not evaluate the whole
+training-pool gradient.
+
+For u20, the model direct-return automatic directional derivative is+4.53258;
+MJX central differences at output-bias offsets0.0003/0.001 are-29.35380/-11.93438.
+World forward differences also reverse direction at these scales. Additional
+1ms diagnostics find contact-mode changes at some scales, with discrepancies
+also at scales without a logged contact-entry/active/release/apex change.
+Projection active sets and internal soft-contact switches are not fully logged.
+The mode-diagnostic zero-bias direct-return centers differ from differentiated
+course centers by up to0.00164/0.03567/0.00258 per term/case; numerical/computation
+graph sensitivity is unresolved. Do not claim exact local-Jacobian validation
+or infer that every actor gradient is wrong. Further training/reward changes
+are not authorized. The proposed next scope is modulewise frozen diagnosis of
+control/projection+FK, execution proxy and soft contact, awaiting user QA.
+
+The original evaluator function was reused verbatim (AST SHA-256
+`2834904d42de00c7f510d3f1882ad91cc75d2706184890e3a714fd698b1aaeae`).
+Its u20 rerun identifies nominal_23 contact with `mjx_ball_contact_wrist/right07`
+in deterministic mode and `mjx_ball_contact_forearm_b/right06` in sampled mode.
+Some rerun outcomes and times differ from historical evaluations; names belong
+to this rerun. The world does not directly represent these non-racket ball
+contacts. This gap is separate from offline initialization self-collision audits;
+no runtime mesh/self-collision computation was added.
+
+All8 worker attempts are retained, including3 corrected implementation/preflight
+failures. Sum worker wall time is1385.414s, including failed attempts; it is not
+whole-project T90. Checkpoint/optimizer/model updates are all0. Actual physical
+initial inputs and complete controller/camera/history memories compare exactly;
+whole native scratch/model-tree hashes are not used as physical equality gates.
+The first native diagnostic's `matched_apex_max_abs_delta_m` was incorrectly
+matched using goal `arrival_hit`; use the immutable verification report's corrected
+physical-impact-id statistics, not that old aggregate. Original raw events remain.
+Relevant tests:29 passed,1 existing networkx deprecation warning,14.57s. Outputs
+were5.027MiB before the final receipt, under8MiB; the original6GiB/8GiB limits,
+CONTACT/EXEC, Actor969, residual-off candidate8192, default auxiliary4096,
+rewards and constraints remain unchanged. Full task success remains0, with16
+fixed-evaluation UNKNOWN cases; advanced courses and global T90 are unfinished.
+
+### WMJ-V1: authorized frozen module-gradient diagnosis (2026-11-10)
+
+The user authorized modulewise finite-difference and private high-precision
+checks after the frozen u20 attribution found directional sensitivity. The
+immutable `module_gradient_plan_20261110_a01.json` selects32 distinct existing
+training regions, independently of frozen evaluation outcomes. Probe FK,
+projection, eight controller ticks with frozen encoder input, execution network
+and transition, auxiliary network, native contact geometry and soft contact.
+Compare FP32 production arithmetic with private FP64 diagnostic copies, using
+identical checkpoint values, JVP/VJP and five perturbation scales. Log discrete
+branch fingerprints and forward-versus-differentiated primal discrepancies;
+these checks do not qualify task success or authorize model promotion.
+
+Launch only through `run_wmj_v1_module_gradients.sh`, GPU1 UUID ending661e.
+No parameter, reward, constraint, native CONTACT/EXEC or production-precision
+changes are authorized. Total new phase output is limited to1MiB from allocated
+root usage6421979136bytes; existing6GiB/8GiB and resource protections remain.
+The actor is frozen u20, auxiliary candidate8192 is frozen, residual remains off,
+and default auxiliary4096 is unchanged. Results pending; further training or
+behavior changes require another user QA decision.
+
+The first module worker completed without updates. Within the same authorized
+module scope and1MiB aggregate cap, `--detail-from` reproduces the identical
+source/capture and pairs FP32/FP64 projection branches by source, then isolates
+auxiliary raw-feature rounding from normalized-input MLP arithmetic. It changes
+only private diagnostic closures. The second worker must authenticate the first
+result and exactly match its state/parameter digests and capture metadata.
+
+### WMJ-V1: frozen module-gradient diagnosis results (2026-11-10)
+
+This authorized phase is complete. Evidence:
+`module_gradient_verification_20261110_a01.json` SHA-256
+`5b6edb2d528cc4cf8ca2cc8e6c3d45d04440f8f694c465c25e13e4eeb74d9b41`;
+progress `implementation_progress_20261110_a32.json` SHA-256
+`20c1ff76f35d64e404961db481e4e7033dd043b58334934c64bdea47e9d04117`.
+Both guarded GPU1 workers exited0. Total worker time268.560s; this is neither
+training throughput nor whole-project T90. Actor/Critic/world updates are0.
+All previously recorded world-model sources and parameter digests are unchanged.
+
+The32 independent training sources produced21 first-contact states;11 missing
+contacts remain explicit. All nine modules admit close local FP64 finite-
+difference/JVP agreement at sufficiently small scales. This does not prove
+full H64 policy-gradient agreement or certify every direction/branch. At
+normalized-input perturbation epsilon0.001, auxiliary FP32 derivative relative
+error P95 is0.55147: LegWaist q1/q3 perturbations vanish in21/21 cases and q2
+in17/21. Directly perturbing normalized MLP inputs reduces P95 to0.002058.
+Retaining small feature increments and normalization in private FP64 arithmetic,
+with the original FP32 MLP, gives0.002808. Merely casting already rounded
+features to FP64 cannot recover lost increments; no production fix was applied.
+
+Four of32 projection cases change hold/accept branches between precisions
+(bank rows38/348/717/565;row38 also changes current_safe). Do not promote a
+blanket FP64 replacement. Among14 common responsive cases, cross-precision
+projection tangent relative difference P95 is0.000257; eight controller ticks
+with frozen encoder input give0.07005, maximum0.19996. Internal active sets
+and clipping are not fully logged. Finite-difference branch counts compare
+plus/minus endpoint fingerprints; they do not certify all internal branches
+or center-versus-endpoint equality. Best-over-epsilon aggregate errors must not
+be presented as paired task improvements across different responsive populations.
+
+Relevant checks:22 passed,1 pre-existing networkx deprecation warning,13.58s;
+launcher syntax passed. Publication before final receipt used0.750MiB of the
+1MiB phase allowance. V324 CONTACT/EXEC, WMJ-V1, Actor969, reward, constraints,
+residual-off candidate8192 and default auxiliary4096 remain unchanged. Previous
+zero16-hit task success,16 UNKNOWN initializations, long-horizon errors and
+non-racket ball-contact gaps remain unresolved.
+
+Next proposal, NOT authorized: build an independent mixed-precision imagination
+candidate retaining small physical-state increments and normalization in higher
+precision, while keeping MLP computation and native V324 control/projection in
+FP32. Compare frozen H64 gradients, action effects, forward branches and runtime
+against the existing path and a private FP64 reference. No updates or default
+replacement; proposed new output cap2MiB. Wait for user QA before implementation.
+
+### WMJ-V1: authorized mixed-precision frozen candidate (2026-11-10)
+
+User QA now authorizes an independent numerical candidate and frozen validation,
+not training or default replacement. `mixed_precision_plan_20261110_a01.json`
+pins the same32 independent training regions and u20/auxiliary8192 checkpoints.
+The mixed candidate preserves physical state increments/normalization and
+FK/contact in FP64, world MLP operations in FP32, V324 control/projection in FP32,
+and existing FP32 camera/history/actor interfaces. The private reference promotes
+physical/world-MLP/control arithmetic; camera/history/actor remain FP32 and it
+must not be called a globally-FP64 mathematical reference. Production functions
+and V324 CONTACT/EXEC remain unchanged. This candidate is opt-in S01 only.
+
+Preregister H64seven-output-bias JVPs and four-scale finite differences along a
+shared fixed direction and each mode's summed-gradient direction. Record
+center/plus/minus logged modes, primal differences, warm forward/JVP times and
+all exclusions. Compare all480 existing authenticated MJX action forks against
+the same candidate; no new native learning labels. Use the existing action gate;
+gradient screening requires improvement at two of four shared-direction scales,
+without claiming full-task success. Total phase output<=2MiB and original6GiB/
+8GiB protections remain. Only `run_wmj_v1_mixed_precision.sh` may launch this
+GPU1 diagnostic. Actor/Critic/world weights, rewards and constraints are frozen.
+
+### WMJ-V1: mixed-precision frozen validation results (2026-11-10)
+
+The authorized candidate/validation phase is complete, without training or
+promotion. `mixed_precision_verification_20261110_a01.json` SHA-256
+`57ef809b736e0b39f4c458bbd837acf2845aa693d3033c3a3c604b18355d4a21`;
+progress `implementation_progress_20261110_a33.json` SHA-256
+`de27a31164764f50ecbd94878e9927e4214255f9d1e19ab8fc7d3d9d8ce86e15`.
+All30 relevant tests passed (one existing networkx deprecation,14.55s), and all
+six worker attempts are terminal. Total worker time535.595s includes two
+corrected failures; it is not whole-project T90. Parameter updates are0.
+
+The candidate enforces physical q/dq/ball/integration/normalization FP64 and
+world-MLP/control/projection/camera/history/Actor FP32. Production functions,
+checkpoints, native CONTACT/EXEC and default training remain unchanged. Candidate
+training-pool/checkpoint integration has not yet been completed or authorized.
+The private reference promotes physical/world-MLP/control arithmetic but retains
+FP32 camera/history/Actor; do not describe it as a globally-FP64 reference.
+
+For paired unchanged logged modes and a shared output-bias direction, median
+and mean direct-return derivative relative errors improve at all four epsilon
+scales; P95 improves at only one. At epsilon0.001, the same23 informative cases
+have median0.681->0.409 and P951.048->1.291. Because the preregistration did not
+select a single summary quantile, these results are partial evidence, not a
+formal gradient-gate pass. Large errors and reverse directions remain. Across
+center rollouts, mixed versus FP32 has2/32 changed logged modes and49micrometer
+ball-position difference P95 over1091 shared valid controls. The high-precision
+reference changes17/32 modes and has one JVP-primal mode discrepancy, so it
+cannot replace the native controller on the strength of local derivative checks.
+
+All480 saved MJX action forks were compared. The original action-effect gate
+passes:216 resolvable outgoing-velocity cases and226 apex cases, with direction
+agreement96.76%/97.35%, versus95.83%/96.46% for FP32. All125 missing native
+release cases and129 missing apex comparisons remain accounted for. The124
+numeric outcome arrays were losslessly packed into dtype slabs, reconstructed,
+and both comparison summaries recomputed exactly. This slight directional gain
+is not proof of task learning or whole-model qualification. Warm forward times
+for32 lanes/H64 are0.2178s FP32 and0.2613s mixed (~20% increase); this does not
+measure the1024-environment trainer. Full16-hit success remains0 from prior
+policy evaluation, with16 UNKNOWN initializations and previous model/contact gaps.
+
+The first mixed worker failed at shape preflight because x64 promoted integer
+reductions; a regression-tested wrapper retains the original bounded int32 goal
+counters. The first action worker completed computation but its many-array
+archive reservation exceeded the phase allowance. The successful retry preserves
+all outcomes using lossless packing; no budget was expanded or evidence removed.
+Pre-receipt phase output is1.461MiB within2MiB. Original6GiB/8GiB limits remain.
+
+Next proposal is NOT authorized: complete candidate training integration and
+no-update/full-save-restore checks, then strictly paired FP32/mixed trials from
+the same u20 Actor/Critic/Adam, at most10 Actor and40 Critic updates each, with
+world frozen and fixed128 deterministic/sampled MJX evaluation after each arm.
+No default promotion. One existing full learner archive is23,783,963bytes,
+larger than the remaining original total budget. A separate user QA asks whether
+to raise the total cap6->6.125GiB and allow128MiB for that prospective phase;
+retain8GiB free and all existing evidence. Neither trial nor budget increase is
+permitted until answered.
+
+### WMJ-V1: authorized paired precision exploratory trial (2026-11-10)
+
+User QA authorizes FP32 and mixed arms, each at most10 new Actor/40 Critic
+updates from the same authenticated u20 Actor/Critic/target/Adam state. Both
+arms first require full1024-lane/H64 no-update validation, exact complete-state
+save/restore, matching next sampling/noise, and a common microbatch. Use fresh
+native-source pools, retaining identical parent sampling/goal RNG; do not carry
+old imagined drift into the numerical comparison. Explicit FP32 random normals,
+int32 random indices and FP32 optimizer/critic interfaces prevent an x64-induced
+change in stochastic or optimizer semantics. The logical768+256 pool and H64,
+learning rates, task, rewards, constraints and frozen world remain unchanged.
+No default promotion or automatic course advancement is authorized.
+
+The immutable `paired_precision_plan_20261110_a01.json` pins both arms and gates.
+After each arm reaches absolute Actor update30/Critic120, run the same fixed128
+cases in deterministic and sampled modes, retaining16 UNKNOWN. Report matched
+success/hits/first apex/failure/contact outcomes and throughput; a return or hit
+increase alone cannot qualify the candidate. New standalone guarded GPU1
+launchers are `run_wmj_v1_paired.sh` and `run_wmj_v1_evaluate_paired.sh`.
+The user also explicitly increased the total output allowance6->6.125GiB and
+allocated this phase128MiB, retaining at least8GiB free and all prior evidence.
+Perform storage preflight before learning; if it cannot fit, stop and ask.
+WMJ-V1 and native V324 CONTACT/EXEC remain fixed. Implementation, admission and
+the authorized paired trial are now complete as recorded below.
+
+### WMJ-V1: paired ten-update evidence, no promotion (2026-11-10)
+
+`paired_precision_verification_20261110_a01.json` (SHA-256
+`e9271f001036e6b2c97e6ecd3fc3d93e805117aeba70546f4315178fe1cbfccf`)
+and `implementation_progress_20261110_a34.json` record the complete experiment.
+Both arms inherit the exact u20 Actor/Critic/target/Adam/RNG, recreate the same
+1024-source native pool, and use a common256 microbatch/H64. All152 initial leaf
+values agree; only seven physical-state fields become FP64 in the mixed arm.
+Initial source draws agree, excluding the deliberately distinct precision-mode
+identity. Later valid rows and reset lifecycles can differ. Both no-update gates
+and final full-state disk restore/next sampling/noise checks pass. The56 focused
+regression tests pass. All175 previous numerical/worker source files remain
+unchanged; the remaining `contracts.py` change only permits the user-approved
+6.125GiB storage cap with the same8GiB free floor.
+
+Each arm completes exactly10 new Actor/40 Critic updates, reaching absolute
+Actor30/Critic120. World weights, reward, constraints, V324 CONTACT/EXEC and
+WMJ-V1 stay fixed. Final learner manifests are
+`paired_fp32_train_20261110_a01/learner_u030.json` (SHA-256
+`f89752e5b229956543f67187d2d1599581b3164b22bca6903c93bf2d3b48e6f3`)
+and `paired_mixed_train_20261110_a01/learner_u030.json` (SHA-256
+`fc23947801ee60c6dc728fbbe181d20d569537d950e75cbca165ee619da8097a`).
+Matching standalone actor exports and every command/source snapshot are linked
+by the verification and current JSON. These are opt-in experimental artifacts.
+
+The fixed128-case evaluations retain112 admitted and16 UNKNOWN cases. Three-hit
+counts (deterministic/sampled) are24/26 at u20,25/22 for FP32 u30, and24/23 for
+mixed u30. All have zero12-hit and16-hit task successes; maximum observed hits
+remain8. Both new actors have71/72 orientation failures and0/1 other-ball
+collisions. The sampled collision moves to `mirror_15`; the earlier u20 collision
+was `nominal_23`. A changed failure order is not evidence of improved safety.
+
+On the36/41 cases with a first actual apex in all three policies, mean absolute
+height errors are12.820/11.951cm at u20,12.483/11.594cm for FP32, and12.464/11.561cm
+for mixed. The small mean improvement does not repair the large remaining task
+error, and missing apexes remain explicit in the full case table. Warm end-to-end
+updates average11.093s FP32 and11.010s mixed; the gradient/return portion averages
+6.073s versus6.808s. This single paired run is not a formal throughput benchmark
+or proof of numerical equivalence/superiority. Earlier gradient-tail and branch
+sensitivity remain unresolved.
+
+Storage bookkeeping was finalized through additional frozen checks, retaining
+all earlier evidence and reusing exact initial archives. Repeated seed metadata
+is referenced with its authenticated bank and reconstruction hash. No required
+data was removed. The final receipt reports about105.38MiB of phase output,
+within128MiB, and about21.79GiB free. All nine guarded workers exited normally.
+No default model was replaced, no stage advanced, and no further updates are
+authorized. The next proposed scope is frozen attribution of height/orientation
+failure and the `mirror_15` collision, using existing sources/checkpoints, no
+parameter/reward/constraint changes, and at most2MiB of new evidence. It requires
+the user's next QA answer before any work starts.
+
+### WMJ-V1: authorized frozen attribution after paired trial (2026-11-10)
+
+User QA now authorizes the preceding frozen attribution scope. The immutable
+`paired_attribution_plan_20261110_a01.json` (SHA-256
+`b6aa8ae2bf4252297051a95a734e5ebe8141ff2d5761e9277b2cf4539a0ccb19`)
+pins u20 and both u30 Actor/EMA-critic checkpoints, the existing32 independent
+training sources, H64, common FP32 exploration draws and unchanged reward.
+Decompose full Actor-parameter derivatives into the ten existing reward terms
+and frozen target bootstrap. A separate derivative of minimum pose-angle margin
+is diagnostic only and must never enter the training return. Probe the actual
+u20-to-u30 parameter displacement as an immutable finite-difference argument;
+retain mode-changing cases and do not claim all1ms branches are fixed. Compare
+u20 under both precision paths to separate numerical and checkpoint effects.
+
+For `mirror_15`, replay each u30 actor's original sampled128-case evaluator
+graph and inspect contact pairs on the host. Verify replay outcomes and matched
+apex differences, retain any discrepancy, and report contact body/geom IDs and
+the last20 control states of the selected case. No new scenarios or optimizer
+calls, no reward/constraint/physics changes and no default promotion are allowed.
+Use `run_wmj_v1_paired_attribution.sh --task gradients|collision` with the existing
+GPU1 and resource guards. Entire phase output is limited to2MiB; total allowance
+stays6.125GiB with at least8GiB free. Prior artifacts remain immutable.
+
+### WMJ-V1: frozen post-pair attribution recorded (2026-11-10)
+
+Evidence is `paired_attribution_verification_20261110_a01.json` (SHA-256
+`60e634a21977924ad09a459682014769d6fcafc8263415b7298b31d73a17d1b3`),
+with progress `implementation_progress_20261110_a35.json`. No Actor, Critic or
+world parameter was updated; all179 preceding world-model source files,
+V324 CONTACT/EXEC, constraints and default rewards remain unchanged.
+
+Across the four u20/u30 precision combinations on the32 independent sources,
+height has a substantial direct gradient, while discrete hit, survival and
+failure terms have zero direct pathwise gradients.27--29 sources terminate
+inside H64; terminal failure does not bootstrap. Target-value gradient norms
+are only0.064--0.265% of height-term norms. These norms are not additive shares.
+XY/height gradients compete locally (cosine about-0.84 to-0.86); height/pose
+margin directions are not consistently opposed. Actual finite perturbations
+change13--20 recorded mode traces, so local derivatives cannot be presented
+as guaranteed finite native improvements. Small gradient-sum discrepancies
+(0.069--0.119%) remain recorded against the original strict numerical check;
+they were not used to justify repeated gradient runs or threshold changes.
+
+The original `mirror_15` collision body remains UNKNOWN. Extracted-closure
+replays differ in24/18 case outcomes; mixed replay contacts `right07` wrist.
+The complete original-entry replays still differ in17/19 outcomes; FP32 ends
+at ball-domain failure and mixed contacts `right06` forearm at1107ms versus
+the original1106ms failure. These are observed replay contacts, not proof of
+the original contact identity. Preserve both negative reproductions. The
+entry observer only reads returned host data; use a fresh process and
+`--task collision_entry --entry-actor u30_fp32|u30_mixed` for each actor because
+the preserved native loader rejects a second stack in one process.
+
+All36 relevant tests pass. Six worker attempts, including early failures,
+are retained; total new evidence is1,863,680 bytes, below2MiB. Lossless compact
+JSON avoids discarding data. No default promotion or further training is
+authorized. A continuous pose-margin reward candidate or improved collision
+recording would require the user's next QA decision; neither is implemented
+as a training change by this diagnostic phase.
+
+### WMJ-V1: authorized frozen pose-margin calibration (2026-11-10)
+
+User QA authorizes an independent, default-off continuous pose-margin candidate.
+`pose_margin_plan_20261110_a01.json` (SHA-256
+`dda849592cb440af5e6c81ca18eb0d88d1fc11f39843397cde909ec6e57471cb`)
+fixes the prior32 training sources, H64, common exploration RNG and the four
+u20/u30 precision combinations. No new actor arguments, optimizer calls, native
+evaluation or world-model fitting are authorized. Default reward and all hard
+bounds remain unchanged.
+
+The candidate sums squared roll/pitch hinges beginning at1.5degrees, with
+0.5degree normalization width, and multiplies the negative result by a per-second
+weight and the actual5ms interval. It remains unsaturated at/beyond2degrees;
+trusted terminal intervals are charged, while padding/model failures are not.
+Runtime fields use radians. The independently registered coefficient grid is
+0,0.125,0.25,0.5,1,2,4,8,16 per second. Default enabled=false and weight=0.
+
+Before GPU measurements, selection is fixed to the smallest positive grid
+weight meeting allfour local-gradient checks: positive minimum-angle-margin
+direction; at least80% retention of the baseline height directional derivative;
+pose gradient norm at most50% of height gradient norm; mean pose cost at most25%
+of absolute mean height return. Record every rejected weight and select none if
+the intersection is empty. These are calibration criteria, not a task gate or
+proof of Adam/native improvement. Preserve the complete five-objective Gram
+matrix and compact diagnostic traces, and disclose differences from prior
+frozen windows. Production reward modules do not import this candidate.
+
+Use `run_wmj_v1_calibrate_pose_margin.sh` on the guarded GPU1. Phase output is
+at most2MiB; total allowance stays6.125GiB with at least8GiB free. Candidate
+integration, parameter updates, default replacement and further versions require
+separate user QA; none is implied by a passing coefficient calibration.
+
+### WMJ-V1: pose-margin coefficient calibrated, default remains off (2026-11-10)
+
+`pose_margin_verification_20261110_a01.json` (SHA-256
+`96cdfbee11f692f0ce168e69aed37367b970a9172af9d3cb2ac1c6c666b1b5e1`)
+and `implementation_progress_20261110_a36.json` record the completed frozen
+calibration. Weights4 and8 pass allfour registered combinations; select4 per
+second as the smallest common candidate. At4, height directional-derivative
+retention is97.73--99.80%, pose/height gradient-norm ratio is11.64--12.47%,
+and mean pose-cost/absolute-height-return ratio is8.67--9.65%. The normalized
+total-gradient direction has positive minimum-margin derivative in allfour
+runs. These are local gradient quantities, not observed policy improvement.
+
+For one axis at2degrees with the other inside1.5degrees, the proposed penalty
+is-0.02 per5ms control. The hard2degree limit is unchanged. The JSON contract
+still has enabled=false and weight=0; proposed_weight_per_s=4 is metadata only.
+The candidate is not imported by production reward or training paths.
+
+Independent NumPy checks reconstruct per-interval cost and discounted sums
+from saved angle/mask traces. The default-off reward difference is exactlyzero,
+and recorded mode traces match the preceding frozen diagnostic. All20 relevant
+tests pass. An initial NumPy-boolean JSON serialization failure was corrected
+with a regression test; its source, logs and complete trace archive remain.
+Both attempts count toward this phase's692,224 bytes, below2MiB. All182 earlier
+world-model sources and every frozen parameter are preserved. No optimizer,
+default promotion, new version or native policy-benefit validation occurred.
+Further integration or training requires the user's next QA answer.
+
+### WMJ-V1: authorized independent pose-margin ten-update trial (2026-11-10)
+
+User QA authorizes the calibrated 4/s squared pose-margin penalty through an
+independent FP32 trial only. Default reward remains unchanged. The trial reuses
+the original paired FP32 u20 Actor/Critic/EMA/Adam/RNG and fresh1024-source pool,
+with exact initial-state checks against the preserved no-update gate. The
+existing initial learner archive is restored under its original signature;
+new artifacts bind the new reward plan and source hashes explicitly.
+
+`pose_trial_plan_20261110_a01.json` freezes1024 environments, H64, microbatch256,
+10 additional Actor and40 Critic updates, and the same learning rates. First
+require full-batch no-update gradients, unchanged learning parameters and exact
+full-state/next-sampling/noise restoration. Then use `run_wmj_v1_pose_trial.sh`
+with `--phase train --gate <candidate-no-update-result>`; the validation phase
+must run first. `run_wmj_v1_evaluate_pose_trial.sh` evaluates the resulting u30
+actor on the unchanged128-case deterministic/sampled native evaluation.
+
+Compare against preserved FP32u30, not mixed precision. The preregistered
+primary target is fewer orientation failures in both modes, with no regression
+in other-ball collisions, hit1/3/12,16-hit success, mean survival or matched
+first-apex mean XY/absolute-Z error. Record all regressions and16 UNKNOWN cases;
+this single exploratory continuation cannot promote a default policy.
+
+After discovering that the32MiB estimate omitted the raw checkpoint writer's
+38.53MiB reservation, user QA explicitly increased this phase to48MiB and the
+total cap by16MiB to6.140625GiB. Keep at least8GiB free, preserve the original
+archive writer and all prior evidence, and stop/ask on insufficient budget.
+CONTACT/EXEC, world-model weights, hard constraints,969-D Actor,7-D action and
+WMJ-V1 remain fixed. No further updates or default replacement are authorized.
+
+### WMJ-V1: pose-margin ten-update trial completed, not promoted (2026-11-10)
+
+`pose_trial_verification_20261110_a01.json` (SHA-256
+`91c069352b98c5d6816f5f1b7cef2ae6ea5580ce9aebb0c92c721285a0e8270f`)
+and `implementation_progress_20261110_a37.json` record the completed trial.
+All60 relevant tests and full1024/H64 no-update admission pass. Initial learning,
+full initial pool and sampling match the original FP32 baseline; initial disk,
+post-window memory and final disk restores preserve full state, next sampling
+and exploration noise. Exactly10 Actor/40 Critic updates were performed; frozen
+world weights and all184 prior runtime sources except the explicitly authorized
+storage ceiling check remain unchanged. Three workers exited successfully.
+
+Against the preserved FP32u30, deterministic/sampled hit1 counts change58/59
+->60/60 and hit3 counts25/22->25/27. Hit12 and16-hit task success remainzero.
+Orientation failures change71/72->70/73, failing the primary improvement target.
+Other-ball collisions change0/1->1/0: the new deterministic collision is
+`mirror_03` at1.224s after6 hits; its body identity was not recorded and is not
+inferred from an unperformed replay. This fails deterministic collision
+nonregression, despite eliminating the sampled-mode collision in this run.
+
+Mean survival changes0.439375/0.438241s->0.445080/0.456205s. Among38/40 common
+first-apex cases, mean absolute Z error changes0.123290/0.116961m to
+0.122420/0.115565m; mean XY error also decreases slightly. These are small,
+single-trial improvements, not convergence or proof of generalization. The
+fixed128 population still contains112 admitted and16 UNKNOWN cases, with zero
+success in every group. Critic explained variance remains close tozero.
+
+Candidate actor SHA-256 is
+`eea1299b3c027766b80fb1389e03c82498b955b5d24d855fa9f0ca83de100667`;
+complete learner SHA-256 is
+`d5d48b2ad4467e1681a252aab27c77c7c2bedf0001f95498b1af119c57c878c0`.
+Both reside in `pose_trial_train_20261110_a01`. Warm update duration was13.77s
+versus11.09s for the preserved baseline; runs occurred separately, so this is
+observed timing rather than an isolated overhead measurement. New phase output
+is32,829,440 bytes (31.31MiB), below48MiB; the larger quota was needed for the
+unchanged raw checkpoint write reservation. No artifact was deleted. Trial
+authorization is closed, default reward/model remain unchanged, and further
+training, reward changes or diagnostic experiments require the next user QA.
+
+### WMJ-V1: authorized frozen removal of racket attitude limit (2026-11-10)
+
+User QA chose removal of the racket roll/pitch hard limit instead of the
+proposed5/8degree candidates. `orientation_limit_plan_20261110_a01.json`
+(SHA-256 `d18edff86bdf8ad8a642abd63773337d097bdd6709fd50a23221a37b8734f5de`)
+registers a fresh ±2degree versus unconstrained-attitude native comparison,
+using the same no-pose-penalty FP32u30 actor and fixed128 original warmed cases.
+There are no Actor/Critic/world updates and no default-contract replacement.
+
+`run_wmj_v1_evaluate_orientation_limit.sh` selects `--mode bounded_2deg` or
+`--mode free_orientation`; run each in a fresh process. Candidate reference
+projection replaces four angular halfspaces with zero rows, preserving the
+V324 EXEC24-row schedule and position/velocity/joint bounds. It omits the
+unneeded Euler-rate solve and exactly two nonlinear reference angle backstops.
+The actual WMJ endpoint check removes only roll/pitch limits; finite-state,
+workspace, joint and physical collision failures remain. This is true removal,
+not a hidden20/180degree bound. Native legacy angle metrics remain diagnostics.
+
+Keep the original112 admitted/16UNKNOWN warm seeds, source actor and exploration
+RNG; do not reclassify or search new initializations. Verify complete initial
+state/history/task/RNG hashes across the two modes. Host-only observations record
+actual active-interval angle excursions and first-failure retained contact data
+without adding JIT outputs. Preserve every case and event using lossless compact
+JSON. Startup reservation is3MiB per worker; every actual write still checks
+phase/global/free-space limits. Phase cap8MiB,total6.140625GiB,freefloor8GiB.
+
+Report hit1/3/12,16-hit completion, matched first-apex accuracy, survival,
+non-racket collisions and actual attitude. Fewer attitude failures alone is not
+acceptance evidence when that termination is removed. Compare the fresh bounded
+control with historical results and retain numerical differences. Wider-attitude
+world-model accuracy and retraining are outside this frozen native experiment.
+WMJ-V1,CONTACT/EXEC and the default±2degree contract remain unchanged.
+
+### WMJ-V1: frozen unrestricted-attitude comparison completed (2026-11-10)
+
+`orientation_limit_verification_20261110_a01.json` (SHA-256
+`992316494ab0df99579c58f0d0735580a3bccaeb692bd1ae98eeecf5b1060388`)
+and `implementation_progress_20261110_a38.json` record the completed native
+comparison. All58 relevant tests passed. Both workers used the same authenticated
+FP32u30 actor and warmed112 admitted/16UNKNOWN cases, with no parameter updates.
+CONTACT/EXEC and all187 preceding world-model source files remain unchanged.
+
+Fresh bounded versus unrestricted deterministic/sampled hit1 counts are58/59
+versus15/16; hit3 counts25/23 versus0/0. Mean survival0.435536/0.439375s falls to
+0.268393/0.269241s. Racket-position failures7/5 rise to80/81; ball-domain failures
+are34/35 versus32/31. Unrestricted roll/pitch termination iszero by construction.
+There are no nonfinite, joint-position or non-racket collisions in either fresh
+comparison. Both variants have zero hit12 and16-hit task success. The free
+candidate reaches approximately36.7degree roll,49.0degree pitch and50.6degree
+normal tilt. This rejects direct frozen-policy transfer, not the possibility
+of training a policy with unrestricted racket attitude.
+
+Only3 cases per mode have a first apex in both variants. On that small common
+subset, mean absolute Z error worsens from0.08275/0.08992m to0.25575/0.25749m;
+mean XY error decreases. This tiny surviving subset cannot establish broad
+accuracy. Fresh bounded outcomes differ from historical FP32u30 on2 cases in
+each mode; the fresh comparison is primary and all historical deltas are saved.
+
+The preregistered complete native initial hash did not match across variants.
+History/task/RNG hashes match exactly. A preparation-only diagnostic in
+`orientation_initial_pairing_20261110_a01` stopped before every policy call and
+compared486 leaves: qpos/qvel, qacc_warmstart, model, controller and sensor/history
+inputs match;14 derived dynamics/cache arrays differ. Largest reconstructed
+qacc difference is0.001211,subtree COM2.38e-7m,cvel3.73e-9; constraint-force cache
+difference reaches0.1862. Neither original full hash was reproduced, so these
+are reconstruction diagnostics, not proof of original bytewise cache equality.
+The report explicitly leaves full-hash admission false; no repeated complete
+rollouts or new tolerances were introduced to erase this limitation.
+
+Three workers, including the initialization-only diagnostic, exited normally.
+New phase output is3,395,584 bytes (3.24MiB), below8MiB. Preserve the negative
+result and original default contract. User's selected unrestricted-attitude
+candidate is implemented privately; no retraining, world-model coverage claim,
+default replacement or new WMJ version occurred. Further imagination-path
+integration and frozen model validation require the next user QA decision.
+
+### WMJ-V1: unrestricted-attitude imagination integration authorized (2026-11-10)
+
+The user approved private imagination integration and frozen verification after
+the a38 native comparison. `free_imagination_plan_20261110_a01.json` fixes32
+independent training-bank sources, the same no-pose-penalty FP32u30 actor,
+128 native controls and own-state model windows of1/8/32/64/128 controls.
+The candidate removes four angular projection halfspaces and nonlinear angle
+backstops, and omits only the episode angle limit. Position, joint, velocity,
+acceleration, finite-state and physical collision checks remain. Shared defaults,
+V324 CONTACT/EXEC, all weights and the WMJ-V1 identity remain unchanged.
+
+First compare persistent controller memory with identical native measured
+feedback/actions, then report frozen model error before first physical failure
+separately from post-failure diagnostics and the subset exceeding2degrees.
+H8 event-aligned velocity0.08m/s and apex0.01m P95 remain reference metrics,
+with missing and unequal event counts disclosed. This small population cannot
+qualify full-domain training. Phase output is limited to2MiB within6.140625GiB
+total and8GiB free space. No Actor/Critic/world updates are authorized.
+
+During this phase the user additionally approved a subsequent, separate2MiB
+frozen calibration of an outgoing-velocity reward candidate. It will replace
+only the candidate apex-XY/apex-Z costs using velocity inferred from release
+position and goal apex, retaining other rewards. Finish the unrestricted-attitude
+audit first. The reward candidate remains default off and no parameter updates
+or default reward replacement are authorized by that calibration decision.
+
+### WMJ-V1: free-attitude imagination frozen audit completed (2026-11-10)
+
+`free_imagination_verification_20261110_a01.json` and progress a39 preserve
+three attempts, including two corrected audit-entry failures. Fifty relevant
+regression tests passed and all190 preceding world-model sources remain intact.
+The native observer pair passes registered numerical tolerances; physical,
+control and episode-context initial values match the training bank exactly.
+Native versus reconstructed history FK differs by up to0.000733852 in pose
+fields. Both rollouts use the same actual native reset history, without altering
+either existing FK implementation or fabricating pre-reset samples.
+
+The32 independent sources span32 regions. There are1860 native controls before
+first physical failure,1296 beyond2degrees, and28 controlled releases. Valid
+prefix roll/pitch reaches29.93/43.58degrees. No other-ball collisions or model
+nonfinite controls were observed. Only1 source survives the entire128-control
+window, so the surviving long-horizon subset is not coverage evidence.
+
+The private course executes with finite rewards, zero model truncations and
+no angle-only termination. Persistent control replay, however, exceeds prior
+small-error limits: within native valid prefixes delayed-q maximum is0.000914rad,
+delayed-dq0.02555rad/s and delayed-ddq0.7006rad/s2. This remains a failed formal
+control-reference check, not a reason to alter tolerances silently. H8 first
+release velocity/apex P95 is0.183513m/s and0.045250m across28 event pairs from26
+sources (two overlapping-window repeats), above0.08m/s and0.01m references.
+All weights and defaults remain unchanged. No training is authorized by this
+result. Proceed only with the already approved separate frozen velocity-reward
+calibration; further control/model changes require subsequent QA.
+
+### WMJ-V1: replacement outgoing-speed reward calibration registered (2026-11-10)
+
+`velocity_reward_plan_20261110_a01.json` registers the user-approved independent
+default-off candidate. Invert the existing no-drag continuous ballistic model
+from the physical release position to the requested apex. Convert the existing
+0.10m XY and0.05m Z cost scales to speed scales by dividing by desired ascent
+time. Retain derivatives through release position and retain all other reward
+terms, actual-apex success and16-hit accounting. Invalid finite height inverses
+fall back to the original two costs. No ball impulse or target velocity is
+applied to the simulated ball. Existing default reward already settles at
+release; this candidate changes error parameterization, not reward timing.
+
+Calibrate XY/Z multipliers from0.5/1/2 on the same32 independent training seeds
+and FP32u30 Actor/target Critic, in bounded/free-attitude deterministic/sampled
+H64 rollouts. Compare the full315911-parameter gradients and return components;
+preregister bounded cost/gradient ratios, retained height direction and no worse
+XY direction. Select only a pair passing all four groups, nearest(1,1); otherwise
+report no eligible coefficient. Reuse deduplicated native releases for local
+cost/gradient and1ms discretization checks. Maximum new output2MiB, unchanged
+global/free-space limits, no optimizer calls or parameter/default updates.
+
+### WMJ-V1: outgoing-speed frozen calibration completed (2026-11-10)
+
+`velocity_reward_verification_20261110_a01.json` and progress a40 record56
+passing relevant tests and a completed frozen GPU calibration. All192 preceding
+world-model sources and every Actor/Critic/world parameter remain unchanged.
+The actual replacement-path first-control smoke has exactly identical complete
+state and termination values; analytic tests cover release-time replacement,
+default equality, target inversion and invalid-inverse fallback.
+
+The native local population contains27 unique releases from26 sources,22 above
+2degrees. Every inverse is valid. Desired vertical speed ranges1.925--2.832m/s;
+XY speed scales0.346--0.510m/s and Z scales0.173--0.255m/s preserve local position
+scales. Continuous inverse versus discrete1ms apex P95/max error is1.399/1.417mm,
+recorded without changing the V324 flight model or adding a numerical gate.
+
+All full-Actor derivatives are finite. Forward/AD branch modes match in every
+group, with maximum primal difference2.98e-8. Free-attitude deterministic
+weights(0.5,0.5) and(1,1) pass the registered screen; free sampled and both bounded
+reference groups have no passing pair. At(1,1), free sampled old-XY directional
+derivative drops6.633 to1.847 while old-height derivative rises14.955 to17.949.
+These are frozen gradient tradeoffs, not observed policy improvements or
+regressions. No common coefficient is selected. Retain the default-off candidate
+and all evidence; do not infer that a different parameterization cannot work.
+The existing expanded-motion control/model gaps remain. Further experiments or
+training require the user's next QA decision.
+
+### WMJ-V1: expanded-motion error attribution authorized (2026-11-10)
+
+The user approved frozen attribution on the same32 independent sources after
+the a39/a40 results. `expanded_error_attribution_plan_20261110_a01.json` fixes
+the FP32u30 actor, source states, raw native capture procedure and1/8/32/64/128
+control windows. Privately append read-only solver J*qacc labels and require
+the existing native observation pairing. Compare projection on native references,
+persistent RMP with native references, and own-reference command replay.
+
+For physical error attribution, compare own control/robot/auxiliary, actual
+native commands with predicted robot/auxiliary, native robot pose/twist with
+predicted auxiliary, and native robot plus true solver labels. Real future
+states/commands/solver labels are diagnostic oracle inputs only; they never enter
+the normal imagination runtime or an optimizer. Report single-step execution,
+FK, auxiliary and contact errors, plus event-aligned recursive errors and all
+missing/count differences. Conditional nonlinear replacements are not additive
+error percentages. No new scenarios, weight/reward/constraint changes or default
+promotion are authorized. Output limit2MiB within6.140625GiB total and8GiB free.
+
+### WMJ-V1: expanded-motion attribution completed (2026-11-10)
+
+`expanded_error_attribution_verification_20261110_a01.json` and progress a41
+record the completed frozen attribution, a control-detail repeat, and 52 passing
+relevant regression tests. All 194 preceding world-model sources, model weights,
+default reward, V324 CONTACT/EXEC and the WMJ-V1 version remain unchanged. The
+phase used 1,241,088 bytes, below its 2 MiB allowance; total output usage is
+6,576,312,320 bytes, below 6,593,445,888, with more than 8 GiB free.
+
+For the same 28 matched release windows from 26 sources at H8, speed/apex-error
+P95 is 0.183562 m/s / 4.55955 cm with the original model. Substituting native
+execution commands leaves these values unchanged. Substituting native robot
+pose/twist while retaining predicted auxiliary terms gives 0.187098 m/s /
+3.62851 cm. Using native robot state plus true solver terms reduces them to
+0.0160526 m/s / 0.218559 cm. Matched-event comparisons at H32/H64/H128 retain
+the same qualitative conclusion. The auxiliary solver-term prediction and its
+contact coupling are the principal short-horizon error source in this sample;
+these conditional substitutions are not additive error percentages and do not
+establish that the current 47-input network can learn the oracle. Solver labels
+remain diagnostic only.
+
+There is also a localized control problem. At source 38, control 12, native
+projection retains the previous reference with zero accepted action; imagined
+projection accepts movement, producing a maximum 0.02617994 rad (1.5 degree)
+reference difference. Persistent reference error later reaches about 0.0302 rad.
+The underlying branch/boundary cause remains unresolved. With native references,
+batched native RMP commands match exactly; per-lane arithmetic differs, and
+forcing highest matmul precision makes that difference larger. Native command
+substitution reduces the H64 racket-position tail substantially without fixing
+the outgoing-ball error. Do not dismiss this branch discrepancy as negligible
+roundoff or promote a control change from the diagnostic alone.
+
+The original 32 source states are preserved. Read-only solver instrumentation
+passes the registered numerical pairing. Relative to a39, source 38's first
+failure shifts from control 77 to 79, increasing valid-prefix controls from
+1,860 to 1,862; all four physical substitutions share the current native trace.
+The detail repeat preserves the same initial hash and failure clocks, with some
+floating values differing. At H64/H128, predicted-auxiliary routes miss source
+977's second release, recovered by the true-solver diagnostic. Only one full
+H128 window remains within the native task prefix; this is not long-survival or
+full-domain qualification. No training, default replacement or deployment is
+authorized by these results. The next phase awaits the user's QA decision.
+
+### WMJ-V1: expanded-motion auxiliary refresh authorized (2026-11-10)
+
+The user approved at most 64 independent source rollouts, split 48 train and
+16 held out before collection, and at most 4096 additional auxiliary updates.
+`expanded_auxiliary_plan_20261110_a01.json` fixes the admitted targeted-collection
+source roots, preserving their original train/validation identities. Region
+stratification covers 48 train regions and 16 validation regions. The previous
+32 diagnosed roots are excluded from both new sampling and older replay fit
+rows; the fixed 128 task cases and final-test partitions are not fit sources.
+
+Collect 128 controls with the frozen FP32 u30 actor and the existing free-angle
+candidate. Preserve complete initial-state references and all recorded actions;
+retain every contact and +/-25 ms neighborhood plus 2% background labels within
+the first-failure prefix. Restore auxiliary u8192, Adam and normalization; retain
+47 -> 128 -> 128 -> 6 and the existing six-component normalized loss. Every
+512-row batch is half old data and half new data, with contact/noncontact halves
+inside each domain. Save every 1024 updates; compare the final candidate against
+the parent on new held-out sources, prior validation populations and the previous
+32 diagnostic sources at 1/8/32/64/128 controls. Negative regional and event-count
+results remain visible. Actor/Critic, execution proxy, contact residual state,
+reward, V324 CONTACT/EXEC and WMJ-V1 remain unchanged. No default promotion.
+The complete stage allowance is 12 MiB within the existing 6.140625 GiB total
+and 8 GiB free-space floor; insufficient storage stops work for the user's QA.
+
+### WMJ-V1: expanded-motion auxiliary refresh completed (2026-11-10)
+
+`expanded_auxiliary_verification_20261110_a01.json` and progress a42 record the
+completed 64-source collection, 4096 auxiliary-only updates, and all three
+paired validation populations. Candidate `expanded_auxiliary_fit_20261110_a01/
+auxiliary_u012288.json` has SHA-256
+`dbe8b8dc96e7a85691dda371b83c1a760af9cd43dee4480a0d3f61c03dfd1758`.
+Its parent u8192 weights, Adam moments and normalization were restored; the Adam
+count is now 12288 and normalization is unchanged. Each domain contributed
+1,048,576 sampled training rows. The previous 32 diagnostic roots and their
+808 older label rows were excluded from this fit. All original split identities
+remain intact; no final-test or fixed task-validation sources entered fitting.
+
+The 48/16 source populations yielded 2310/873 retained supervised rows, including
+287/105 contact rows, from 45/15 roots. Four sources had no retained pre-failure
+samples and remain in the original 64-source denominator. Native label closure
+speed-equivalent P95/max error is 0.0007385/0.0013514 m/s. The collection contains
+8192 native control transitions, 40960 physical substeps, and authenticated
+original complete-state references plus every raw action. This is a targeted
+auxiliary-label supplement, not another full 1024-environment data-factory round.
+
+Free-attitude H8 event-aligned speed/apex-position error P95 changes are:
+
+| Frozen population | Parent u8192 | Candidate u12288 |
+| --- | --- | --- |
+| New 16 held-out sources, 15 paired events | 0.15925 m/s, 4.289 cm | 0.11207 m/s, 3.090 cm |
+| Previous 32 diagnostic sources, 28 paired events | 0.18443 m/s, 4.581 cm | 0.10095 m/s, 2.868 cm |
+
+The candidate improves 14/15 and 22/28 of those speed-error comparisons; other
+events and regional regressions remain recorded. It recovers source 977's
+previously missed second release in the H64/H128 diagnostic windows. No modeled
+nonfinite controls occur. There are zero complete native-prefix H128 windows in
+the new held-out set and one in the previous-32 set: pre-failure release metrics
+must not be described as long-survival qualification.
+
+Retention covers every 1054 original and 99 prior-targeted validation source.
+In the preserved bounded task-prefix H8 metric, original-set speed/apex P95
+changes 0.05208 m/s / 1.212 cm to 0.05309 m/s / 1.126 cm; prior-targeted changes
+0.03723 m/s / 0.896 cm to 0.04196 m/s / 1.029 cm. Longer-window aggregate results
+are mixed, and region-level tails are retained in authenticated shards. These
+same-clock retention metrics are distinct from the event-aligned free-attitude
+table. All 1/8/32/64/128 horizons were checked; no nonfinite model windows occur.
+
+An initial archived-action JIT replay failed the existing 0.001 rad/s native
+pairing ceiling at 0.001183 rad/s and is retained as an unsuccessful diagnostic.
+Reusing the original actor-in-graph capture passes the unchanged pairing checks.
+Its initial state hash matches collection, but closed-loop actions are not
+identical to the archived collection (maximum difference 1.247 over all controls,
+including failed tails). Parent and candidate use exactly the same current native
+actions and seeds within each paired audit; no cross-run exactness is claimed.
+
+All 196 preceding world-model sources remain unchanged; 61 relevant regression
+tests pass. The completed stage uses 10,002,432 bytes below its 12 MiB allowance,
+with total output 6,586,314,752 bytes below the 6,593,445,888-byte cap and more
+than 8 GiB free. No Actor/Critic/execution-proxy update, reward/constraint change,
+V324 CONTACT/EXEC change or default promotion occurred. Free-attitude reference
+errors remain unmet and the source-38 projection branch discrepancy is unresolved.
+Further work awaits the user's next QA choice; WMJ-V1 stays fixed.
+
+### WMJ-V1 a43: frozen projection consistency candidate (2026-11-10)
+
+User authorized reproducing source38/control12 and an independent projection repair under unchanged boundaries and hold semantics. Existing32 independent training sources, frozen FP32 u30 actor and u8192 auxiliary; no weight updates, new scenarios or default promotion. Compare actual native branch flags, standalone native projection, matrix FK and private quaternion FK. Acceptance requires resolving the identified branch without adding task-prefix branch mismatches, finite gradients and preserved physics/control/reward. Stage output cap2MiB, total6.140625GiB, free disk floor8GiB. Plan: `pingpong_controller/outputs/rl_sim/wmj_v1/projection_consistency_plan_20261110_a01.json`. Opt-in launcher: `pingpong_controller/tools/rl_sim/run_wmj_v1_projection_consistency.sh`.
+
+A43 localized numeric candidate: full FP32 (`Precision.HIGHEST`) only for the private projection method’s world/policy coordinate and Jacobian matrix products, paired on both native and imagined methods. Preserve FK implementations, 24-sweep EXEC solver, bounds and hold inequalities; no global precision override. Same archived32×128 inputs, full-output/pruned-output checks, finite action gradients and timing. This remains an independent default-off candidate; native trajectory behavior is not promoted.
+
+A43 completed: `projection_consistency_verification_20261110_a01.json`. Source38's approximately1.14990258m reference height was rounded to1.150390625m by default GPU frame matmul, falsely crossing the unchanged1.15m boundary. Private FP32 frame products remove the discrepancy without changing halfspaces, EXEC unroll, bounds, CONTACT or weights. Saved-input GPU pairing:0 branch disagreements across4096controls, prefix1862 reference max1.19e-7rad. Full native candidate replay:0 branch disagreements across4096controls/prefix1839; source38/control12 agrees. Persistent reference max6.38e-5rad versus prior0.0302rad, but these native trajectories differ. Continuous accepted-action/RMP tails still exceed strict numeric comparison limits, so this is not full control-chain qualification. Native source38 first failure moves79->57; prefix1862->1839, releases remain28 and other-ball collisions0. No policy-improvement claim. Warmed local projection time remains approximately0.161s per32x128 replay;56tests pass. Failed summary run and quaternion comparison retained. No parameter updates or default promotion; authorization closed pending the next user decision.
+
+### WMJ-V1 a44: frozen model/action recheck after coordinate fix (2026-11-10)
+
+User authorized reusing the prior32 independent diagnostic sources under the private FP32 coordinate projection candidate, comparing frozen auxiliary u8192/u12288 at1/8/32/64/128steps and action effects. Same actor FP32 u30, robot6144, disabled contact residual, physics, CONTACT/EXEC and reward. Four8-source groups use32 native lanes for same-state base/plus/minus/duplicate branches; single-joint pulses0.005/0.01/0.02 for10/20ms are assigned before outcomes. First failure censors per-branch outcome labels; all sources, missing events and unresolved effects remain counted. Model reference gates remain0.08m/s and1cm; the32-source action screen uses16 resolved cases and90% direction only as a diagnostic, not replacement for broad validation. No parameter updates or default promotion. Output≤2MiB, total6.140625GiB, free≥8GiB. Plan `corrected_candidate_plan_20261110_a01.json`; launcher `run_wmj_v1_corrected_candidate.sh`.
+
+A44 completed: `corrected_candidate_verification_20261110_a01.json`. Frozen u12288 under corrected projection reduces H8 release speed/apex P95 from0.183613m/s/4.559cm to0.100087m/s/2.905cm;28window pairs/26sources,23 improve and5 regress. Reference0.08m/s/1cm remains failed. H32/64/128 speed P95=0.110316/0.104873/0.116208m/s;candidate removes the parent's missing event at64/128. Only1 fullH128 window is before first native failure. Same-state action forks retain32sources:26complete release triples;velocity20/21 and analytic-apex21/22 resolved directions, same aggregate rates as parent. Candidate fixes source356 velocity response but newly reverses source117 velocity;source117 analytic apex is reversed for both. Actual apex14/14 resolved directions has insufficient count(<16). Repeat drift and all missing/unresolved cases retained. This is a small diagnostic, not broad world/action qualification. Native and counterfactual numerical pairing passed;all model predictions finite;68tests passed. Worker382.36s,20,480native controls,65,536frozen model transitions;zero parameter updates/default promotion. Authorization closed pending user selection.
+
+### WMJ-V1 a45: frozen outgoing-speed reward and H64 gradient recheck (2026-11-11)
+
+User selected the recommended frozen reward/gradient recheck. Reuse exactly the prior32 diagnostic sources, actor FP32 u30/target critic, robot6144 and frozen auxiliary u12288 under the private FP32 coordinate projection fix with free orientation. Compare old apex costs with inverse-flight velocity replacements, retaining the prior0.5/1/2 coefficient grid and all other rewards. H64 deterministic and sampled0.03 use identical source/RNG setup; full Actor gradients and symmetric finite differences at L2 steps1e-4/1e-3/1e-2, with coarse mode changes and repeat drift recorded separately. Source117 remains in the denominator and receives its own gradient/fork-reward record. Reuse a44 native release evidence only; no new native scenes, optimization, default reward/model promotion or CONTACT/EXEC change. Stage output≤2MiB,total6.140625GiB,free≥8GiB. Plan `corrected_reward_plan_20261111_a01.json`; launcher `run_wmj_v1_corrected_reward.sh`.
+
+A45 completed: `corrected_reward_verification_20261111_a01.json`. Both modes have27 modeled releases/32sources and24failures withinH64; frozen values and reverse gradients finite. None of9 preregistered velocity-weight pairs passes all calibration criteria. Unit weights improve the local height direction but reduce XY correction (deterministic1.19->-1.36;sampled5.47->1.42). At actorL2 step1e-4, candidate-direction return sign agreement is19/23 and18/20 among unchanged-coarse-mode resolved cases;20%-derivative-error fractions10/23 and4/20. Raw JVP has136/160nonfinite source-objective entries per mode/direction; per-source reverse contractions and finite differences are retained separately. Source117 reward ranking on archived native forks agrees, but its velocity-reward effect is amplified4.85x by the model. The first attempt stopped on nonfinite JVP and remains archived. A post-hoc algebra-only finer coefficient scan is explicitly exploratory; closest joint feasible pair=(1.23, 0.43), not selected or validated by new rollouts. All209prior modules unchanged;55unique regression checks pass; no parameter updates/default changes or new native scenes. Authorization closed pending the next user decision.
+
+### WMJ-V1 a46: frozen MJX reward-direction pairing (2026-11-11)
+
+User authorized candidate velocity-reward XY1.23/Z0.43 direction checks using the same32sources, frozen actor/critic u30, robot6144, auxiliary u12288 and coordinate-projection fix. Compute full-Actor H64 return gradients separately for deterministic and sampled0.03; evaluate immutable temporary plus/minus L2 steps1e-4/1e-3 and duplicate baseline in MJX and own-model closed loops. Primary metric is H64 discounted realized reward, keeping target-critic bootstrap separate. H128 follow-up records actual apices, hits and failures without resets. Common full native initial state/history and exploration noise; all32sources retained, first failure ends scoring. Direction screen requires16resolved and90% agreement using1e-4 return floor and3x observed repeat drift, only as diagnostic evidence. No optimizer/checkpoint/default change. Stage≤2MiB,total6.140625GiB,free≥8GiB. Plan `reward_direction_plan_20261111_a01.json`;launcher `run_wmj_v1_reward_direction.sh`.
+
+A46 storage recovery authorized: original native/model forks completed but sampled detail publication hit the2MiB phase cap with temporary-file reservation. Original INCOMPLETE result and complete deterministic detail remain immutable. `reward_direction_recovery_plan_20261111_a01.json` permits only the same sampled6branches with lossless gzip, source/noise/gradient identity checks,480s worker ceiling and768KiB peak write preflight. The original phase start,2MiB phase cap,6.140625GiB total and8GiB free-space reserve remain unchanged. All model/reward/control defaults and parameters remain frozen; no optimization or new scene. Launch only through `run_wmj_v1_reward_direction_recover.sh`.
+
+A46 complete: `reward_direction_verification_20261111_a01.json`; frozen comparison complete, candidate not qualified/promoted. H64direction agreement(det/sample) atL2steps1e-4/1e-3:18/21,21/24 and13/15,20/21. H128:18/21,22/25 and13/15,19/21. Only sampled1e-3 passes the preregistered resolved-count/sign gate. Source356 deterministic plus1e-3 fails racket-position bounds at64instead of65(native), crossingH64; model stays65. H128 failure counts match. Sampled plus1e-3 native realized return gains0.02343/0.02099(H64/H128), hit/failure counts unchanged. H64target Critic for cases failing byH128 averagesabout-0.22 against realized continuationabout-9.57; this is a value-consistency finding, not proof of a target-mask bug. Original storage exception and recovery scalar-repeat exception remain immutable. Recovery stores all sampled data losslessly; source/model/noise identities match, norm differs0.00604percent, objective0.00025845; full-vector equality unavailable/not claimed. Offline completeness review records these differences without relaxing outcome gates or rerunning GPU. All214prior modules preserved;32unique checks pass. No Actor/Critic/world update or default replacement; both phase authorizations closed pending user decision.
+
+A47 preregistered: `critic_target_plan_20261111_a01.json`; user approved frozen Critic target/mask/value/distribution audit only. Same32sources, u30actor, u12288auxiliary, free-orientation coordinate-precision candidate; deterministic/sampled128control windows withH64/H128 old/candidate rewards. Read u20/u30 online andEMA critics and authenticated saved pool endpoints for feature inspection, not runtime resume. Independently enumerate n-step-mixture lambda targets, check exact valid-row/mask semantics and numerical5e-5+1e-5relative tolerance; characterize fitting/EMA/value scales and all30historical update logs. No optimizer calls or network/default changes. Phase512KiB, original6.140625GiB/8GiB constraints,400KiB remaining-write preflight,360s worker ceiling.
+
+A47 complete: `critic_target_verification_20261111_a01.json`. Both modes/32sources produce3803valid rows and zero actual discount/trace/row-alignment/failure-cost mismatches; independent finite-n-step-mixture lambda oracle maxerror=9.58606297984943e-06.8tests cover additional timeout/model-cut/padding cases absent in these trajectories. u30online mean~-3.142,std~0.009;EMAmean~-0.234. Immediate-failure targets~-10 versusonline~-3.134/EMA~-0.219. Online second-hidden tanh saturation~84.2percent(newstates),86.8percent(savedu30endpointpool). H64candidate-target online/EMA RMSE~4.42/6.45;oldreward also near-zeroEV. Historical30updates/120Criticsteps hadEVnear0 and18205orientationviolations among25975physicalfailures(overlapallowed);newangle/control/model/reward candidates were not fitted. EMAonly30updates at.01lags the still-underfit online critic. No target-mask defect found in audited cases; no inference that LayerNorm or more training is already effective. First startup exited below13.5GiBhost threshold;memory recovered before a question was issued and original authorized audit completed in newa02directory without changing thresholds. All215prior modules preserved; no model/default updates. Phase closed pending user choice.
+
+### WMJ-V1 a48: isolated existing-Critic fitting (2026-11-11)
+
+User authorized at most512Critic updates from u30 online/Adam/EMA with unchanged2602→256→256→1tanh architecture and learning parameters;Actor/world frozen.128logical environments(96persistent+32precontact branches),64control windows,free orientation/private projection fix/u12288auxiliary and inverse-flight rewardXY1.23/Z0.43.128training and32new heldout root families are preregistered, excluding prior32diagnostic sources and fixed128task evaluation. Parentu30had prior exposure to this bank;holdout means no new fitting updates,not unseen final testing. FourCriticsteps thenone.01EMA;no Actor update. Complete no-update/disk restore and temporary storage preflight precede training. Fixed512stepbudget,paired heldout realized terminal returns,common-parent and ownEMA lambda targets,terminal bias and saturation;no outcome-based removal or default promotion. Plan `critic_only_fit_plan_20261111_a01.json`;opt-in launcher `run_wmj_v1_critic_fit.sh`. Stage≤48MiB,total6.1875GiB,free≥8GiB,existing GPU/host protections retained.
+
+A48 prelaunch plan amendment: `critic_only_fit_plan_20261111_a02.json` binds the necessary exact6.1875GiB budget-validator extension;the original plan remains preserved.216other prior modules unchanged;historical caps and8GiBfloor retain tests. No rollout or parameter update preceded this amendment.
+
+A48 complete: `critic_only_fit_verification_20261111_a01.json`;512Critic-only updates/128EMA commits,Actor/world unchanged. Initial/endpoint full snapshots and next-source/RNG restore pass;59relevant tests.128training sources/105regions produce758326valid imagined controls,14060physical failures,11098releases,zero16hit successful goals with frozenActor. Heldout31/32sources failwithinH128inbothmodes;oneisright-censored. Online realized-returnRMSE6.699/6.700→1.806/1.805;EMA9.599/9.600→4.169/4.170;immediate-failureonlinebias6.861→1.014/1.016. HoweverrealizedEV=-1.863/-1.837andownlambdaEV=-0.151/-0.131;state-discriminationcriterionfails. Tanhsecondlayer saturationpeaksnear100percentatu128thenfalls33.8/33.9percentatu512,soarchitectureinsufficiencyisnotestablished. EMAterminalbias~4.169remainslargerthanonline;causalEMAinterventionnotyettested. EndCriticstep632/Actorstep30;fullcheckpoint`critic_only_fit_20261111_a01/learner_critic_added512.json`. Worker334.65s,trainingwindows+optimizer147.51s,peakhostscope6.44GiB,noOOMorforcedstop. Rawper-updatelogfieldphysical_failure_boundsmeansscheduledin-boundpredicates,notfailure-causecounts;donotinterpretasahistogram.216prior modulesunchanged;contracts.pyonlyadmitsuserapprovedexactbudgetextension. NoActor/worldupdate,defaultpromotion,hardwaretestorfulltaskqualification. AwaitnextuserQA.
+
+### WMJ-V1 a49: paired Critic EMA comparison (2026-11-11)
+
+User authorized twoCritic-only arms from identical fullCritic632checkpoint:each≤512newsteps;EMAaftereachfoursteps=.01vs.05. Existing2602→256→256→1tanh,128logical/96persistent/32branches,H64,Actor/world/velocityreward/freeorientation/projectioncandidate unchanged. Restorepool,resetbanks,Adam,countersandRNGexactly. Onecommonfrozen-worldwindowpertransactionfeedsbothCritics;theirbootstrappedtargetsareseparate. Fixed32heldout trajectories andpriorcriteria retained;pairedtarget≥10percentRMSEreductiononlineandEMAwithout>.1terminal-biasregression,plusoriginaldiscriminationgate;nooutcome-basedearlyselectionorpromotion. Sharedforwardtimecountedonce. Fullrestore/no-updategatesandtwo-checkpointtemporaryreservationprecedeoptimization.48MiBstage,total6.21875GiB,free≥8GiB. Plan`critic_ema_pair_plan_20261111_a01.json`;launcher`run_wmj_v1_critic_ema.sh`. Onlycontracts.pybudgetvalidatorchanges;all218otherprior modulespreserved.
+
+A49 complete: `critic_ema_pair_verification_20261111_a01.json`. Botharms632→1144Criticsteps,512newstepseach/128EMAcommits,Actorstep30unchanged. All128sharedworldwindowsandinputhashespairedexactly;761919uniquevalidcontrols,14026physicalfailures(4179ball/9941racket,94overlap),11140releases,zerogoalsuccess/timeouts/modelfailures. HeldoutonlineMC_RMSE=.01:1.314/1.312vs.05:0.910/0.912;targetEMA_RMSE1.700/1.699vs0.894/0.895. Relativeonlinegain30.7/30.5percent,targetgain47.4/47.3percent;failureonlinebiasimproves0.417/0.406→0.150/0.145. Allrelativegatespass,butfastonlineEV=-0.599/-0.594andownlambdaEV=-0.463/-0.453;originalstatediscriminationgatefailsbotharms.31/32heldoutsphysicallyfailinH128permode,oneiscensored. FasterEMAhelpslagbutdoesnotqualifyCriticorActor. Twofullendpointsrestoreexactly,330sharedleavesmatchbetweenarms;55tests. Worker421.23s,peakscope6.41GiB,hostavailable≥13.83GiB,GPUmax42C,noforcedstop. Smallcross-runFP32hashdifferencesfroma48arelogged(eventsidentical,MC_RMSEdelta≤2.15e-5);within-armcomparisonsharesidenticaldata. NoActor/worldupdate,defaultpromotionorhardwareclaim. UserQArequiredbeforefurtherwork.
+
+2026-11-12 V327 actual-start evidence:58 unit/contract checks, one native CPU
+pair and a byte-exact actual checkpoint save/restore passed. The required
+six-second CUDA reward pair passed with full state/obs/critic digest identity
+and maximum reward-delta error4.58e-5. Both frozen-reward arms retained the
+negative10/64 six-second survival; this is not learned improvement evidence.
+Formal `fplc_v327_gpu0_wind_reward_20261112_r1` is running in pp_gpu0 on the
+pinned physical GPU0. At S1/u559 it completed53 new finite32-minibatch updates.
+Cloud PPO equals M12 and effective reward weights are recorded; source
+artifact count is zero. No stage is graduated. The window's band99.67% and
+center4.37mm pass those components, while motion/longevity and independent
+acceptance remain outstanding. See the V327 recovery report and
+`RUNNING_VERIFICATION_U00000559.json`; do not claim all-nine completion.
+
+
+### WMJ-V1 a50: frozen Critic source comparison and candidate record (2026-11-12)
+
+User resumed the paused goal. Register two disabled candidates in
+`WMJ_V1_CONFIG.json` and `WMJ_V1_CANDIDATES_AND_DIFFERENTIABILITY.md`:
+60 Hz ball observations with timestamp-paired 640 ms history, and latent Actor
+input plus latent world dynamics. Neither changes current 90 Hz/969-D behavior.
+Differentiable state/action dynamics and short-horizon Actor backpropagation are
+mandatory. Existing piecewise JAX gradients remain; H64 tail reliability and
+complete time-to-success acceleration are unqualified. Preserve V324 CONTACT,
+EXEC, existing checkpoint interfaces and fixed WMJ-V1 identity. Any activation
+or smoothing/custom-gradient change requires QA and paired verification.
+
+Resume only the previously proposed frozen comparison: use final EMA .01/.05
+Critic1144 endpoints,128 training and32 heldout roots, common H128 windows with
+deterministic/sampled Actoru30 and frozen auxiliaryu12288/projection candidate.
+No network, optimizer, reward or default updates. Separate physically completed
+returns from censored windows; compare online/EMA to complete MC and own lambda
+targets, by contact phase, controls until failure and original target region.
+Report source-balanced errors; do not treat these roots as unseen by the earlier
+u30 parent or infer full persistent-state coverage from reset windows.
+Phase cap2 MiB, total6.21875 GiB and free disk8 GiB unchanged. GPU1 only,
+conditional-PSI and existing cgroup/temperature guards. Plan
+`critic_distribution_plan_20261112_a01.json`, launcher
+`run_wmj_v1_critic_distribution.sh`. This entry records scope, not results.
+
+A50 completed on GPU1:26 relevant tests,10 authenticated lossless chunks,
+160 sources in both modes,40960 scheduled/16756 valid imagined controls.
+316 cases physically fail within H128;4 remain censored and are excluded only
+from complete-return metrics. No native control steps or parameter updates.
+EMA .05 online MC RMSE train .893/.729 versus heldout .910/.912; EV
+train .223/.255 versus heldout -.599/-.594. Own lambda MC RMSE train
+.137/.109,heldout .139/.140; independent oracle max error1.41e-5.
+Approximately95--97 percent of squared error is before first release or on
+release controls. Heldout source401 contributes62 percent; leave-one-source
+sensitivity remains negativeEV and never removes this source from acceptance.
+Thirty common regions have mode-dependent comparisons; strong training tails
+preclude attributing everything to generalization or Actor dimension.
+Worker159.57s, peak scope6.33GiB, available host>=7.60GiB,GPUmax35C;exit0.
+All220 prior world modules unchanged. Evidence
+`critic_distribution_verification_20261112_a01.json`; task still unqualified.
+Next proposed fixed-data Critic fit or gradient diagnosis requires user QA.
+
+### WMJ-V1 a51: fixed-data Critic fit, default off (2026-11-12)
+
+User approved only existing-Critic fitting: restore the complete EMA .05
+Critic1144/Actor30 checkpoint, including Adam and all persistent/reset/RNG
+state. Replay a50's128 training roots with the same sampled H128 trajectories;
+freeze parent EMA-generated lambda .99 labels once. Keep2602→256→256→1,
+LR1e-4,8192-row batches/2048-row microbatches and EMA .05 per4 Critic updates.
+At most512 Critic updates; EMA changes never refresh these fixed labels.
+Actor/world, physical pool, current reward and defaults remain frozen.
+The32 heldout roots only evaluate, in deterministic/sampled mode. Record
+training fixed-label RMSE and heldout complete-return RMSE, EV, terminal bias,
+source/phase/failure-distance errors and hidden saturation at0/128/256/512.
+Acceptance before fitting: training RMSE ratio<=.8; each heldout MC RMSE
+ratio<=.8, EV>=.1, terminal absolute-bias increase<=.1. No automatic promotion.
+Use complete parent reference plus one final full checkpoint, with immutable
+labels and local fixed-fit counter; authenticate replay and no-update/full-state
+restore before any updates. Frozen features are reconstructed from authenticated
+source/noise/model references and hashed; do not save redundant large histories.
+60Hz and latent candidates remain disabled; differentiable world unchanged.
+Stage32MiB, total6.234375GiB, free disk>=8GiB; exact16MiB validator extension.
+GPU1 only, conditional-PSI/cgroup/no-preallocation/temperature guards preserved.
+Plan `critic_fixed_fit_plan_20261112_a01.json`, launcher
+`run_wmj_v1_fixed_critic.sh`. This registration is authorization, not success.
+
+A51 interrupted after176/512 Critic updates by the unchanged sustained-PSI
+rule, not OOM. Trigger scope3.878GiB, host available10.665GiB,
+PSI full avg10=5.48 for3 samples; worker173.71s, supervisor exit75,
+peak scope6.482GiB, minimum host7.583GiB, GPUmax36C.
+All6 replayed chunks match a50 values exactly. No-update and complete
+checkpoint restoration passed;327 frozen leaves unchanged,27 value-learning
+leaves changed;221 prior world modules unchanged. Actor/world updated0.
+Critic1320 checkpoint retains all176 accepted updates, original pool/reset/RNG,
+6710 fixed labels and44 local transactions;336 approved updates remain.
+At preregistered u128, training fixed-lambda RMSE .63806→.59146;
+heldout deterministic/sampled MC RMSE .91006/.91156→.87477/.87657,
+EV -.59863/-.59351→-.49406/-.49080. This is partial evidence, not acceptance.
+Interrupted full checkpoint and evidence consumed about16.02MiB of32MiB;
+remaining phase15.98MiB is below next full writer24.09MiB plus logs.
+No automatic restart, no deleted evidence, no default promotion.
+Verification `critic_fixed_fit_interruption_verification_20261112_a01.json`;
+await QA for resource handling and retained-checkpoint storage before continuing.
+
+A51 resource-only continuation approved: retain the176-step checkpoint and
+continue exactly336 more Critic updates (total512). Stage cap48MiB measured
+from the original a51 phase start; global cap6.25GiB, free disk>=8GiB.
+Only `run_wmj_v1_fixed_critic_resume.sh` enables the explicit
+`--wmj-v1-fixed-critic-resume-psi` override: PSI host threshold8GiB, scope
+threshold8GiB. Legacy independent/conditional13.5GiB PSI behavior, 10/11GiB
+cgroup limits,9.7GiB stop,6GiB host floor and all other guards remain.
+The resumed worker authenticates original plan/checkpoint/signature, exact
+fixed feature/label digests, full optimizer/RNG/pool state and counters.
+A resource-only signature bridge allows the new budget/launcher while rejecting
+any learning-contract change. Preserve u128 evidence; evaluate u256/u512.
+Plan `critic_fixed_fit_resume_plan_20261112_a01.json`; no new model version,
+Actor/world update, reward change or default promotion.38 targeted resource,
+fixed-data and checkpoint tests passed before continuation launch.
+
+A51 continuation completed normally on GPU1:176+336=512 Critic updates,
+Critic1144→1656, with44+84 contiguous four-step transactions. Training6710
+fixed labels/features reproduce exactly across workers; full checkpoint and
+next sampler restore passed.328 non-learning state leaves remain exact,
+including original pool, reset banks, Actor/Adam and fixed labels. No Actor or
+world update, no default replacement;221 prior world modules unchanged.
+Training fixed-label RMSE .63806→.45318 (-28.98%, fit gate passed), complete
+model-return RMSE .72892→.53953 and EV .25453→.58709.
+Heldout deterministic/sampled complete-return RMSE .91006/.91156→.88800/.89019
+(only2.42%/2.34% reductions), EV -.59863/-.59351→-.54141/-.53945: both
+preregistered heldout RMSE/EV gates failed. Terminal mean bias .14960/.14475→
+.01186/.00837 passes its gate, but terminal RMSE .38618/.38782→.44285/.44451
+worsens; the latter is retained negative evidence, not a newly invented gate.
+Hidden-layer2 saturation decreases from36.35% to27.22% on training rows and
+37.55% to29.21% on sampled heldout rows. Training fit still incomplete; broader
+source generalization remains unresolved, so neither target drift nor969-D
+Actor size alone explains the result. Source401 still contributes~60% heldout
+squared error; it remains included in every primary result. About94% heldout
+squared error occurs before/on first release.
+Resume worker186.46s, combined workers360.17s, peak scope6.222GiB, host minimum
+6.324GiB, GPUmax37C,17 PSI warning samples, no OOM/stop, exit0. Stage used
+about32.56MiB of48MiB before small verification records; disk free~21.13GiB.
+Final `critic_fixed_fit_resume_20261112_a01/critic_fixed_added512.json`, SHA256
+`e23e60dd7ae7d5eb4da042b7773a1ec40aad3019c532c172c8e467f59dcf3006`.
+Verification `critic_fixed_fit_verification_20261112_a02.json` clarifies one
+report sentence about the terminal-RMSE metric, preserving the original report
+and all identical numerical evidence. Phase closed; next experiment requires QA.
+
+### WMJ-V1 a52: frozen Critic input/generalization audit (2026-11-12)
+
+User approved read-only diagnostics on the same128 sampled training roots
+and32 heldout roots in both modes, H128, parentCritic1144/finalCritic1656.
+No parameter updates, deleted inputs, new scenes, rewards or default changes.
+Partition all2602 encoded inputs exactly once:969 Actor,46 physical/contact/
+current-pulse,24 task/sequence/elapsed,1563 controller/observation memory.
+Compare scale, constant coordinates, training-range and1--99% tail coverage,
+raw dV/dx componentRMS and training-std-weighted L2. Report Actor73-prefix/
+896-history geometry/age/mask breakdowns without altering observations.
+Nearest rows use training-only scales, same contact phase and different source
+roots; report absent neighbors and constant-coordinate drift separately.
+FP32 nearest selection is followed by FP64 recomputation of selected distances.
+Local feature derivatives, especially correlated memory/discrete coordinates,
+are diagnostic sensitivity, not physically realizable interventions or Actor
+return gradients. Check analytical derivatives against finite differences on16
+fixed training rows at eps.01/.001; do not tune or replace any gradients.
+Reproduce exact prior feature digests and paired trajectory/outcome records;
+keep failed/censored cases and all source tails in primary metrics. Store
+compressed component statistics and source/phase summaries, not full features.
+Stage<=1MiB, total6.25GiB, free disk>=8GiB; normal conditionalPSI13.5GiB
+host gate restored (the8GiB exception only covered the completed a51 resume).
+Plan `critic_input_audit_plan_20261112_a01.json`, GPU1 launcher
+`run_wmj_v1_critic_inputs.sh`.15 relevant tests and syntax/preflight passed.
+This entry registers scope, not findings or promotion.
+
+A52 attempt interrupted by normal conditionalPSI before gradient/coverage
+analysis completed. All6 existing trajectory chunks paired and all3 fixed
+feature matrices reproduced their registered digests. No optimizer path was
+invoked; source checkpoints and224 prior world modules remain unchanged.
+The final in-memory frozen digest was not reached, so it is not reported as
+a completed end-of-run check. No scientific sensitivity/coverage conclusion.
+Trigger scope2.966GiB, host available11.113GiB, PSI full avg10=18.56 for3
+samples; no OOM/high event. Worker158.60s, supervisor exit75. Diagnostics and
+interruption evidence use224KiB of1MiB;800KiB remains. Preserve all evidence
+and stop pending QA about the PSI policy and rerunning the same frozen audit.
+Evidence `critic_input_audit_interruption_20261112_a01.json`.
+
+A52 retry approved with a persistent WMJ-V1-only PSI host gate8GiB, keeping
+scope>=8GiB eligibility, startup host13.5GiB,10/11GiB cgroup limits,9.7GiB
+stop and6GiB host floor. Non-WMJ independent PSI behavior is unchanged.
+The user additionally authorized unused-memory cleanup. No orphan training
+process was found.746 closed WMJ .npz/.json.gz artifacts received per-file
+POSIX_FADV_DONTNEED hints; mincore reported0 resident bytes both before/after,
+so no reclaimed-memory gain is claimed and no processes/files were removed.
+The frozen audit now discards finished native/runtime/seed temporaries after
+checking exact feature reproduction and initial-state integrity; it retains
+network leaves for final frozen hashes, clears JAX caches and trims CPU heap.
+Sequential artifact preflight reserves the maximum actual archive/report
+write peak with extra log slack, rather than simultaneous temporary writes.
+Keep the original a52 phase start and cumulative1MiB cap including interruption
+records; retry plan `critic_input_audit_plan_20261112_a02.json`. No new scenes,
+network/input/reward changes or updates. Closed a51 resource-pinned plans now
+reject the changed guard rather than silently relaunching under new rules.
+
+A52 retry completed normally on GPU1 (RTX4080SUPER,
+`GPU-e74458ec-002a-1bac-e0be-d0a5713b661e`). All6 trajectory chunks pair
+exactly, all3 feature digests reproduce, and10040 valid controls are analyzed
+(6710 training,1663 heldout deterministic,1667 heldout sampled). Parent/final
+Critic checkpoints, frozen in-memory tensors and initial state remain unchanged;
+224 prior world modules are unchanged. No Actor/Critic/world updates or default
+replacement.45 targeted resource/fixed-fit/input-audit tests passed; stored
+component statistics, gradient field norms and value RMSE/bias were independently
+recomputed. Verification `critic_input_audit_verification_20261112_a01.json`.
+
+No gross input-scale explosion was found: group RMS is about.294--.445,
+maximum absolute encoded component5.265. Sampled heldout coordinates outside
+the full training range are.532% Actor,.137% physical,.040% task,.259% control;
+constant-coordinate drift is zero. These marginal statistics do not establish
+joint or temporal coverage.232 coordinates are constant/near-constant in these
+short S01 trajectories, not evidence to delete them in later courses. Median
+valid paired history is14/64 slots in all3 datasets (maximum58); early-failing
+reset trajectories therefore usually have not accumulated a complete cycle.
+This is not evidence that the640ms history implementation loses samples.
+
+Final sampled-heldout training-std-weighted local gradient squared shares are
+49.24% Actor (20.86% history),13.67% physical,1.77% task and35.31% control.
+These describe encoded-coordinate sensitivity, not causal input importance.
+FP32 finite differences at epsilon.001 disagree substantially; at.01 final
+direction agreements are100%/100%/93.3%/100% for the four families but derivative
+magnitudes still differ (mean absolute errors.00530/.00421/.00657/.00506).
+Do not count this as numerical gradient acceptance or an H64 return-gradient
+pass. It does not support deleting history or blaming969-D Actor size.
+
+Retained hard source401 has median Actor-group nearest distance.131 but mean
+fixed-lambda label gap3.47 to phase-matched independent training rows, usually
+source527; physical/control neighbors are also usually527 and task neighbors
+511. Neighbors were selected separately per group, not in the full joint
+space; closeness alone does not establish identical Markov states or missing
+observations. Sampled-heldout Actor distance P95 is.974 versus training
+leave-own-source-out.597, while per-group distance/error correlations are
+negative. Neither simple range overlap nor distance alone explains value error.
+The existing heldout value-fit failure remains; no architecture is promoted.
+
+Worker167.65s, peak scope6.340GiB, host minimum7.118GiB, GPUmax35C,12 PSI
+warning samples, no OOM/stop, exit0. Early release of finished runtime/seed
+temporaries reduced worker RSS4442750976->3429625856 bytes (966.19MiB);
+this measured reduction is separate from the no-op closed-file cache hints.
+No unrelated process was stopped and no artifact was deleted. Cumulative a52
+output including failed attempt/retry/verification is843776 bytes of1MiB;
+global6.25GiB cap retains15343616 bytes, free disk about21.12GiB. WMJ-V1's
+approved8GiB PSI host gate persists; all other guards and other-series rules
+remain. Phase closed; any new attribution or parameter update awaits user QA.

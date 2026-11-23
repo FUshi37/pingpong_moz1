@@ -1,0 +1,790 @@
+{
+  "schema_version": "wmj_training_config_v1",
+  "document_kind": "recorded_configuration_reference",
+  "document_revision": "r01",
+  "created_date": "2026-11-05",
+  "path_base": "repository_root",
+  "training_protocol": {
+    "enabled": false,
+    "id": "wmj_training_protocol",
+    "version": "1.0",
+    "sha256": "c3cd399b8e0ff8fd86369befb80eb9eebd55d49c28a05de0fbb778bf748bf1fc",
+    "path": "pingpong_controller/tools/rl_2real/WMJ_TRAINING_PROTOCOL.md",
+    "application": "reference_mapping_of_existing_v324_run",
+    "overrides": []
+  },
+  "identity": {
+    "document_namespace": "WMJ",
+    "training_version": "V324",
+    "recorded_family": "FPLC",
+    "profile": "fixed_plane_limit_cycle_qvel_rmp_gpu1_v324_training_v3",
+    "recorded_run_id": "fplc_v324_gpu1_training_quality_20261105_r3",
+    "training_config_revision": null,
+    "seed": 2026110404,
+    "objective": "在 M13 原生近侧扰动域加入 90 Hz 相机 AR1 位置噪声，完成训练内运动质量达标。"
+  },
+  "components": {
+    "CONTACT": {
+      "id": "ball_racket_contact_real11_static_1ms_v1",
+      "configuration_ref": "#/physics/contact",
+      "evidence": {
+        "path": "pingpong_controller/tools/rl_2real/BALL_RACKET_CONTACT_REAL11_STATIC_1MS_V1_REPORT.md",
+        "sha256": "4cc5f36b59d04a7e0a82cdda54269047bfd83ec8d4879c2365dfbd8df1a00829"
+      }
+    },
+    "EXEC": {
+      "id": "mjx_topology_execution_v2",
+      "configuration_ref": "#/execution"
+    },
+    "COURSE": {
+      "id": "fixed_plane_limit_cycle_qvel_rmp_gpu1_v324",
+      "configuration_ref": "#/curriculum"
+    },
+    "VERIFY": {
+      "id": "training_quality_v3",
+      "configuration_ref": "#/acceptance"
+    }
+  },
+  "lineage": {
+    "original_parent": {
+      "model": "M13",
+      "profile": "fixed_plane_limit_cycle_qvel_rmp_gpu1_v322",
+      "checkpoint": "pingpong_controller/outputs/rl_sim/fplc_v322_gpu1_late_center_precision_20261103_r1/training_qualified_inherited1200s.pkl",
+      "sha256": "d35ea68508cbdfbaddfb3766f21c3f4e82f6f127e3caab8262d9e69a9ad307bc",
+      "update": 31361,
+      "true_step": 8238268416,
+      "adam_t": 2020766,
+      "actor_critic_action": [
+        72,
+        393,
+        7
+      ],
+      "initial_critic_migration": "append_three_zero_rows_to_value_input_weights_and_Adam_m_v"
+    },
+    "resume": {
+      "checkpoint": "pingpong_controller/outputs/rl_sim/fplc_v324_gpu1_paired_validation_v2_20261104_r2/periodic_u00002899.pkl",
+      "sha256": "1b8f84cca5d841cc306874d03747559432fe922b6486e1682e8a06bf50cf4ea3",
+      "update": 2899,
+      "true_step": 8618246144,
+      "adam_t": 2113534,
+      "stage_index_zero_based": 1,
+      "stage_name": "fplc_v324_s2_camera_ar1_1x_consolidation",
+      "actor_critic_action": [
+        72,
+        396,
+        7
+      ]
+    },
+    "state_restore": {
+      "actor": "restore",
+      "critic": "restore",
+      "adam_moments": "restore",
+      "true_step": "preserve",
+      "adam_t": "preserve",
+      "rng": "initialize_from_recorded_seed",
+      "episodes": "reset",
+      "quality_window": "fresh",
+      "quality_hold": "zero",
+      "endpoint_window": "fresh",
+      "condition_window": "fresh",
+      "actor_anchor": "exact serialized M11 S17 stage_actor_anchor_reference_params"
+    }
+  },
+  "model": {
+    "actor_obs_dim": 72,
+    "critic_obs_dim": 396,
+    "action_dim": 7,
+    "actor_observation_schema": "fixed_plane_v149_position_only_contiguous_72d",
+    "joint_order": [
+      "RightArm-0",
+      "RightArm-1",
+      "RightArm-2",
+      "RightArm-3",
+      "RightArm-4",
+      "RightArm-5",
+      "RightArm-6"
+    ],
+    "action_semantics": "normalized_QVEL_clipped_to_minus1_plus1_then_scaled_by_joint_velocity_limits",
+    "actor_output_activation": "linear",
+    "critic_noise_suffix_dim": 3,
+    "critic_noise_suffix": "ball_position_noise_epsilon_m"
+  },
+  "learner": {
+    "n_envs": 1024,
+    "n_steps": 128,
+    "update_epochs": 4,
+    "minibatch_size": 16384,
+    "gamma": 0.9995,
+    "gae_lambda": 0.99,
+    "learning_rate": 1.5e-05,
+    "clip_range": 0.12,
+    "vf_coef": 0.05,
+    "ent_coef": 0.001,
+    "max_grad_norm": 0.5,
+    "min_log_std": -3.0,
+    "max_log_std": null,
+    "target_kl": 0.006,
+    "time_limit_bootstrap": true,
+    "counterfactual_supervision_coef": 0.05,
+    "counterfactual_vxy_weight_mode": "uniform",
+    "actor_anchor_kl_coef": 0.0,
+    "actor_anchor_replay_kl_coef": 1.0,
+    "actor_anchor_replay_max_kl": 0.0,
+    "residual_l2_coef": 0.01,
+    "failure_focus_hit_threshold": 14,
+    "failure_focus_weight": 1.0,
+    "failure_focus_tail_steps": 128,
+    "failure_focus_balanced_mass": 0.02,
+    "samples_per_update": 131072,
+    "adam_steps_per_update": 32,
+    "apply_every_minibatch": true,
+    "loss_preset": "anchor1",
+    "total_update_limit": null,
+    "max_stage_updates": null,
+    "replay_inputs": [
+      {
+        "path": "pingpong_controller/outputs/rl_sim/v257_resume_recovery_20261023_r1/recovered_05_fplc_v225_s05_placed_xy_08mm.pkl",
+        "sha256": "b102831e018585b7127668fcc40a8de258325e2a7a58551f02ddc3b6ddce2608"
+      },
+      {
+        "path": "pingpong_controller/outputs/rl_sim/v257_resume_recovery_20261023_r1/recovered_observations.npy",
+        "sha256": "2741d1898620b62d227b0ee45a4f73aae6691503e2bb1e41054ed0761f079cf7"
+      },
+      {
+        "path": "pingpong_controller/outputs/rl_sim/v150_gpu1_preflight_20261006_r3/replay_obs_72d.npy",
+        "sha256": "793575f1da785c295ed110a29e1d18052f4f9fa5edc14a332079e534fb210bc3"
+      },
+      {
+        "path": "pingpong_controller/outputs/rl_sim/v150_gpu1_preflight_20261006_r3/replay_actions_7d.npy",
+        "sha256": "131253156dd2084f6062fc0846cd14a6b411fb502866f2fdf65a7897dfa72439"
+      }
+    ]
+  },
+  "control": {
+    "policy_rate_hz": 200.0,
+    "policy_dt_s": 0.005,
+    "rmp_rate_hz": 1000.0,
+    "physics_rate_hz": 1000.0,
+    "rmp_ticks_per_policy_step": 5,
+    "physics_ticks_per_policy_step": 5,
+    "feedback_source": "measured",
+    "simulation_base_mode": "aligned_fixed",
+    "native_parameters": {
+      "right_arm_pd_profile": "recovered_rmp_rmpmd_v2",
+      "arm_vel_limit_deg_s": [
+        210.0,
+        210.0,
+        240.0,
+        240.0,
+        300.0,
+        300.0,
+        300.0
+      ],
+      "arm_acc_limit_deg_s2": [
+        1300.0,
+        1300.0,
+        1800.0,
+        3000.0,
+        3000.0,
+        3000.0,
+        3000.0
+      ],
+      "recovered_rmp_motion_mode": true,
+      "recovered_rmp_period_s": 0.001,
+      "recovered_rmp_direct_qvel_target": true,
+      "recovered_rmp_qvel_target_lead_s": 0.0,
+      "recovered_rmp_bounded_qvel_reference": true,
+      "recovered_rmp_qvel_reference_error_horizon_s_per_joint": [
+        10.0,
+        10.0,
+        10.0,
+        10.0,
+        10.0,
+        10.0,
+        10.0
+      ],
+      "recovered_rmp_jnt_kp_scale_per_joint": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "recovered_rmp_jnt_kd_scale_per_joint": [
+        1.0,
+        1.0,
+        0.92,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "recovered_rmp_dof_damping_scale_per_joint": [
+        0.6084,
+        0.9984,
+        0.9984,
+        1.92,
+        0.58,
+        1.17,
+        0.78
+      ],
+      "recovered_rmp_dof_armature_scale_per_joint": [
+        0.4524,
+        1.65,
+        0.92,
+        1.22,
+        0.58,
+        0.5336,
+        0.58
+      ],
+      "recovered_rmp_target_filter_length": 10,
+      "recovered_rmp_output_filter_length": 35,
+      "recovered_rmp_target_update_delay_steps": 3,
+      "recovered_rmp_output_delay_steps_per_joint": [
+        18,
+        19,
+        19,
+        18,
+        18,
+        18,
+        18
+      ],
+      "recovered_rmp_joint_velocity_feedforward": 0.5,
+      "recovered_rmp_joint_acceleration_feedforward": 0.0,
+      "recovered_rmp_estimator_joint_process_var": 50.0,
+      "recovered_rmp_estimator_joint_measure_var": 0.0001,
+      "recovered_rmp_acceleration_weight": 0.001,
+      "recovered_rmp_use_safety_bounds": true,
+      "recovered_rmp_use_jerk_limit": false
+    },
+    "workspace": {
+      "cartesian_pose_projection_enabled": true,
+      "cartesian_pose_position_lower_m": [
+        -0.145,
+        -0.595,
+        1.0
+      ],
+      "cartesian_pose_position_upper_m": [
+        0.145,
+        -0.355,
+        1.15
+      ],
+      "cartesian_pose_rpy_axis_enabled": [
+        true,
+        true,
+        false
+      ],
+      "cartesian_pose_roll_limit_deg": 2.0,
+      "cartesian_pose_pitch_limit_deg": 2.0,
+      "cartesian_pose_position_margin_m": 0.0005,
+      "cartesian_pose_orientation_margin_deg": 0.1,
+      "cartesian_pose_position_cbf_gain_s": 20.0,
+      "cartesian_pose_orientation_cbf_gain_s": 20.0,
+      "cartesian_pose_projection_sweeps": 24,
+      "cartesian_pose_projection_tolerance": 2e-05,
+      "cartesian_pose_projection_penalty_weight": 0.01,
+      "cartesian_pose_require_reset_reference_safe": false
+    }
+  },
+  "physics": {
+    "xml": {
+      "path": "pingpong_controller/outputs/rl_sim/fplc_v319_gpu0_mean0265_completion_20261026_r1/source_snapshot/pingpong_controller/tools/rl_sim/moz1_pd_1ms_v98.xml",
+      "sha256": "ace35229f4d643410a95481719c962e3b8ad172c2eba5901ee3d3e76e966ad8a"
+    },
+    "timestep_s": 0.001,
+    "integrator": "implicitfast",
+    "solver_iterations": 100,
+    "friction_cone": "elliptic",
+    "ball_mass_range_kg": [
+      0.004,
+      0.004
+    ],
+    "ball_radius_m": 0.02,
+    "contact": {
+      "ball_racket_collision_geometry": "finite_mesh16",
+      "ball_racket_pair_override_enabled": true,
+      "ball_racket_pair_solref": [
+        0.006836,
+        0.228086
+      ],
+      "ball_racket_pair_solreffriction": [
+        0.0,
+        0.0
+      ],
+      "ball_racket_pair_solimp": [
+        0.04,
+        0.7,
+        0.014298,
+        0.04,
+        8.021856
+      ],
+      "ball_racket_pair_friction": [
+        0.13268182450948787,
+        0.11820649851379933,
+        0.0001544955787453423,
+        2.013852101985789e-05,
+        2.013852101985789e-05
+      ],
+      "ball_racket_pair_margin_m": 0.0,
+      "ball_racket_pair_gap_m": 0.0,
+      "ball_racket_pair_condim": 3,
+      "ball_racket_pair_tie_tangent_friction_dr": false,
+      "ball_racket_contact_boundary_mode": "robot_dynamic",
+      "fixed_plane_v98_coarse_contact": true,
+      "compiled_racket_geom_offset_along_normal_m": 0.003,
+      "calibration_population": "real11_static_first_rebound",
+      "calibration_case_count": 11,
+      "independent_dynamic_held_out_certification": false
+    }
+  },
+  "observation": {
+    "position_frame": "calibrated_world_ball_center",
+    "history_policy_ticks": 8,
+    "history_tick_s": 0.005,
+    "camera_rate_hz": 90.0,
+    "fractional_rate_scheduler": true,
+    "position_noise": {
+      "ball_position_noise_ar1_enabled": true,
+      "ball_position_noise_mean_m": [
+        4.8e-05,
+        7.2e-05,
+        -0.000227
+      ],
+      "ball_position_noise_std_m": [
+        0.001451,
+        0.001418,
+        0.00297
+      ],
+      "ball_position_noise_rho_at_90hz": [
+        0.935,
+        0.907,
+        0.79
+      ]
+    },
+    "other_parameters": {
+      "ball_obs_pos_noise_std": 0.0,
+      "ball_obs_vel_noise_std": 0.0,
+      "ball_obs_vel_xy_noise_std": 0.0,
+      "ball_obs_posthit_vel_xy_noise_std": 0.0,
+      "ball_obs_dropout_prob": 0.0,
+      "ball_obs_dropout_burst_prob": 0.0,
+      "dr_randomize_ball_obs_frame": false,
+      "dr_randomize_latency": false,
+      "dr_post_hit_ball_obs_latency": false
+    }
+  },
+  "domain": {
+    "reset": {
+      "ball_reset_mode": "racket_launch",
+      "racket_launch_surface_gap_range_m": [
+        0.001,
+        0.001
+      ],
+      "racket_launch_xy_jitter": 0.008,
+      "racket_launch_vxy_max": 0.0,
+      "racket_launch_vnormal_max": 0.0,
+      "racket_launch_hold_time_s": 0.0,
+      "racket_launch_racket_follow_episode_target_xy": true,
+      "racket_launch_racket_follow_fixed_contact_surface_z": true,
+      "v225_enabled": true,
+      "v225_nominal_fraction": 0.5,
+      "v225_mirror_fraction": 0.1,
+      "v225_near_y_max_m": 0.1,
+      "v225_momentum_delta_limit_m_s": 0.08,
+      "v225_momentum_target_cap_m_s": 0.11
+    },
+    "randomization": {
+      "dr_randomize_ball": true,
+      "dr_ball_mass_range": [
+        0.004,
+        0.004
+      ],
+      "dr_gravity_z_range": [
+        -9.81,
+        -9.81
+      ],
+      "dr_randomize_contact": false,
+      "dr_randomize_actuator": false,
+      "dr_randomize_pd": false,
+      "dr_randomize_recovered_rmp": false,
+      "dr_rmp_target_update_hold_probability": 0.0,
+      "dr_rmp_target_update_hold_tail_probability": 0.0,
+      "dr_execution_command_hold_probability": 0.0,
+      "dr_execution_command_hold_tail_probability": 0.0
+    },
+    "new_change_relative_to_M13": "camera_position_AR1_noise_only"
+  },
+  "reward": {
+    "preset": "late_center_precision",
+    "inherited_preset": "reference_timing",
+    "hit_reward_cap_mode": "off",
+    "hit_reward_count_cap": 0,
+    "survival_reward_rate_per_s": 40.0,
+    "recent_confirmed_hit_max_age_s": 1.2,
+    "late_event_min_previous_hits": 3,
+    "late_center_precision_settings": {
+      "center_free_m": 0.0045,
+      "center_scale_m": 0.0065,
+      "center_max_cost": 32.0,
+      "contraction_ratio": 0.8,
+      "apex_free_m": 0.005,
+      "apex_scale_m": 0.035,
+      "apex_max_cost": 0.0
+    },
+    "inherited_adapter_settings_ref": {
+      "path": "pingpong_controller/outputs/rl_sim/v323_v324_training_only_20261105_r1/previous_contract_v324.json",
+      "sha256": "3d5d6685a8db15093ca8612d4b552a3b29ed4e70c514e6051afcc5f5d96fe4a1",
+      "json_pointer": "/parent_contract"
+    }
+  },
+  "curriculum": {
+    "training_episode_s": 1200.0,
+    "training_episode_steps": 240000,
+    "registered_stage_count": 2,
+    "active_stage_id": "S02",
+    "registered_lesson_seconds_role": "mixed_policy_endpoint_telemetry_deadline",
+    "training_gate_ref": "#/acceptance/training_gate",
+    "validation_ref": "#/acceptance/validation",
+    "stages": [
+      {
+        "id": "S01",
+        "name": "fplc_v324_s1_camera_ar1_1x",
+        "execution_in_recorded_run": "not_replayed",
+        "objective": "适应原生扰动域的 1x 相机 AR1 位置噪声。",
+        "changes_from_previous": [
+          "enable_camera_position_AR1_1x"
+        ],
+        "training_episode_s": 1200.0,
+        "registered_telemetry_deadline_s": 30.0,
+        "registered_min_survival": 0.93,
+        "registered_min_length_fraction": 0.95,
+        "registered_longevity_thresholds_used_for_v3_completion": false,
+        "training_gate_ref": "#/acceptance/training_gate",
+        "validation_ref": "#/acceptance/validation",
+        "entry_checkpoint_sha256": "d35ea68508cbdfbaddfb3766f21c3f4e82f6f127e3caab8262d9e69a9ad307bc",
+        "advance_when": "historical stage; not executed by this S02 continuation"
+      },
+      {
+        "id": "S02",
+        "name": "fplc_v324_s2_camera_ar1_1x_consolidation",
+        "execution_in_recorded_run": "active",
+        "objective": "保持相同训练域，巩固运动质量。",
+        "changes_from_previous": [],
+        "training_episode_s": 1200.0,
+        "registered_telemetry_deadline_s": 1200.0,
+        "registered_min_survival": 0.93,
+        "registered_min_length_fraction": 0.95,
+        "registered_longevity_thresholds_used_for_v3_completion": false,
+        "training_gate_ref": "#/acceptance/training_gate",
+        "validation_ref": "#/acceptance/validation",
+        "entry_checkpoint_sha256": "1b8f84cca5d841cc306874d03747559432fe922b6486e1682e8a06bf50cf4ea3",
+        "advance_when": "training_quality_v3 completes the active S02 and stops"
+      }
+    ],
+    "on_active_stage_quality_completion": "save_training_qualified_checkpoint_and_stop",
+    "automatic_stage_advance_in_training_quality_v3": false
+  },
+  "acceptance": {
+    "id": "training_quality_v3",
+    "scope": "training_only",
+    "training_gate": {
+      "window_updates": 32,
+      "consecutive_passes": 16,
+      "min_steady_events": 100,
+      "all_required_metrics_present_and_finite": true,
+      "aggregation": "event_weighted_rolling_updates",
+      "fresh_window_on_resume": true,
+      "extra_min_update_gate": false,
+      "earliest_possible_fresh_updates": 47,
+      "required_metrics": {
+        "apex_m": {
+          "unit": "m",
+          "aggregation": "event_weighted",
+          "formula": "rapid_steady_steady_apex_sum_z_m / rapid_steady_steady_events",
+          "min": 1.4,
+          "max": 1.45
+        },
+        "racket_vxy_rms_m_s": {
+          "unit": "m/s",
+          "aggregation": "event_weighted",
+          "formula": "sqrt(rapid_steady_steady_racket_vxy_sq_sum / rapid_steady_steady_events)",
+          "max": 0.055
+        },
+        "racket_omega_rms_rad_s": {
+          "unit": "rad/s",
+          "aggregation": "event_weighted",
+          "formula": "sqrt(rapid_steady_steady_racket_omega_sq_sum / rapid_steady_steady_events)",
+          "max": 0.28
+        },
+        "in_band": {
+          "unit": "fraction",
+          "aggregation": "event_weighted",
+          "formula": "v92_in_1p4_1p45_event / v92_late_contact_event",
+          "min": 0.99
+        },
+        "adjacent_jump_m": {
+          "unit": "m",
+          "aggregation": "event_weighted",
+          "formula": "v80_late_pair_jump_sum_m / v80_late_pair_event",
+          "max": 0.012
+        },
+        "center_m": {
+          "unit": "m",
+          "aggregation": "event_weighted",
+          "formula": "hit_contact_center_dist_sum / hit_event_count",
+          "max": 0.0055
+        },
+        "recurrent_vxy_m_s": {
+          "unit": "m/s",
+          "aggregation": "event_weighted",
+          "formula": "recurrent_hit_racket_vxy_sum / recurrent_hit_event_count",
+          "max": 0.05
+        },
+        "recurrent_vxy_rms_m_s": {
+          "unit": "m/s",
+          "aggregation": "event_weighted",
+          "formula": "sqrt(recurrent_hit_racket_vxy_sq_sum / recurrent_hit_event_count)",
+          "max": 0.055
+        },
+        "ball_vxy_m_s": {
+          "unit": "m/s",
+          "aggregation": "event_weighted",
+          "formula": "hit_vxy_sum / hit_event_count",
+          "max": 0.035
+        },
+        "ball_vxy_rms_m_s": {
+          "unit": "m/s",
+          "aggregation": "event_weighted",
+          "formula": "sqrt(hit_vxy_sq_sum / hit_event_count)",
+          "max": 0.045
+        },
+        "steady_events": {
+          "unit": "count",
+          "aggregation": "sum",
+          "formula": "rapid_steady_steady_events",
+          "min": 100
+        }
+      }
+    },
+    "validation": {
+      "mode": "training_only",
+      "status": "NOT_REQUESTED",
+      "duration_s": null,
+      "cases": null,
+      "reset_seeds": [],
+      "action_seed": null,
+      "conditions": [],
+      "gates": {},
+      "retention_cases": [],
+      "retry_updates": null,
+      "independent_evaluation_required": false
+    },
+    "endpoint_condition_telemetry": {
+      "source": "TRAIN_MIXED",
+      "used_for_completion_gate": false,
+      "window_capacity_episodes": 4096,
+      "inherited_condition_thresholds": {
+        "nominal": {
+          "min_n": 64,
+          "min_survival": 0.93,
+          "min_length_fraction": 0.95
+        },
+        "near_0_50": {
+          "min_n": 64,
+          "min_survival": 0.9,
+          "min_length_fraction": 0.9
+        },
+        "near_50_80": {
+          "min_n": 64,
+          "min_survival": 0.7,
+          "min_length_fraction": 0.7
+        },
+        "near_80_100": {
+          "min_n": 64,
+          "min_survival": 0.5,
+          "min_length_fraction": 0.5
+        },
+        "mirror": {
+          "min_n": 64,
+          "min_survival": 0.9,
+          "min_length_fraction": 0.9
+        }
+      }
+    },
+    "flags_written_on_training_completion": {
+      "training_acceptance.qualified": true,
+      "training_acceptance.scope": "training_only",
+      "stage_converged": false,
+      "final_acceptance_passed": false,
+      "deterministic_certified": false,
+      "hardware_coverage": false
+    }
+  },
+  "execution": {
+    "id": "mjx_topology_execution_v2",
+    "mode": "topology_v2",
+    "backend": "gpu",
+    "jax_version": "0.10.1",
+    "mujoco_version": "3.8.1",
+    "support_sha256": "103b6ac154ab716df46057b03800851c63971a47938a8b97923824a25b668c59",
+    "solver_sha256": "ad9c611bb8fe4116b0bba10f66b3473a958fe770fa82f9080a0f66a206d299ab",
+    "qualification": {
+      "evidence": {
+        "path": "pingpong_controller/outputs/rl_sim/v323_v324_training_only_20261105_r1/execution_pair_audit_v324.json",
+        "sha256": "9dd383c08720cef529d8695e00f20aee7deb940a76d046980727a8e59f182bf3"
+      },
+      "paired_updates_per_arm": 3,
+      "adam_steps_per_update": 32,
+      "adam_steps_per_arm": 96,
+      "full_digests_equal": true,
+      "core_digests_equal": true,
+      "changed_leaves_per_update": [
+        0,
+        0,
+        0
+      ],
+      "pair_policy": "core_exact_diagnostic_fp32_v2"
+    },
+    "performance_measurement": {
+      "cold_start_s": null,
+      "hot_update_s": null,
+      "sps": null,
+      "status": "not_recorded_in_selected_execution_pair_artifact"
+    },
+    "cold_initialization": "serialized_with_shared_memory_lease",
+    "hot_ppo": "concurrent_after_initialization"
+  },
+  "runtime": {
+    "python": "/home/yangzhe/miniconda3/envs/pingpong/bin/python",
+    "gpu_uuid": "GPU-e74458ec-002a-1bac-e0be-d0a5713b661e",
+    "tmux_session": "pp_gpu3",
+    "environment": {
+      "V324_VALIDATION_PROTOCOL": "training_quality_v3",
+      "V324_TMUX_SESSION": "pp_gpu3",
+      "V324_EXECUTION_AUDIT": "pingpong_controller/outputs/rl_sim/v323_v324_training_only_20261105_r1/execution_pair_audit_v324.json",
+      "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
+      "CUDA_VISIBLE_DEVICES": "GPU-e74458ec-002a-1bac-e0be-d0a5713b661e",
+      "JAX_PLATFORMS": "cuda",
+      "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+      "JAX_ENABLE_COMPILATION_CACHE": "false",
+      "XLA_FLAGS": "--xla_gpu_deterministic_ops=true --xla_gpu_force_compilation_parallelism=1 --xla_gpu_enable_llvm_module_compilation_parallelism=false",
+      "OPENBLAS_NUM_THREADS": "1",
+      "OMP_NUM_THREADS": "1",
+      "MALLOC_ARENA_MAX": "2",
+      "PYTHONDONTWRITEBYTECODE": "1"
+    },
+    "resource_guards": {
+      "memory_high_gib": 10.0,
+      "memory_max_gib": 11.0,
+      "memory_stop_gib": 9.7,
+      "host_stop_available_gib": 6.0,
+      "host_stop_streak_samples": 2,
+      "startup_min_host_available_gib": 13.5,
+      "gpu_stop_temperature_c": 78
+    },
+    "recorded_launch": {
+      "argv": [
+        "pingpong_controller/tools/rl_sim/run_gpu1_fixed_plane_v324_ball_obs_noise.sh",
+        "--formal",
+        "fplc_v324_gpu1_training_quality_20261105_r3",
+        "pingpong_controller/outputs/rl_sim/fplc_v324_gpu1_paired_validation_v2_20261104_r2/periodic_u00002899.pkl"
+      ],
+      "evidence": {
+        "path": "pingpong_controller/outputs/rl_sim/v323_v324_training_only_20261105_r1/formal_v324_launch.json",
+        "sha256": "c73c8c434de790566433a67319c8bba79cc2e5f8004bad967604576f7e8986b9"
+      }
+    },
+    "model_directory": "pingpong_controller/outputs/rl_sim/fplc_v324_gpu1_training_quality_20261105_r3",
+    "sdk_cache_logs": "tmpfs",
+    "wandb": {
+      "project": "pingpong-mjx",
+      "id": "fplc_v324_gpu1_training_quality_20261105_r3",
+      "mode": "online",
+      "resume": "never",
+      "step_metric": "update"
+    }
+  },
+  "terminal": {
+    "recorded_implementation": {
+      "format": "legacy_V324_stage_update_survival_quality_dict_training_quality_hold_Adam_execution",
+      "update_every_updates": 1,
+      "full_quality_dictionary_every_updates": 1,
+      "source": {
+        "path": "pingpong_controller/tools/rl_sim/train_fixed_plane_ball_obs_noise.py",
+        "sha256": "83b6461e9bfbb92f76dbf05350706915344bf6d3ea42bcb8506bf30d2ddf8db7"
+      }
+    },
+    "wmj_protocol_target": {
+      "implemented_in_recorded_run": false,
+      "schema_version": "wmj_terminal_v1",
+      "train_every_updates": 1,
+      "learner_every_updates": 1,
+      "quality_every_updates": 10,
+      "system_every_s": 30,
+      "gate_changes_immediate": true,
+      "tags": [
+        "RUN",
+        "STAGE",
+        "TRAIN",
+        "LEARN",
+        "QUALITY",
+        "GATE",
+        "VERIFY",
+        "SYS",
+        "SAVE",
+        "ADVANCE",
+        "STOP"
+      ],
+      "training_statistics_source": "TRAIN_MIXED",
+      "frozen_validation_status": "NOT_REQUESTED"
+    }
+  },
+  "checkpointing": {
+    "save_every_updates": 100,
+    "atomic_save": true,
+    "periodic_pattern": "periodic_u{update:08d}.pkl",
+    "qualified_pattern": "training_qualified_u{update:08d}.pkl",
+    "interrupted_pattern": "interrupted_u{update:08d}.pkl",
+    "periodic_prune_every_new_saves": 5,
+    "periodic_selection": "best_mixed_policy_training_rank",
+    "keep_newest_periodic_independently_of_best": false,
+    "protected_kinds": [
+      "interrupted",
+      "training_qualified",
+      "converged"
+    ],
+    "save_full_actor_critic_Adam_state": true
+  },
+  "provenance": {
+    "preflight": {
+      "path": "pingpong_controller/outputs/rl_sim/v323_v324_training_only_20261105_r1/preflight_v324.json",
+      "sha256": "8a89439bb00eeb104d2a9d26e5d95d785f41683bdf156a4e4ae904c7a30f5c56"
+    },
+    "resume_identity": {
+      "path": "pingpong_controller/outputs/rl_sim/v323_v324_training_only_20261105_r1/resume_checkpoints.json",
+      "sha256": "436458b06f2fcdda6c2c8b15e61c94b15e88ff028a1d41a71d9b987d640f8fe3",
+      "json_pointer": "/324"
+    },
+    "complete_env_cfg": {
+      "path": "pingpong_controller/outputs/rl_sim/v323_v324_training_only_20261105_r1/execution_pair_audit_v324.json",
+      "sha256": "9dd383c08720cef529d8695e00f20aee7deb940a76d046980727a8e59f182bf3",
+      "json_pointer": "/binding/env_cfg",
+      "field_count": 1183
+    },
+    "reviewed_source_hashes": {
+      "path": "pingpong_controller/outputs/rl_sim/v323_v324_training_only_20261105_r1/reviewed_source_sha256.json",
+      "sha256": "35d2ef054712f3bde8183bbb3a9143df35c22f9288bdd83d0e935b3f93a5abf1"
+    },
+    "native_source_hashes": {
+      "path": "pingpong_controller/outputs/rl_sim/v323_v324_training_only_20261105_r1/execution_pair_audit_v324.json",
+      "sha256": "9dd383c08720cef529d8695e00f20aee7deb940a76d046980727a8e59f182bf3",
+      "json_pointer": "/binding/native_source_sha256"
+    },
+    "source_files_matched_at_export": 24,
+    "parent_checkpoint_sha256_matched_at_export": true,
+    "resume_checkpoint_sha256_matched_at_export": true,
+    "xml_sha256_matched_at_export": true
+  }
+}
