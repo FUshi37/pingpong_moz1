@@ -1,0 +1,49 @@
+{
+  "timestamp": "2026-11-19T15:43:38.898705+08:00",
+  "user_scope": "Optimize existingV325S15 at0--1.6m/s constantwind over entireY<=0half-plane; no2m/s/slow/gust until later.",
+  "source": "/home/yangzhe/Project/pingpong_controller/pingpong_controller/outputs/rl_sim/v325_structural_ablations_20261119_r1/inputs/joint_pass_s15_u14400.pkl",
+  "source_sha256": "fd9def8f5fdb511e1543cbcca264e0021738ff07c6425e8d393cb1c240918e97",
+  "source_update": 14400,
+  "source_adam_t": 963375,
+  "source_snapshot": "/home/yangzhe/Project/pingpong_controller/pingpong_controller/outputs/rl_sim/v325_structural_ablations_20261119_r1/source",
+  "source_manifest": "/home/yangzhe/Project/pingpong_controller/pingpong_controller/outputs/rl_sim/v325_structural_ablations_20261119_r1/PLAN.json",
+  "stage": 15,
+  "stage_index": 14,
+  "maximum_wind_m_s": 1.6,
+  "no_curriculum_advance": true,
+  "old_goal_status": "paused",
+  "BC": 0,
+  "RP_degrees": 20,
+  "first5_hits_sheltered": true,
+  "wind_ramp_s": 1.0,
+  "comparison": {
+    "arms": [
+      "original_sampling",
+      "fixed_direction_cohorts"
+    ],
+    "updates": 128,
+    "n_envs": 256,
+    "n_steps": 128,
+    "minibatch_size": 4096,
+    "epochs": 4,
+    "seed": 2026102807,
+    "only_learning_intervention": "persistent10percentcleanplus8equalwinddirectionsectors; nativeconditionalresetkeyrejectionsampling preserves conditionalphysics and amplitude distribution; no actorwindlabel"
+  },
+  "evaluation": {
+    "seconds": 25.6,
+    "clean_lanes": 128,
+    "wind_lanes": 128,
+    "speed_m_s": 1.6,
+    "directions": "16sectorcentersplus-X,-Y,+X; heldcommonresetkeysandactioninnovations",
+    "reference": "originalS15parent and finalcheckpoints of both128updatearms",
+    "selection": "finalcheckpoint only",
+    "no_long_seed_review": true
+  },
+  "acceptance": {
+    "clean": "survival/lifetime/hit12no regression; center<=+0.5mm,apexRMS<=+1mm,band>=-2pp",
+    "wind": "survival/lifetime improve without reducedworstsector lifetime; physicalheightfailures do not increase",
+    "normal_path": "Do not adopt negative candidate; retain originalS15source. Any continuedpolish must stayfixedS15andmax1.6."
+  },
+  "storage": "onlineW&B,RAM-onlySDK; fulllearner preserved; nooverwrite; cleanup onlyunusedverifiedtaskcaches",
+  "protected_ledger_sha256": "b87c0911bba022cf79d595f8d628a0d116676a51e634ae513dec6783269f8108"
+}
