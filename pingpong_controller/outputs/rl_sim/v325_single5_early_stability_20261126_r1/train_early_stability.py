@@ -37,7 +37,7 @@ from capture_margin import CaptureEnv
 from xwind_sampling import XWindEnv
 from randomized_onset import TIMING_FIELDS, PREVIEW_FIELDS
 from targeted_reward import FIELDS as TARGETED_FIELDS
-from fixed_plane_v321_long_episode import QUALITY_FIELDS, CheckpointRetention
+from fixed_plane_v321_long_episode import QUALITY_FIELDS
 from fixed_plane_wind_flight_outcomes import HEIGHT_FIELDS
 from fixed_plane_wind_reference_constraints import REFERENCE_FIELDS, make_reference_gate
 from fixed_plane_wind_strong import quality_gate
@@ -62,6 +62,35 @@ from stratified_rehearsal import (
 def save_json(path: Path, value: dict):
     with path.open("x") as f:
         json.dump(value, f, indent=2, ensure_ascii=False)
+
+
+class BestAndLatestRetention:
+    """Periodically prune periodic checkpoints, keeping only best and latest."""
+
+    def __init__(self, directory: Path, cleanup_every: int = 5):
+        self.directory = Path(directory)
+        self.cleanup_every = max(1, int(cleanup_every))
+        self.best_score = None
+        self.best_path = None
+        self.latest_path = None
+        self._since_cleanup = 0
+
+    def register(self, path: Path, score):
+        path = Path(path)
+        self.latest_path = path
+        if self.best_score is None or score > self.best_score:
+            self.best_score = score
+            self.best_path = path
+        self._since_cleanup += 1
+        if self._since_cleanup >= self.cleanup_every:
+            self.prune()
+            self._since_cleanup = 0
+
+    def prune(self):
+        keep = {p.resolve() for p in (self.best_path, self.latest_path) if p is not None}
+        for ckpt in sorted(self.directory.glob("periodic_u*.pkl")):
+            if ckpt.resolve() not in keep:
+                ckpt.unlink(missing_ok=True)
 
 
 def load_u416_provisional(env, stack):
@@ -451,7 +480,10 @@ def main():
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stopped.__setitem__(0, True))
 
-    retention = CheckpointRetention(opts.output, cleanup_every=5)
+    ret_cfg = plan.get("checkpoint_retention", {})
+    periodic_every = int(ret_cfg.get("periodic_every_updates", 8))
+    cleanup_every_saves = int(ret_cfg.get("cleanup_every_saves", 5))
+    retention = BestAndLatestRetention(opts.output, cleanup_every=cleanup_every_saves)
     gate = make_reference_gate(quality_gate(325, stack.spec.course[14], stack.helpers.quality_passed), 325)
     status = {}
     score = (0.0, -1e6, -1e6, -1e6)
@@ -649,15 +681,17 @@ def main():
                     flush=True,
                 )
 
+                dir08_band = float(summaries.get("xpeak_dir08", {}).get("quality", {}).get("in_band", 0.0))
+                dir00_band = float(summaries.get("xpeak_dir00", {}).get("quality", {}).get("in_band", 0.0))
+                clean_phys = float(startup_summary.get("clean_phys_survival", 0.0))
+                clean_ok = float(startup_summary.get("n", 0) >= 256 and clean_phys >= 0.99)
                 score = (
                     float(final_gate["passed"]),
+                    clean_ok,
                     float(startup_summary.get("negx_peak_survival", 0.0)),
                     float(startup_summary.get("peak_survival", 0.0)),
                     float(startup_summary.get("survival", 0.0)),
                 )
-                dir08_band = float(summaries.get("xpeak_dir08", {}).get("quality", {}).get("in_band", 0.0))
-                dir00_band = float(summaries.get("xpeak_dir00", {}).get("quality", {}).get("in_band", 0.0))
-                clean_phys = float(startup_summary.get("clean_phys_survival", 0.0))
                 if (startup_summary.get("n", 0) >= 512 and clean_phys >= 0.99
                         and dir08_band >= 0.98 and dir00_band >= 0.98):
                     cand_pareto = (
@@ -668,8 +702,11 @@ def main():
                     if cand_pareto > best_pareto:
                         best_pareto = cand_pareto
                         bp = checkpoint("best_pareto")
+                        for old_bp in opts.output.glob("best_pareto_u*.pkl"):
+                            if old_bp.resolve() != bp.resolve():
+                                old_bp.unlink(missing_ok=True)
                         print(f"  [BEST PARETO] saved {bp.name} peak={cand_pareto[0]*100:.1f}% negX={cand_pareto[1]*100:.1f}% dir08={cand_pareto[2]*100:.1f}% dir08_band={dir08_band*100:.1f}% clean_phys={clean_phys*100:.1f}%", flush=True)
-                if completed % 8 == 0:
+                if completed % periodic_every == 0:
                     checkpoint("periodic")
                 if completed in milestones:
                     checkpoint("milestone")
@@ -686,6 +723,7 @@ def main():
                     break
 
         checkpoint("interrupted" if stopped[0] else "bounded_final")
+        retention.prune()
         recovery()
         assert direct_trace_calls[0] > 0
         run.summary["actual_updates"] = completed
@@ -694,6 +732,7 @@ def main():
     finally:
         if committed and not normal_completion:
             checkpoint("interrupted" if stopped[0] else "last")
+            retention.prune()
             recovery()
         run.finish()
     print(f"[wind-early] Completed at u{completed}", flush=True)

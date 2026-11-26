@@ -39,7 +39,10 @@
   },
   "feature_optimizer": {
     "warmup_accepted_minibatches": 512,
-    "feature_rows": [118, 119],
+    "feature_rows": [
+      118,
+      119
+    ],
     "feature_row_learning_rate_multiplier": 16.0,
     "feature_only_warmup": true,
     "actor_moments_restart_at_unfreeze": true,
@@ -88,5 +91,16 @@
     "wind_y_nonpositive": true,
     "x_axis_half_angle_deg": 45.0
   },
-  "phase_milestones": [1088, 1152, 1280, 1408, 1536, 1664, 1792, 2000]
+  "phase_milestones": [],
+  "checkpoint_retention": {
+    "periodic_every_updates": 8,
+    "cleanup_every_saves": 5,
+    "cleanup_every_updates": 40,
+    "keep_periodic": [
+      "best",
+      "latest"
+    ],
+    "keep_best_pareto": 1,
+    "keep_trainer_state": 1
+  }
 }
