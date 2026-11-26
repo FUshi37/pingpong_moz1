@@ -1,0 +1,665 @@
+"""Migrated V325 single-MLP early-stability continuation from u416 on RTX 4090.
+
+Preserves exact V325 physics/control/reward/observation/PPO contract and frozen
+rows 0:118 backbone, while adding stratified 20s launch & early-juggling rehearsal
+across all 27 wind cells so PPO continuously trains on the 3-20s onset failure zone.
+"""
+import argparse
+import ctypes
+from datetime import datetime
+import gc
+import json
+import os
+from pathlib import Path
+import pickle
+import signal
+import sys
+import time
+import zipfile
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+
+import jax
+import jax.numpy as jnp
+import numpy as np
+
+from migrated_stack import (
+    load_migrated_v325_stack, setup_sys_path, sha256_file,
+    REPO, PROVISIONAL,
+)
+setup_sys_path()
+
+from single5_runtime import adam_factory, install_pose_mode, Single5Env, actor_parameter_count, REVISION
+from learning_stability import critic_warmup_adam, cap_actor_update
+from train_s15_fresh_velocity_r31 import ActualContactEnv, CONTACT_FIELDS
+from capture_margin import CaptureEnv
+from xwind_sampling import XWindEnv
+from randomized_onset import TIMING_FIELDS, PREVIEW_FIELDS
+from targeted_reward import FIELDS as TARGETED_FIELDS
+from fixed_plane_v321_long_episode import QUALITY_FIELDS, CheckpointRetention
+from fixed_plane_wind_flight_outcomes import HEIGHT_FIELDS
+from fixed_plane_wind_reference_constraints import REFERENCE_FIELDS, make_reference_gate
+from fixed_plane_wind_strong import quality_gate
+from fixed_plane_wind_bootstrap_restore import learner_settings_for_stack
+from train_fixed_plane_wind import make_train_functions, strong_arrays, numeric_digest
+from bounded_validation_memory import release_caches
+from adaptive_progress import AdaptiveProgress as FullEpisode99Progress, gate99
+from legacy_wind_console import LegacyWindConsole
+from critic_diagnostics import make_critic_diagnostics
+from training_snapshot import save_snapshot, load_snapshot, prune_owned_snapshots, state_digest
+from termination_diagnostics import TERMINATION_FIELDS
+from precision_maturity import PRECISION_FIELDS, verify_mature_batch
+from weak_release_floor import FIELDS as RELEASE_FLOOR_FIELDS
+from feature_training import frozen_base_equal, assert_supported_actor
+from wind_features import WindFeatureEnv
+from stratified_rehearsal import (
+    StratifiedStartupRehearsalEnv, StratifiedStartupProgress,
+    masked_rollout, FIELDS as REHEARSAL_FIELDS,
+)
+
+
+def save_json(path: Path, value: dict):
+    with path.open("x") as f:
+        json.dump(value, f, indent=2, ensure_ascii=False)
+
+
+def load_u416_provisional(env, stack):
+    """Verify u416 MANIFEST hashes and restore full learner + 1024-env runner."""
+    manifest = json.loads((PROVISIONAL / "MANIFEST.json").read_text())
+    model_path = PROVISIONAL / "model.pkl"
+    zip_path = PROVISIONAL / "trainer_state.zip"
+    assert sha256_file(model_path) == manifest["files"]["model.pkl"]["sha256"], "u416 model.pkl hash mismatch"
+    assert sha256_file(zip_path) == manifest["files"]["trainer_state.zip"]["sha256"], "u416 trainer_state.zip hash mismatch"
+
+    with model_path.open("rb") as f:
+        saved = pickle.load(f)
+    assert saved["schema"] == "v325_single5_training_v1"
+    assert saved["actual_updates"] == 416
+    assert saved["params"]["pi"]["l1"]["w"].shape == (120, 282)
+    assert_supported_actor(saved["params"])
+
+    learner_template = stack.ppo.TrainState(
+        jax.tree.map(jnp.asarray, saved["params"]),
+        jax.tree.map(jnp.asarray, saved["opt"]),
+    )
+
+    inner_env = env.inner
+    init_rng, key = jax.random.split(jax.random.PRNGKey(2026112101))
+    keys = jax.random.split(key, inner_env.n_envs)
+    st0, ob0 = jax.eval_shape(inner_env.reset, keys)
+    co0 = jax.eval_shape(inner_env.get_critic_obs, st0, ob0)
+    runner_template = stack.ppo.RunnerState(
+        st0, ob0, co0, init_rng,
+        jax.ShapeDtypeStruct((inner_env.n_envs,), jnp.float32),
+        jax.ShapeDtypeStruct((inner_env.n_envs,), jnp.int32),
+    )
+
+    with zipfile.ZipFile(zip_path) as zf:
+        zmeta = json.loads(zf.read("manifest.json"))
+        assert zmeta["schema"] == "v325_full_training_state_v1"
+        assert zmeta["metadata"]["actual_updates"] == 416
+
+        def restore_tree(name, template):
+            pairs, treedef = jax.tree_util.tree_flatten_with_path(template)
+            expected_specs = zmeta["trees"][name]
+            assert len(pairs) == len(expected_specs), f"{name} tree length mismatch"
+            leaves = []
+            for idx, ((path, leaf), spec) in enumerate(zip(pairs, expected_specs)):
+                assert jax.tree_util.keystr(path) == spec["path"], f"{name}[{idx}] path mismatch"
+                with zf.open(f"{name}_{idx:05d}.npy") as s:
+                    arr = np.lib.format.read_array(s, allow_pickle=False)
+                assert list(arr.shape) == spec["shape"] and arr.dtype.str == spec["dtype"]
+                leaves.append(jnp.asarray(arr))
+            return jax.tree_util.tree_unflatten(treedef, leaves)
+
+        restored_learner = restore_tree("learner", learner_template)
+        restored_inner_runner = restore_tree("runner", runner_template)
+
+    assert numeric_digest(restored_learner) == numeric_digest(learner_template), "u416 model.pkl vs zip learner mismatch"
+    return (
+        restored_learner,
+        restored_inner_runner,
+        int(zmeta["metadata"]["actual_updates"]),
+        int(zmeta["metadata"]["true_step"]),
+        saved["initial_single_actor_digest"],
+    )
+
+
+def build_train_functions(stack, env, args, plan):
+    """Wrap native PPO make_train_fns with exact V325 feature optimizer + stability guard."""
+    original = stack.ppo.make_train_fns
+    captured = {}
+    effective = {}
+
+    def capture(**kwargs):
+        captured.update(kwargs)
+        return None, None
+
+    stack.ppo.make_train_fns = capture
+    try:
+        make_train_functions(stack, env, args)
+    finally:
+        stack.ppo.make_train_fns = original
+
+    extra_fields = (
+        "v321/finite", "wind/mode", "wind/positive_y_violation", "wind/speed_m_s",
+        "terminated", "truncated", "new_hit", "hit_count",
+        "polish/background_speed_m_s", "polish/wind_sector", "polish/peak_assigned",
+        "polish/physical_contact_frames", "polish/edge_contact_frames",
+        "polish/contact_face_deviation_max_deg",
+        "observed_force/valid", "observed_force/age_s", "observed_force/error_sq_m2_s2",
+        "single5/wind_angle_rad", "pose/outer_limit_deg",
+        "reward/dynamics_outgoing", "reward/single5_outgoing_replace",
+        "reward/single5_apex_precision", "reward/single5_center", "reward/total",
+    )
+    goal_fields = tuple("reward/goal_" + k for k in ("alive", "hit", "outgoing", "normal", "height_margin", "braking", "apex", "failure"))
+    all_metrics = (
+        tuple(captured["full_rollout_metric_names"])
+        + QUALITY_FIELDS + HEIGHT_FIELDS + REFERENCE_FIELDS
+        + CONTACT_FIELDS + TARGETED_FIELDS + TIMING_FIELDS + PREVIEW_FIELDS
+        + TERMINATION_FIELDS + PRECISION_FIELDS + RELEASE_FLOOR_FIELDS
+        + REHEARSAL_FIELDS + goal_fields + extra_fields
+    )
+    captured["full_rollout_metric_names"] = tuple(dict.fromkeys(all_metrics))
+    captured["time_limit_bootstrap"] = True
+    captured["apply_every_minibatch"] = False
+    captured["residual_l2_coef"] = 0.0
+    captured["learning_rate"] = plan["ppo"]["learning_rate"]
+    captured["actor_anchor_kl_coef"] = plan["ppo"]["actor_anchor_kl_coef"]
+    captured["actor_anchor_replay_obs"] = None
+    captured["actor_anchor_replay_kl_coef"] = 0.0
+    captured["actor_anchor_replay_max_kl"] = 0.0
+    captured["counterfactual_replay_obs"] = None
+    captured["counterfactual_replay_actions"] = None
+    captured["counterfactual_supervision_coef"] = 0.0
+    captured["reference_params"] = stack.single_actor_anchor_params
+
+    effective.update({k: v for k, v in captured.items() if isinstance(v, (str, int, float, bool, tuple))})
+
+    current = stack.ppo.adam_step
+    epsilon = getattr(current, "_wind_history_xy_epsilon", 1e-5)
+    multiplier = getattr(current, "_wind_history_xy_lr_multiplier", 1.0)
+    base = getattr(current, "_wind_history_optimizer_base", current)
+    opt_plan = plan["feature_optimizer"]
+    stack.ppo.adam_step = adam_factory(
+        base,
+        history_xy_epsilon=epsilon,
+        history_xy_lr_multiplier=multiplier,
+        feature_lr_multiplier=opt_plan["feature_row_learning_rate_multiplier"],
+        warmup_minibatches=opt_plan["warmup_accepted_minibatches"],
+        independent_actor_critic_clipping=opt_plan["independent_actor_critic_clipping"],
+        permanent_wind_rows_only=opt_plan["permanent_wind_rows_only"],
+    )
+    stab = plan["learning_stability"]
+    stack.ppo.adam_step = critic_warmup_adam(
+        stack.ppo.adam_step,
+        start_t=stab["critic_warmup_start_t"],
+        minibatches=stab["critic_only_minibatches"],
+    )
+    effective["permanent_wind_rows_only"] = stack.ppo.adam_step._permanent_wind_rows_only
+    effective["feature_lr_multiplier"] = stack.ppo.adam_step._feature_lr_multiplier
+
+    collect, update = original(**captured)
+    update = cap_actor_update(
+        update,
+        stack.ppo.policy_mean,
+        maximum_kl=stab["maximum_sampled_cohort_step_kl"],
+        sample_size=stab["step_observations"],
+    )
+    return collect, update, effective
+
+
+def log_failure_events(stream, update, metrics, done):
+    selected = np.asarray(done, bool) | (np.asarray(metrics["timing/long_confirmed_gap_event"]) > 0.5)
+    fields = TIMING_FIELDS + PREVIEW_FIELDS + TERMINATION_FIELDS + (
+        "terminated", "truncated", "single5/wind_angle_rad",
+        "polish/background_speed_m_s", "wind/speed_m_s", "wind/mode",
+        "sampling/rehearsal_lane", "sampling/rehearsal_cutoff",
+    )
+    for t, lane in zip(*np.nonzero(selected)):
+        censor = float(metrics["sampling/rehearsal_cutoff"][t, lane]) > 0.5
+        if censor:
+            continue
+        rec = {name: float(metrics[name][t, lane]) for name in fields if name in metrics}
+        rec.update(
+            update=update,
+            lane=int(lane),
+            event="episode_end" if done[t, lane] else "long_confirmation_gap",
+            rehearsal_lane=bool(metrics["sampling/rehearsal_lane"][t, lane] > 0.5),
+            recognized_termination=any(rec.get(tag, 0.0) > 0.5 for tag in TERMINATION_FIELDS),
+        )
+        stream.write(json.dumps(rec) + "\n")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--plan", type=Path, default=HERE / "TRAIN_PLAN_EARLY.json")
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--run-id", required=True)
+    parser.add_argument("--gpu-uuid", required=True)
+    parser.add_argument("--update-limit", type=int, default=None)
+    parser.add_argument("--wandb-mode", choices=("online", "offline", "disabled"), default="online")
+    parser.add_argument("--resume-model", type=Path, default=None)
+    parser.add_argument("--resume-full", type=Path, default=None)
+    opts = parser.parse_args()
+
+    plan = json.loads(opts.plan.read_text())
+    plan_sha = sha256_file(opts.plan)
+    assert os.environ.get("CUDA_VISIBLE_DEVICES") == opts.gpu_uuid and opts.gpu_uuid in plan["allowed_gpu_uuids"]
+    assert jax.default_backend() == "gpu" and len(jax.devices()) == 1
+    assert bool(opts.resume_model) == bool(opts.resume_full)
+
+    with jax.default_device(jax.devices("cpu")[0]):
+        stack = load_migrated_v325_stack(verify_source_manifest=True)
+        def _reloc(val):
+            if isinstance(val, (str, Path)) and "/home/yangzhe/Project/pingpong_controller/" in str(val):
+                new_s = str(REPO / str(val).replace("/home/yangzhe/Project/pingpong_controller/", ""))
+                return Path(new_s) if isinstance(val, Path) else new_s
+            return val
+        for k, v in list(stack.parent["args"].items()):
+            stack.parent["args"][k] = _reloc(v)
+        args = argparse.Namespace(**stack.parent["args"])
+        vars(args).update({k: _reloc(v) for k, v in learner_settings_for_stack(stack).items()})
+        args.n_envs, args.n_steps, args.minibatch_size = 1024, 128, 16384
+        args.seed = plan["seed"]
+        args.wind_training_mix = stack.wind_training_mix
+
+    install_pose_mode()
+    native = stack.env_class(stack.xml, n_envs=1024, cfg=stack.cfg)
+    env = XWindEnv(
+        CaptureEnv(ActualContactEnv(native, balanced=False), enabled=False),
+        half_angle_deg=plan["wind_domain"]["x_axis_half_angle_deg"],
+        enabled=True,
+        calm_only=False,
+    )
+    env = Single5Env(
+        env,
+        reward_enabled=False,
+        goal_reward_enabled=plan["reward_revision"]["goal_reward_enabled"],
+        random_onset_enabled=True,
+        targeted_reward_enabled=plan["reward_revision"]["targeted_reward_enabled"],
+        weak_release_floor_enabled=plan["reward_revision"]["weak_calm_release_floor"]["enabled"],
+        weak_release_floor_weight=plan["reward_revision"]["weak_calm_release_floor"]["weight"],
+    )
+    env = WindFeatureEnv(env)
+    rehearsal_cfg = plan["stratified_rehearsal"]
+    env = StratifiedStartupRehearsalEnv(
+        env,
+        fraction=rehearsal_cfg["fraction"],
+        seconds=rehearsal_cfg["seconds"],
+        stagger_min_steps=rehearsal_cfg["stagger_min_steps"],
+        stagger_seed=rehearsal_cfg["stagger_seed"],
+    )
+    assert (env.obs_dim, env.critic_obs_dim, env.act_dim, env.max_steps) == (120, 453, 7, 240000)
+    assert env.cfg.wind_config.max_speed_m_s == 1.6 and env.cfg.wind_config.wind_y_nonpositive
+
+    u416_learner, u416_inner_runner, completed, true_step, init_actor_digest = load_u416_provisional(env, stack)
+    initial_learner_params = jax.tree.map(jnp.array, u416_learner.params)
+    stack.single_actor_anchor_params = initial_learner_params
+    stack.bootstrap_stage_anchor = initial_learner_params
+
+    native_components = stack.ppo.policy_components
+    direct_trace_calls = [0]
+
+    def direct_components(params, obs):
+        assert_supported_actor(params)
+        direct_trace_calls[0] += 1
+        return native_components(params, obs)
+
+    stack.ppo.policy_components = direct_components
+
+    fields = tuple(dict.fromkeys(QUALITY_FIELDS + HEIGHT_FIELDS + REFERENCE_FIELDS))
+    progress = FullEpisode99Progress(env.n_long, fields)
+    progress.half_angle_deg = plan["wind_domain"]["x_axis_half_angle_deg"]
+    startup_tracker = StratifiedStartupProgress(
+        seconds=rehearsal_cfg["seconds"],
+        capacity=rehearsal_cfg["metric_capacity"],
+        half_angle_deg=plan["wind_domain"]["x_axis_half_angle_deg"],
+    )
+    console = LegacyWindConsole(1024, fields, 180.0)
+    restored_hold = 0
+
+    contract = dict(
+        schema="v325_single5_early_stability_v1",
+        mode="direct",
+        source_u416_model_sha256="97c89251fe8a54b193f7a9348799cf3fab58b487322a5cdfc27cc51fe2a49dce",
+        source_u416_state_sha256="788975ba322906a463af28cf75e79539d6daafbba5474a9080284fee90d731f1",
+        initial_single_actor_digest=init_actor_digest,
+        actor_critic_action=[120, 453, 7],
+        seed=plan["seed"],
+        n_envs=1024,
+        n_steps=128,
+        stage=15,
+        plan_sha256=plan_sha,
+        pose_limit_deg=5.0,
+        revision=REVISION,
+        feature_optimizer=plan["feature_optimizer"],
+        learning_stability=plan["learning_stability"],
+        stratified_rehearsal=rehearsal_cfg,
+        n_rehearsal=env.n_rehearsal,
+        n_long=env.n_long,
+        wind_domain=plan["wind_domain"],
+        onset=plan["onset"],
+    )
+
+    if opts.resume_model:
+        with opts.resume_model.open("rb") as f:
+            resumed = pickle.load(f)
+        assert resumed["schema"] == "v325_single5_early_stability_v1"
+        learner = stack.ppo.TrainState(
+            jax.tree.map(jnp.asarray, resumed["params"]),
+            jax.tree.map(jnp.asarray, resumed["opt"]),
+        )
+        init_rng, key = jax.random.split(jax.random.PRNGKey(plan["seed"]))
+        keys = jax.random.split(key, 1024)
+        st0, ob0 = jax.eval_shape(env.reset, keys)
+        co0 = jax.eval_shape(env.get_critic_obs, st0, ob0)
+        r_tmpl = stack.ppo.RunnerState(
+            st0, ob0, co0, init_rng,
+            jax.ShapeDtypeStruct((1024,), jnp.float32),
+            jax.ShapeDtypeStruct((1024,), jnp.int32),
+        )
+        learner, runner, aux, meta = load_snapshot(opts.resume_full, learner, r_tmpl, contract)
+        progress, console = aux["progress"], aux["console"]
+        startup_tracker = aux["startup_tracker"]
+        restored_hold = int(aux["hold"])
+        completed, true_step = int(meta["actual_updates"]), int(meta["true_step"])
+    else:
+        learner = u416_learner
+        reset_keys = jax.random.split(jax.random.PRNGKey(plan["seed"] + 416), 1024)
+        fresh_state, fresh_obs = jax.jit(env.reset)(reset_keys)
+        fresh_cobs = jax.jit(env.get_critic_obs)(fresh_state, fresh_obs)
+        u416_wrapped_state = env.wrap_state(u416_inner_runner.env_state, staggered=True)
+
+        role = env.role
+
+        def blend(fresh, old):
+            if hasattr(fresh, "shape") and fresh.ndim >= 1 and fresh.shape[0] == 1024:
+                m = role.reshape((1024,) + (1,) * (fresh.ndim - 1))
+                return jnp.where(m, fresh, old)
+            return old
+
+        mixed_state = jax.tree.map(blend, fresh_state, u416_wrapped_state)
+        mixed_obs = jnp.where(role[:, None], fresh_obs, u416_inner_runner.obs)
+        mixed_cobs = jnp.where(role[:, None], fresh_cobs, u416_inner_runner.critic_obs)
+        mixed_ret = jnp.where(role, 0.0, u416_inner_runner.running_return)
+        mixed_len = jnp.where(role, 0, u416_inner_runner.running_length)
+        runner = stack.ppo.RunnerState(
+            mixed_state, mixed_obs, mixed_cobs, u416_inner_runner.rng, mixed_ret, mixed_len
+        )
+
+    learner, runner = strong_arrays((learner, runner))
+    release_caches()
+
+    collect, update, settings = build_train_functions(stack, env, args, plan)
+    diagnostics = make_critic_diagnostics(stack.ppo, settings)
+
+    opts.output.mkdir(parents=True, exist_ok=False)
+    save_json(
+        opts.output / "PREFLIGHT.json",
+        dict(
+            timestamp=datetime.now().astimezone().isoformat(),
+            **contract,
+            gpu_uuid=opts.gpu_uuid,
+            xml_sha256=sha256_file(stack.xml),
+            initial_native_runner_digest=state_digest(runner),
+            actor_total_parameters=actor_parameter_count(learner.params["pi"]),
+            trainable_actor_parameters=plan["direct_trainable_actor_parameters"],
+            start_update=completed,
+            start_true_step=true_step,
+            start_opt_t=int(learner.opt.t),
+            start_actor_t=int(learner.opt.actor_t),
+            ppo=settings,
+        ),
+    )
+
+    import wandb
+    run = wandb.init(
+        entity=plan["wandb"]["entity"],
+        project=plan["wandb"]["project"],
+        id=opts.run_id,
+        name=opts.run_id,
+        resume="never",
+        mode=opts.wandb_mode,
+        dir=os.environ.get("WANDB_DIR", "/dev/shm/wandb_wind_early"),
+        settings=wandb.Settings(x_disable_stats=True),
+        config=dict(contract, update_budget=opts.update_limit, migrated_host="192.168.13.134"),
+    )
+
+    stopped = [False]
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda *_: stopped.__setitem__(0, True))
+
+    retention = CheckpointRetention(opts.output, cleanup_every=5)
+    gate = make_reference_gate(quality_gate(325, stack.spec.course[14], stack.helpers.quality_passed), 325)
+    status = {}
+    score = (0.0, -1e6, -1e6, -1e6)
+    hold = restored_hold
+    started = time.monotonic()
+    session = 0
+    committed = True
+    normal_completion = False
+    milestones = set(plan.get("phase_milestones", []))
+    rehearsal_mask = env.role_np
+    long_mask = ~rehearsal_mask
+
+    def checkpoint(kind):
+        path = opts.output / f"{kind}_u{completed:08d}.pkl"
+        if path.exists():
+            return path
+        assert_supported_actor(learner.params)
+        payload = dict(
+            schema="v325_single5_early_stability_v1",
+            mode="direct",
+            params=jax.device_get(learner.params),
+            opt=jax.device_get(learner.opt),
+            initial_single_actor_digest=init_actor_digest,
+            source_sha256="fd9def8f5fdb511e1543cbcca264e0021738ff07c6425e8d393cb1c240918e97",
+            plan_sha256=plan_sha,
+            step=true_step,
+            actual_updates=completed,
+            stage=15,
+            BC=0,
+            last_summary=status,
+            requires_actor_runtime=plan["observation"]["runtime"],
+            native_actor_obs_dim=120,
+            single_actor_input_dim=120,
+            simulation_only=True,
+            final1200s99accepted=False,
+        )
+        with path.open("xb") as f:
+            pickle.dump(payload, f)
+        if kind == "periodic":
+            retention.register(path, score)
+        return path
+
+    def recovery():
+        path = opts.output / f"trainer_state_u{completed:08d}.zip"
+        if not path.exists():
+            save_snapshot(
+                path,
+                learner,
+                runner,
+                dict(progress=progress, console=console, startup_tracker=startup_tracker, hold=hold),
+                contract,
+                dict(actual_updates=completed, true_step=true_step, run_id=opts.run_id),
+            )
+            if completed in milestones:
+                best = opts.output / f"milestone_state_u{completed:08d}.zip"
+                if not best.exists():
+                    os.link(path, best)
+                    os.link(path.with_suffix(".zip.json"), best.with_suffix(".zip.json"))
+            prune_owned_snapshots(opts.output, path)
+
+    print(
+        f"[wind-early] Starting from u{completed} (step={true_step}, opt.t={int(learner.opt.t)}, "
+        f"rehearsal={env.n_rehearsal}x{rehearsal_cfg['seconds']}s, long={env.n_long}x1200s, wandb={opts.wandb_mode})",
+        flush=True,
+    )
+
+    try:
+        with (opts.output / "updates.jsonl").open("x") as stream, \
+             (opts.output / "failure_events.jsonl").open("x") as event_stream:
+            while (opts.update_limit is None or completed < opts.update_limit) and not stopped[0]:
+                committed = False
+                t_upd = time.monotonic()
+                runner, transitions = collect(learner.params, runner)
+                verify_mature_batch(transitions.metrics)
+                if session == 0:
+                    gc.collect()
+                    ctypes.CDLL(None).malloc_trim(0)
+
+                explained, variance = diagnostics(learner.params, runner, transitions)
+                new, loss = update(learner, runner, transitions)
+
+                assert bool(frozen_base_equal(new.params, initial_learner_params)), "Frozen 0:118 backbone changed!"
+                loss = {k: float(v) for k, v in jax.device_get(loss).items()}
+                assert loss["learning_stability/sampled_max_step_kl"] <= plan["learning_stability"]["maximum_sampled_cohort_step_kl"] + 1e-7
+                assert all(np.isfinite(list(loss.values())))
+                minis = int(loss["ppo_minibatches_applied"])
+                assert 0 <= minis <= 32
+                assert int(new.opt.t) == int(learner.opt.t) + minis
+                assert_supported_actor(new.params)
+
+                metrics = jax.device_get(transitions.metrics)
+                dones = jax.device_get(transitions.done)
+                assert np.all(metrics["v321/finite"] == 1.0)
+                assert not np.any(metrics["wind/positive_y_violation"])
+                assert np.max(metrics["wind/speed_m_s"]) <= 1.60001
+                np.testing.assert_allclose(metrics["pose/outer_limit_deg"], 5.0, atol=1e-5)
+
+                cutoff = metrics["sampling/rehearsal_cutoff"] > 0.5
+                if np.any(cutoff):
+                    assert np.all(np.asarray(transitions.truncated)[cutoff])
+                    assert not np.any(np.asarray(transitions.terminated)[cutoff])
+                    assert np.isfinite(np.asarray(transitions.timeout_value)[cutoff]).all()
+
+                log_failure_events(event_stream, completed + 1, metrics, dones)
+
+                long_metrics, long_done = masked_rollout(metrics, dones, long_mask)
+                progress.add(long_metrics, long_done)
+
+                reh_metrics, reh_done = masked_rollout(metrics, dones, rehearsal_mask)
+                startup_tracker.add(reh_metrics, reh_done, TERMINATION_FIELDS)
+
+                console.add(metrics, dones)
+
+                learner = new
+                session += 1
+                completed += 1
+                true_step += 131072
+                committed = True
+
+                summaries = progress.summaries()
+                final_gate = gate99(summaries, gate, minimum_n=100)
+                startup_summary = startup_tracker.summary()
+                hold = hold + 1 if final_gate["passed"] else 0
+
+                w_rows = np.asarray(jax.device_get(learner.params["pi"]["l1"]["w"][118:120]))
+                w_l2 = float(np.linalg.norm(w_rows))
+                w_max = float(np.max(np.abs(w_rows)))
+                upd_sec = time.monotonic() - t_upd
+
+                status = dict(
+                    update=completed,
+                    actual_update=completed,
+                    stage=15,
+                    mode="direct",
+                    true_step=true_step,
+                    actor_local_Adam_t=int(learner.opt.actor_t),
+                    applied_minibatches_total=int(learner.opt.t),
+                    **loss,
+                    **{
+                        "critic/explained_variance": float(explained),
+                        "critic/return_target_variance": float(variance),
+                        "wind_rows/l2_norm": w_l2,
+                        "wind_rows/max_abs": w_max,
+                        "perf/update_seconds": upd_sec,
+                        "sampling/rehearsal_censors": int(cutoff.sum()),
+                        "sampling/rehearsal_terminations": int(np.sum(np.asarray(reh_metrics["terminated"]) > 0.5)),
+                        "sampling/long_terminations": int(np.sum(np.asarray(long_metrics["terminated"]) > 0.5)),
+                    },
+                    startup_rehearsal=startup_summary,
+                    groups=summaries,
+                    hold=hold,
+                    final_gate=final_gate,
+                    wall_seconds=time.monotonic() - started,
+                )
+                for tag in ("done/racket_z_out_of_bounds", "done/pending_hit_recontact",
+                            "done/ball_too_low", "done/ball_too_high", "done/ball_view_z_too_low",
+                            "done/failed_hit_confirmation", "done/late_weak_streak"):
+                    if tag in metrics:
+                        status["term_count/" + tag.split("/", 1)[1]] = int(np.sum(metrics[tag] > 0.5))
+
+                stream.write(json.dumps(status) + "\n")
+                stream.flush()
+                event_stream.flush()
+
+                flat = {k: v for k, v in status.items() if isinstance(v, (int, float))}
+                for k, v in startup_summary.items():
+                    if isinstance(v, (int, float)):
+                        flat["rehearsal20/" + k] = v
+                for pop, summ in summaries.items():
+                    for hor in ("short30", "stage", "full1200"):
+                        avail = summ[hor].get("n", 0) > 0
+                        flat[f"population/{pop}/{hor}/available"] = int(avail)
+                        for k, v in summ[hor].items():
+                            if isinstance(v, (int, float)) and (avail or k != "survival"):
+                                flat[f"population/{pop}/{hor}/{k}"] = v
+                    for f_name in ("center_rms_m", "apex_error_rms_m", "in_band", "adjacent_jump_m", "racket_vxy_excess_rms_m_s"):
+                        if f_name in summ.get("quality", {}):
+                            flat[f"population/{pop}/quality/{f_name}"] = summ["quality"][f_name]
+                for f_name in ("observed_force/valid", "observed_force/age_s", "observed_force/error_sq_m2_s2"):
+                    flat[f_name] = float(np.mean(metrics[f_name]))
+                run.log(flat, step=completed)
+
+                print(
+                    f"u{completed:05d} | {upd_sec:5.1f}s | Adam+{minis:2d} | EV={float(explained):.4f} | "
+                    f"kl={loss['learning_stability/sampled_max_step_kl']:.5f}(s={loss['learning_stability/step_scale']:.2f}) | w118_L2={w_l2:.4f} | "
+                    f"reh20(n={startup_summary['n']:4d} surv={startup_summary['survival']*100:5.1f}% "
+                    f"peak={startup_summary.get('peak_survival',0)*100:5.1f}% "
+                    f"negX={startup_summary.get('negx_peak_survival',0)*100:5.1f}% "
+                    f"dir08={startup_summary.get('dir08_survival',0)*100:5.1f}% "
+                    f"rzFail={startup_summary.get('fail_racket_z_fraction',0)*100:4.0f}%) | "
+                    f"rehTerm={status['sampling/rehearsal_terminations']} longTerm={status['sampling/long_terminations']}",
+                    flush=True,
+                )
+
+                score = (
+                    float(final_gate["passed"]),
+                    float(startup_summary.get("negx_peak_survival", 0.0)),
+                    float(startup_summary.get("peak_survival", 0.0)),
+                    float(startup_summary.get("survival", 0.0)),
+                )
+                if completed % 8 == 0:
+                    checkpoint("periodic")
+                if completed in milestones:
+                    checkpoint("milestone")
+                if completed % 32 == 0:
+                    recovery()
+                gc.collect()
+                ctypes.CDLL(None).malloc_trim(0)
+                if hold >= 16:
+                    save_json(
+                        opts.output / "READY_FOR_FIXED_POLICY_1200S.json",
+                        dict(update=completed, gate=final_gate, training_readiness_only=True, final1200s99accepted=False),
+                    )
+                    break
+
+        checkpoint("interrupted" if stopped[0] else "bounded_final")
+        recovery()
+        assert direct_trace_calls[0] > 0
+        run.summary["actual_updates"] = completed
+        run.summary["final1200s99accepted"] = False
+        normal_completion = True
+    finally:
+        if committed and not normal_completion:
+            checkpoint("interrupted" if stopped[0] else "last")
+            recovery()
+        run.finish()
+    print(f"[wind-early] Completed at u{completed}", flush=True)
+
+
+if __name__ == "__main__":
+    main()

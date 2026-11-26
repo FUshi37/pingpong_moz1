@@ -1,0 +1,90 @@
+{
+  "task": "V325 single-MLP 5deg early-juggling & wind-onset stability continuation from u416 on migrated RTX 4090",
+  "revision": "v325_single5_early_stability_20261126_r1",
+  "source_u416_dir": "pingpong_controller/outputs/rl_sim/v325_single5_provisional416_20261124_r1",
+  "seed": 2026112101,
+  "n_envs": 1024,
+  "n_steps": 128,
+  "allowed_gpu_uuids": [
+    "GPU-3b3e4ba6-dd29-09fe-ba9b-d8da127b3415"
+  ],
+  "wandb": {
+    "entity": "fushi37",
+    "project": "pingpong-mjx"
+  },
+  "observation": {
+    "actor": 120,
+    "critic": 453,
+    "unchanged_prefix": 118,
+    "new_suffix": "Two causal estimated windXY transforms active above 1.25m/s, width 0.35m/s after hit 5; no privileged wind",
+    "runtime": "single5_windfeature120_high_v2"
+  },
+  "direct_trainable_actor_parameters": 564,
+  "ppo": {
+    "learning_rate": 3.75e-06,
+    "actor_anchor_kl_coef": 0.0,
+    "clip_range": 0.12,
+    "target_kl": 0.006,
+    "gamma": 0.9995,
+    "gae_lambda": 0.99,
+    "vf_coef": 0.05,
+    "ent_coef": 0.001,
+    "max_grad_norm": 0.5,
+    "min_log_std": -5.298317366548036,
+    "max_log_std": -5.298317366548036,
+    "update_epochs": 4,
+    "minibatch_size": 16384,
+    "time_limit_bootstrap": true
+  },
+  "feature_optimizer": {
+    "warmup_accepted_minibatches": 512,
+    "feature_rows": [118, 119],
+    "feature_row_learning_rate_multiplier": 32.0,
+    "feature_only_warmup": true,
+    "actor_moments_restart_at_unfreeze": true,
+    "critic_moments_retained": true,
+    "global_adam_step_preserved": true,
+    "independent_actor_critic_clipping": false,
+    "permanent_wind_rows_only": true,
+    "frozen_actor_values_and_moments_preserved": true
+  },
+  "learning_stability": {
+    "critic_warmup_start_t": 307300,
+    "critic_only_minibatches": 0,
+    "maximum_sampled_cohort_step_kl": 0.001,
+    "step_observations": 2048,
+    "groups": "calm,preonset_or_weak,negativeX,positiveX",
+    "no_teacher_or_BC": true
+  },
+  "reward_revision": {
+    "revision": "original_R10_native_reward_mature_context",
+    "goal_reward_enabled": false,
+    "targeted_reward_enabled": false,
+    "weak_calm_release_floor": {
+      "enabled": true,
+      "weight": 4.0
+    }
+  },
+  "stratified_rehearsal": {
+    "enabled": true,
+    "fraction": 0.5,
+    "seconds": 20.0,
+    "stagger_min_steps": 512,
+    "stagger_seed": 2026112602,
+    "metric_capacity": 2048,
+    "counts_as_full1200_success": false
+  },
+  "onset": {
+    "confirmed_hits": 5,
+    "delay_steps_min": 5,
+    "delay_steps_max": 100,
+    "control_dt_s": 0.005,
+    "ramp_s": 1.0
+  },
+  "wind_domain": {
+    "max_speed_m_s": 1.6,
+    "wind_y_nonpositive": true,
+    "x_axis_half_angle_deg": 45.0
+  },
+  "phase_milestones": [480, 544, 672, 800, 1000]
+}
