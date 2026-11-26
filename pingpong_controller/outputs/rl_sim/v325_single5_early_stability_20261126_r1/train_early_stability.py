@@ -314,6 +314,10 @@ def main():
         weak_release_floor_enabled=plan["reward_revision"]["weak_calm_release_floor"]["enabled"],
         weak_release_floor_weight=plan["reward_revision"]["weak_calm_release_floor"]["weight"],
     )
+    if "targeted_variant" in plan["reward_revision"]:
+        env.targeted_variant = str(plan["reward_revision"]["targeted_variant"])
+    if "failure_reserve" in plan["reward_revision"]:
+        env.targeted_failure_reserve = float(plan["reward_revision"]["failure_reserve"])
     env = WindFeatureEnv(env)
     rehearsal_cfg = plan["stratified_rehearsal"]
     env = StratifiedStartupRehearsalEnv(
@@ -384,6 +388,9 @@ def main():
         stratified_rehearsal=rehearsal_cfg,
         n_rehearsal=env.n_rehearsal,
         n_long=env.n_long,
+        reward_revision=plan["reward_revision"],
+        effective_targeted_variant=env.inner.targeted_variant if hasattr(env.inner, "targeted_variant") else getattr(env, "targeted_variant", None),
+        effective_failure_reserve=float(getattr(env, "targeted_failure_reserve", 0.0)),
         wind_domain=plan["wind_domain"],
         onset=plan["onset"],
     )
@@ -633,6 +640,9 @@ def main():
                         "sampling/rehearsal_terminations": int(np.sum(np.asarray(reh_metrics["terminated"]) > 0.5)),
                         "sampling/long_terminations": int(np.sum(np.asarray(long_metrics["terminated"]) > 0.5)),
                         "reward/targeted_brake_per_s": float(np.mean(metrics["reward/targeted_brake"]) / 0.005),
+                        "reward/targeted_term_reserve_sum": float(np.sum(metrics["reward/targeted_termination_reserve"])),
+                        "reward/targeted_outgoing_xy_per_s": float(np.mean(metrics["reward/targeted_outgoing_xy"]) / 0.005),
+                        "reward/targeted_outgoing_z_per_s": float(np.mean(metrics["reward/targeted_outgoing_z"]) / 0.005),
                         "learning_stability/critic_only_warmup": int(int(learner.opt.t) < int(plan["learning_stability"]["critic_warmup_start_t"]) + int(plan["learning_stability"]["critic_only_minibatches"])),
                     },
                     startup_rehearsal=startup_summary,
@@ -692,20 +702,20 @@ def main():
                     float(startup_summary.get("peak_survival", 0.0)),
                     float(startup_summary.get("survival", 0.0)),
                 )
-                if (startup_summary.get("n", 0) >= 512 and clean_phys >= 0.99
-                        and dir08_band >= 0.98 and dir00_band >= 0.98):
-                    cand_pareto = (
-                        float(startup_summary.get("peak_survival", 0.0)),
-                        float(startup_summary.get("negx_peak_survival", 0.0)),
-                        float(startup_summary.get("dir08_survival", 0.0)),
-                    )
+                if (startup_summary.get("n", 0) >= 1024 and clean_phys >= 0.995
+                        and dir08_band >= 0.99 and dir00_band >= 0.99):
+                    peak_s = float(startup_summary.get("peak_survival", 0.0))
+                    negx_s = float(startup_summary.get("negx_peak_survival", 0.0))
+                    dir08_s = float(startup_summary.get("dir08_survival", 0.0))
+                    comp = round(0.40 * negx_s + 0.30 * peak_s + 0.30 * dir08_s, 4)
+                    cand_pareto = (comp, float(startup_summary.get("survival", 0.0)), dir08_s)
                     if cand_pareto > best_pareto:
                         best_pareto = cand_pareto
                         bp = checkpoint("best_pareto")
                         for old_bp in opts.output.glob("best_pareto_u*.pkl"):
                             if old_bp.resolve() != bp.resolve():
                                 old_bp.unlink(missing_ok=True)
-                        print(f"  [BEST PARETO] saved {bp.name} peak={cand_pareto[0]*100:.1f}% negX={cand_pareto[1]*100:.1f}% dir08={cand_pareto[2]*100:.1f}% dir08_band={dir08_band*100:.1f}% clean_phys={clean_phys*100:.1f}%", flush=True)
+                        print(f"  [BEST PARETO] saved {bp.name} comp={comp*100:.2f}% peak={peak_s*100:.1f}% negX={negx_s*100:.1f}% dir08={dir08_s*100:.1f}% dir08_band={dir08_band*100:.1f}% clean_phys={clean_phys*100:.1f}%", flush=True)
                 if completed % periodic_every == 0:
                     checkpoint("periodic")
                 if completed in milestones:
