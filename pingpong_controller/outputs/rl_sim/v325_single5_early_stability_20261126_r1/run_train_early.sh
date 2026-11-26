@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_ID="${1:-fplc_wind_early_20261126_r1}"
 WANDB_MODE="${2:-online}"
 UPDATE_LIMIT="${3:-}"
+PLAN_FILE="${4:-$SCRIPT_DIR/TRAIN_PLAN_EARLY.json}"
 
 OUT_DIR="$REPO_ROOT/pingpong_controller/outputs/rl_sim/$RUN_ID"
 GPU_UUID="GPU-3b3e4ba6-dd29-09fe-ba9b-d8da127b3415"
@@ -28,7 +29,7 @@ fi
 exec bash "$REPO_ROOT/pingpong_controller/tools/rl_sim/run_with_host_memory_guard.sh" \
   "/dev/shm/${RUN_ID}_memguard.log" \
   python "$SCRIPT_DIR/train_early_stability.py" \
-    --plan "$SCRIPT_DIR/TRAIN_PLAN_EARLY.json" \
+    --plan "$PLAN_FILE" \
     --output "$OUT_DIR" \
     --run-id "$RUN_ID" \
     --gpu-uuid "$GPU_UUID" \

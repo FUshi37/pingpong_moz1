@@ -192,6 +192,8 @@ class StratifiedStartupProgress:
             return (len(rows), float(np.mean([r[2] for r in rows])) if rows else 0.0)
 
         clean_n, clean_s = sub(lambda l: l == 0)
+        clean_rows = [r for r in self.outcomes if r[4] == 0]
+        clean_phys_s = float(np.mean([not r[3] for r in clean_rows])) if clean_rows else 1.0
         peak_n, peak_s = sub(lambda l: l >= 17)
         negx_peak_n, negx_peak_s = sub(lambda l: l in (17, 18, 19, 20, 25))
         posx_peak_n, posx_peak_s = sub(lambda l: l in (21, 22, 23, 24, 26))
@@ -208,7 +210,7 @@ class StratifiedStartupProgress:
             mean_hits=float(np.mean([r[1] for r in self.outcomes])),
             completed_episodes=self.completed_episodes,
             seconds=self.seconds,
-            clean_n=clean_n, clean_survival=clean_s,
+            clean_n=clean_n, clean_survival=clean_s, clean_phys_survival=clean_phys_s,
             peak_n=peak_n, peak_survival=peak_s,
             negx_peak_n=negx_peak_n, negx_peak_survival=negx_peak_s,
             posx_peak_n=posx_peak_n, posx_peak_survival=posx_peak_s,

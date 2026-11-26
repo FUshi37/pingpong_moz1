@@ -192,11 +192,14 @@ def build_train_functions(stack, env, args, plan):
         permanent_wind_rows_only=opt_plan["permanent_wind_rows_only"],
     )
     stab = plan["learning_stability"]
+    warmup_start_t = int(stab["critic_warmup_start_t"])
     stack.ppo.adam_step = critic_warmup_adam(
         stack.ppo.adam_step,
-        start_t=stab["critic_warmup_start_t"],
-        minibatches=stab["critic_only_minibatches"],
+        start_t=warmup_start_t,
+        minibatches=int(stab["critic_only_minibatches"]),
     )
+    effective["critic_warmup_start_t"] = warmup_start_t
+    effective["critic_only_minibatches"] = int(stab["critic_only_minibatches"])
     effective["permanent_wind_rows_only"] = stack.ppo.adam_step._permanent_wind_rows_only
     effective["feature_lr_multiplier"] = stack.ppo.adam_step._feature_lr_multiplier
 
@@ -295,6 +298,19 @@ def main():
     assert env.cfg.wind_config.max_speed_m_s == 1.6 and env.cfg.wind_config.wind_y_nonpositive
 
     u416_learner, u416_inner_runner, completed, true_step, init_actor_digest = load_u416_provisional(env, stack)
+    if plan.get("parent_checkpoint") and not opts.resume_model:
+        parent_ckpt_path = REPO / plan["parent_checkpoint"]
+        with parent_ckpt_path.open("rb") as f:
+            p_saved = pickle.load(f)
+        assert_supported_actor(p_saved["params"])
+        assert bool(frozen_base_equal(jax.tree.map(jnp.asarray, p_saved["params"]), u416_learner.params)), "Parent checkpoint altered frozen 0:118 backbone!"
+        u416_learner = stack.ppo.TrainState(
+            jax.tree.map(jnp.asarray, p_saved["params"]),
+            jax.tree.map(jnp.asarray, p_saved["opt"]),
+        )
+        completed = int(p_saved["actual_updates"])
+        true_step = int(p_saved["step"])
+        print(f"[wind-early] Loaded parent_checkpoint {parent_ckpt_path.name} (u{completed}, step={true_step}, opt.t={int(u416_learner.opt.t)})", flush=True)
     initial_learner_params = jax.tree.map(jnp.array, u416_learner.params)
     stack.single_actor_anchor_params = initial_learner_params
     stack.bootstrap_stage_anchor = initial_learner_params
@@ -392,6 +408,10 @@ def main():
     learner, runner = strong_arrays((learner, runner))
     release_caches()
 
+    if plan["learning_stability"]["critic_warmup_start_t"] == "auto":
+        plan["learning_stability"]["critic_warmup_start_t"] = int(learner.opt.t)
+        contract["learning_stability"] = plan["learning_stability"]
+
     collect, update, settings = build_train_functions(stack, env, args, plan)
     diagnostics = make_critic_diagnostics(stack.ppo, settings)
 
@@ -435,6 +455,7 @@ def main():
     gate = make_reference_gate(quality_gate(325, stack.spec.course[14], stack.helpers.quality_passed), 325)
     status = {}
     score = (0.0, -1e6, -1e6, -1e6)
+    best_pareto = (-1.0, -1.0, -1.0)
     hold = restored_hold
     started = time.monotonic()
     session = 0
@@ -579,6 +600,8 @@ def main():
                         "sampling/rehearsal_censors": int(cutoff.sum()),
                         "sampling/rehearsal_terminations": int(np.sum(np.asarray(reh_metrics["terminated"]) > 0.5)),
                         "sampling/long_terminations": int(np.sum(np.asarray(long_metrics["terminated"]) > 0.5)),
+                        "reward/targeted_brake_per_s": float(np.mean(metrics["reward/targeted_brake"]) / 0.005),
+                        "learning_stability/critic_only_warmup": int(int(learner.opt.t) < int(plan["learning_stability"]["critic_warmup_start_t"]) + int(plan["learning_stability"]["critic_only_minibatches"])),
                     },
                     startup_rehearsal=startup_summary,
                     groups=summaries,
@@ -632,11 +655,26 @@ def main():
                     float(startup_summary.get("peak_survival", 0.0)),
                     float(startup_summary.get("survival", 0.0)),
                 )
+                dir08_band = float(summaries.get("xpeak_dir08", {}).get("quality", {}).get("in_band", 0.0))
+                dir00_band = float(summaries.get("xpeak_dir00", {}).get("quality", {}).get("in_band", 0.0))
+                clean_phys = float(startup_summary.get("clean_phys_survival", 0.0))
+                if (startup_summary.get("n", 0) >= 512 and clean_phys >= 0.99
+                        and dir08_band >= 0.98 and dir00_band >= 0.98):
+                    cand_pareto = (
+                        float(startup_summary.get("peak_survival", 0.0)),
+                        float(startup_summary.get("negx_peak_survival", 0.0)),
+                        float(startup_summary.get("dir08_survival", 0.0)),
+                    )
+                    if cand_pareto > best_pareto:
+                        best_pareto = cand_pareto
+                        bp = checkpoint("best_pareto")
+                        print(f"  [BEST PARETO] saved {bp.name} peak={cand_pareto[0]*100:.1f}% negX={cand_pareto[1]*100:.1f}% dir08={cand_pareto[2]*100:.1f}% dir08_band={dir08_band*100:.1f}% clean_phys={clean_phys*100:.1f}%", flush=True)
                 if completed % 8 == 0:
                     checkpoint("periodic")
                 if completed in milestones:
                     checkpoint("milestone")
-                if completed % 32 == 0:
+                    recovery()
+                elif completed % 32 == 0:
                     recovery()
                 gc.collect()
                 ctypes.CDLL(None).malloc_trim(0)
