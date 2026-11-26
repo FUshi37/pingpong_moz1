@@ -774,6 +774,8 @@ def disable_ball_physics_dr(cfg: MjxJuggleConfig) -> MjxJuggleConfig:
 def disable_ball_observation_dr(cfg: MjxJuggleConfig) -> MjxJuggleConfig:
     """Make refreshed ball observations exact while retaining physical DR."""
 
+    if hasattr(cfg, "ball_position_noise_ar1_enabled"):
+        cfg = replace(cfg, ball_position_noise_ar1_enabled=False)
     return replace(
         cfg,
         # Preserve the checkpoint's sensor update rate/sample-and-hold timing,
@@ -807,6 +809,8 @@ def disable_ball_observation_dr(cfg: MjxJuggleConfig) -> MjxJuggleConfig:
 def disable_ball_observation_position_dr(cfg: MjxJuggleConfig) -> MjxJuggleConfig:
     """Remove only position-side ball observation uncertainty."""
 
+    if hasattr(cfg, "ball_position_noise_ar1_enabled"):
+        cfg = replace(cfg, ball_position_noise_ar1_enabled=False)
     return replace(
         cfg,
         ball_obs_pos_noise_std=0.0,
@@ -836,11 +840,608 @@ def disable_ball_state_dr(cfg: MjxJuggleConfig) -> MjxJuggleConfig:
 
 def env_config_from_checkpoint(payload: dict, args: argparse.Namespace) -> MjxJuggleConfig:
     cfg_payload = payload.get("env_cfg") or {}
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v319_mean0265_completion':
+        parent = dict(payload, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v318_rms031_completion'))
+        return env_config_from_checkpoint(parent, args)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v318_rms031_completion':
+        parent = dict(payload, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v317_late_ball_margin_gain'))
+        return env_config_from_checkpoint(parent, args)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v317_late_ball_margin_gain':
+        from dataclasses import asdict
+        from fixed_plane_v317_late_ball_margin_gain import LateBallMarginGainConfig
+        raw = dict(payload['env_cfg']); enabled = raw.pop('v317_late_ball_xy_margin_gain_enabled')
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v316_late_ball_margin'))
+        return LateBallMarginGainConfig(**asdict(env_config_from_checkpoint(parent, args)),
+            v317_late_ball_xy_margin_gain_enabled=enabled)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v316_late_ball_margin':
+        from dataclasses import asdict
+        from fixed_plane_v316_late_ball_margin import LateBallMarginConfig
+        raw = dict(payload['env_cfg']); enabled = raw.pop('v316_late_ball_xy_margin_enabled')
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v315_late_ball_tail_gain'))
+        return LateBallMarginConfig(**asdict(env_config_from_checkpoint(parent, args)),
+            v316_late_ball_xy_margin_enabled=enabled)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v315_late_ball_tail_gain':
+        from dataclasses import asdict
+        from fixed_plane_v315_late_ball_tail_gain import LateBallTailGainConfig
+        raw = dict(payload['env_cfg']); enabled = raw.pop('v315_late_ball_xy_tail_gain_enabled')
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v314_late_ball_tail'))
+        return LateBallTailGainConfig(**asdict(env_config_from_checkpoint(parent, args)),
+            v315_late_ball_xy_tail_gain_enabled=enabled)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v314_late_ball_tail':
+        from dataclasses import asdict
+        from fixed_plane_v314_late_ball_tail import LateBallTailConfig
+        raw = dict(payload['env_cfg']); enabled = raw.pop('v314_late_ball_xy_tail_enabled')
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v313_stage16_preimpact'))
+        return LateBallTailConfig(**asdict(env_config_from_checkpoint(parent, args)),
+            v314_late_ball_xy_tail_enabled=enabled)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v313_stage16_preimpact':
+        parent = dict(payload, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v311_clean_preimpact'))
+        return env_config_from_checkpoint(parent, args)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v312_stage13_preimpact':
+        parent = dict(payload, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v311_clean_preimpact'))
+        return env_config_from_checkpoint(parent, args)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v311_clean_preimpact':
+        from dataclasses import asdict
+        from fixed_plane_v311_clean_preimpact import CleanPreimpactConfig
+        raw = dict(payload['env_cfg']); enabled = raw.pop('v311_clean_preimpact_enabled')
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v310_qualified_acquisition'))
+        return CleanPreimpactConfig(**asdict(env_config_from_checkpoint(parent, args)),
+            v311_clean_preimpact_enabled=enabled)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v310_qualified_acquisition':
+        from dataclasses import asdict
+        from fixed_plane_v310_qualified_acquisition import QualifiedAcquisitionConfig
+        raw = dict(payload['env_cfg']); enabled = raw.pop('v310_qualified_acquisition_enabled')
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v309_clean_startup'))
+        return QualifiedAcquisitionConfig(**asdict(env_config_from_checkpoint(parent, args)),
+            v310_qualified_acquisition_enabled=enabled)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v309_clean_startup':
+        from dataclasses import asdict
+        from fixed_plane_v309_clean_startup import CleanStartupConfig
+        raw = dict(payload['env_cfg']); enabled = raw.pop('v309_clean_startup_reward_enabled')
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v308_first_push'))
+        return CleanStartupConfig(**asdict(env_config_from_checkpoint(parent, args)),
+            v309_clean_startup_reward_enabled=enabled)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v308_first_push':
+        from dataclasses import asdict
+        from fixed_plane_v308_first_push import FirstPushConfig
+        raw = dict(payload['env_cfg']); weight = raw.pop('v308_first_push_weight_per_s')
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v307_launch_gradient'))
+        return FirstPushConfig(**asdict(env_config_from_checkpoint(parent, args)),
+            v308_first_push_weight_per_s=weight)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v307_launch_gradient':
+        from dataclasses import asdict
+        from fixed_plane_v307_launch_gradient import LaunchGradientConfig
+        raw = dict(payload['env_cfg']); sigma = raw.pop('v307_first_launch_low_sigma_m')
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v306_first_launch_reserve'))
+        return LaunchGradientConfig(**asdict(env_config_from_checkpoint(parent, args)),
+            v307_first_launch_low_sigma_m=sigma)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v306_first_launch_reserve':
+        from dataclasses import asdict
+        from fixed_plane_v306_first_launch_reserve import FirstLaunchReserveConfig
+        raw = dict(payload['env_cfg']); weight = raw.pop('v306_near_first_launch_credit')
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v305_reference_price'))
+        return FirstLaunchReserveConfig(**asdict(env_config_from_checkpoint(parent, args)),
+            v306_near_first_launch_credit=weight)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v305_reference_price':
+        from dataclasses import asdict
+        from fixed_plane_v305_reference_price import ReferencePriceConfig
+        raw = dict(payload['env_cfg'])
+        scale = raw.pop('v305_reference_preparation_scale')
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v304_timing_envelope'))
+        return ReferencePriceConfig(**asdict(env_config_from_checkpoint(parent, args)),
+            v305_reference_preparation_scale=scale)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v304_timing_envelope':
+        from dataclasses import asdict
+        from fixed_plane_v304_timing_envelope import TimingEnvelopeConfig
+        raw = dict(payload['env_cfg']); switch = raw.pop('v304_timing_envelope_reward')
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v303_preimpact_timing'))
+        return TimingEnvelopeConfig(**asdict(env_config_from_checkpoint(parent, args)),
+            v304_timing_envelope_reward=switch)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v303_preimpact_timing':
+        from dataclasses import asdict
+        from fixed_plane_v303_preimpact_timing import PreimpactTimingConfig
+        raw = dict(payload['env_cfg'])
+        switch = raw.pop('v303_late_action_label_fade')
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v302_preimpact_price'))
+        return PreimpactTimingConfig(**asdict(env_config_from_checkpoint(parent, args)),
+            v303_late_action_label_fade=switch)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v302_preimpact_price':
+        parent = dict(payload, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v301_launch_center'))
+        return env_config_from_checkpoint(parent, args)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v301_launch_center':
+        from dataclasses import asdict
+        from fixed_plane_v301_launch_center import LaunchCenterConfig, EXTRA_FIELDS
+        raw = dict(payload['env_cfg'])
+        extra = {key:raw.pop(key) for key in EXTRA_FIELDS if key in raw}
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v299_safe_reward_backoff'))
+        return LaunchCenterConfig(**asdict(env_config_from_checkpoint(parent, args)), **extra)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v299_safe_reward_backoff':
+        from dataclasses import asdict
+        from fixed_plane_v299_safe_reward_backoff import RewardBackoffConfig, EXTRA_FIELDS
+        raw = dict(payload['env_cfg'])
+        extra = {key:raw.pop(key) for key in EXTRA_FIELDS if key in raw}
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v298_practical_dr_completion'))
+        base = env_config_from_checkpoint(parent, args)
+        return RewardBackoffConfig(**asdict(base), **extra)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v298_practical_dr_completion':
+        from dataclasses import asdict
+        from fixed_plane_v298_practical_dr_completion import PracticalDRConfig, EXTRA_FIELDS
+        raw = dict(payload['env_cfg'])
+        extra = {key:raw.pop(key) for key in EXTRA_FIELDS if key in raw}
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v297_feasible_reward_gain'))
+        base = env_config_from_checkpoint(parent, args)
+        return PracticalDRConfig(**asdict(base), **extra)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v297_feasible_reward_gain':
+        from dataclasses import asdict
+        from fixed_plane_v297_feasible_reward_gain import FeasibleGainConfig, EXTRA_FIELDS
+        raw = dict(payload['env_cfg'])
+        extra = {key:raw.pop(key) for key in EXTRA_FIELDS if key in raw}
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v296_feasible_startup'))
+        base = env_config_from_checkpoint(parent, args)
+        return FeasibleGainConfig(**asdict(base), **extra)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v296_feasible_startup':
+        from dataclasses import asdict
+        from fixed_plane_v296_feasible_startup import FeasibleStartupConfig, EXTRA_FIELDS
+        raw = dict(payload['env_cfg'])
+        extra = {key:raw.pop(key) for key in EXTRA_FIELDS if key in raw}
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v295_mid_near_preimpact'))
+        base = env_config_from_checkpoint(parent, args)
+        return FeasibleStartupConfig(**asdict(base), **extra)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v295_mid_near_preimpact':
+        from dataclasses import asdict
+        from fixed_plane_v295_mid_near_preimpact import MidNearPreparationConfig, EXTRA_FIELDS
+        raw = dict(payload['env_cfg'])
+        extra = {key:raw.pop(key) for key in EXTRA_FIELDS if key in raw}
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v294_effective_preimpact'))
+        base = env_config_from_checkpoint(parent, args)
+        return MidNearPreparationConfig(**asdict(base), **extra)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v294_effective_preimpact':
+        from dataclasses import asdict
+        from fixed_plane_v294_effective_preimpact import EffectivePreparationConfig, EXTRA_FIELDS
+        raw = dict(payload['env_cfg'])
+        extra = {key:raw.pop(key) for key in EXTRA_FIELDS if key in raw}
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v292_critical_startup'))
+        base = env_config_from_checkpoint(parent, args)
+        return EffectivePreparationConfig(**asdict(base), **extra)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v293_monotone_preimpact':
+        from dataclasses import asdict
+        from fixed_plane_v293_monotone_preimpact import MonotonePreparationConfig, EXTRA_FIELDS
+        raw = dict(payload['env_cfg'])
+        extra = {key:raw.pop(key) for key in EXTRA_FIELDS if key in raw}
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v292_critical_startup'))
+        base = env_config_from_checkpoint(parent, args)
+        return MonotonePreparationConfig(**asdict(base), **extra)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v292_critical_startup':
+        from dataclasses import asdict
+        from fixed_plane_v292_critical_startup import CriticalStartupConfig, EXTRA_FIELDS
+        raw = dict(payload['env_cfg'])
+        extra = {key:raw.pop(key) for key in EXTRA_FIELDS if key in raw}
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v291_acquisition_success'))
+        base = env_config_from_checkpoint(parent, args)
+        return CriticalStartupConfig(**asdict(base), **extra)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v291_acquisition_success':
+        from dataclasses import asdict
+        from fixed_plane_v291_acquisition_success import AcquisitionSuccessConfig, EXTRA_FIELDS
+        raw = dict(payload['env_cfg'])
+        extra = {key:raw.pop(key) for key in EXTRA_FIELDS if key in raw}
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v290_startup_potential'))
+        base = env_config_from_checkpoint(parent, args)
+        return AcquisitionSuccessConfig(**asdict(base), **extra)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v290_startup_potential':
+        from dataclasses import asdict
+        from fixed_plane_v290_startup_potential import StartupPotentialConfig, EXTRA_FIELDS
+        raw = dict(payload['env_cfg'])
+        extra = {key:raw.pop(key) for key in EXTRA_FIELDS if key in raw}
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v289_coordinated_stroke'))
+        base = env_config_from_checkpoint(parent, args)
+        return StartupPotentialConfig(**asdict(base), **extra)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v289_coordinated_stroke':
+        from dataclasses import asdict
+        from fixed_plane_v289_coordinated_stroke import CoordinatedStrokeConfig, EXTRA_FIELDS
+        raw = dict(payload['env_cfg'])
+        extra = {key:raw.pop(key) for key in EXTRA_FIELDS if key in raw}
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v288_safe_stroke'))
+        base = env_config_from_checkpoint(parent, args)
+        return CoordinatedStrokeConfig(**asdict(base), **extra)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v288_safe_stroke':
+        from dataclasses import asdict
+        from fixed_plane_v288_safe_stroke import SafeStrokeConfig, EXTRA_FIELDS
+        raw = dict(payload['env_cfg'])
+        extra = {key:raw.pop(key) for key in EXTRA_FIELDS if key in raw}
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v287_startup_center'))
+        base = env_config_from_checkpoint(parent, args)
+        return SafeStrokeConfig(**asdict(base), **extra)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v287_startup_center':
+        from dataclasses import asdict
+        from fixed_plane_v287_startup_center import StartupCenterConfig, EXTRA_FIELDS
+        raw = dict(payload['env_cfg'])
+        extra = {key:raw.pop(key) for key in EXTRA_FIELDS if key in raw}
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v286_vertical_intent'))
+        base = env_config_from_checkpoint(parent, args)
+        return StartupCenterConfig(**asdict(base), **extra)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v286_vertical_intent':
+        from dataclasses import asdict
+        from fixed_plane_v286_vertical_intent import ReferenceVelocityConfig, EXTRA_FIELDS
+        raw = dict(payload['env_cfg'])
+        extra = {key:raw.pop(key) for key in EXTRA_FIELDS if key in raw}
+        parent = dict(payload, env_cfg=raw, args=dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v285_survival_objective'))
+        base = env_config_from_checkpoint(parent, args)
+        return ReferenceVelocityConfig(**asdict(base), **extra)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v285_survival_objective':
+        parent = dict(payload)
+        parent['args'] = dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v284_reference_prepare')
+        return env_config_from_checkpoint(parent, args)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v284_reference_prepare':
+        from dataclasses import asdict
+        from fixed_plane_v284_reference_prepare import ReferencePreparationConfig, EXTRA_FIELDS
+        base_cfg = {k:v for k,v in cfg_payload.items() if k not in EXTRA_FIELDS}
+        extra = {k:v for k,v in cfg_payload.items() if k in EXTRA_FIELDS}
+        proxy = dict(payload, env_cfg=base_cfg, args=dict(payload['args'],
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v283_primary_completion'))
+        base = env_config_from_checkpoint(proxy, args)
+        return ReferencePreparationConfig(**asdict(base), **extra)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v283_primary_completion':
+        parent = dict(payload)
+        parent['args'] = dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v282_survival_gate')
+        return env_config_from_checkpoint(parent, args)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v282_survival_gate':
+        parent = dict(payload)
+        parent['args'] = dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v281_stable_completion')
+        return env_config_from_checkpoint(parent, args)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v281_stable_completion':
+        parent = dict(payload)
+        parent['args'] = dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v279_energy_progress')
+        return env_config_from_checkpoint(parent, args)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v280_stable_tolerance':
+        parent = dict(payload)
+        parent['args'] = dict(payload.get('args', {}),
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v279_energy_progress')
+        return env_config_from_checkpoint(parent, args)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v279_energy_progress':
+        from dataclasses import asdict
+        from fixed_plane_v279_energy_progress import EnergyProgressConfig, EXTRA_FIELDS
+        base_cfg = {key:value for key,value in cfg_payload.items() if key not in EXTRA_FIELDS}
+        extra = {key:value for key,value in cfg_payload.items() if key in EXTRA_FIELDS}
+        proxy = dict(payload, env_cfg=base_cfg, args=dict(payload['args'],
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v278_all_samples'))
+        base = env_config_from_checkpoint(proxy, args)
+        return EnergyProgressConfig(**asdict(base), **extra)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v278_all_samples':
+        proxy = dict(payload, args=dict(payload['args'],
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v277_second_reserve'))
+        return env_config_from_checkpoint(proxy, args)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v277_second_reserve':
+        from dataclasses import asdict
+        from fixed_plane_v277_second_reserve import SecondReserveConfig, EXTRA_FIELDS
+        base_cfg = {key:value for key,value in cfg_payload.items() if key not in EXTRA_FIELDS}
+        extra = {key:value for key,value in cfg_payload.items() if key in EXTRA_FIELDS}
+        proxy = dict(payload, env_cfg=base_cfg, args=dict(payload['args'],
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v276_second_launch'))
+        base = env_config_from_checkpoint(proxy, args)
+        return SecondReserveConfig(**asdict(base), **extra)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v276_second_launch':
+        from dataclasses import asdict
+        from fixed_plane_v276_second_launch import SecondPreparationConfig, EXTRA_FIELDS
+        base_cfg = {key:value for key,value in cfg_payload.items() if key not in EXTRA_FIELDS}
+        extra = {key:value for key,value in cfg_payload.items() if key in EXTRA_FIELDS}
+        proxy = dict(payload, env_cfg=base_cfg, args=dict(payload['args'],
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v275_stable_completion'))
+        base = env_config_from_checkpoint(proxy, args)
+        return SecondPreparationConfig(**asdict(base), **extra)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v275_stable_completion':
+        proxy = dict(payload, args=dict(payload['args'],
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v257'))
+        return env_config_from_checkpoint(proxy, args)
+
+    if payload.get('args', {}).get('curriculum_profile') in (
+            'fixed_plane_limit_cycle_qvel_rmp_v273_gate_calibration',
+            'fixed_plane_limit_cycle_qvel_rmp_v274_stable_dr',
+            'fixed_plane_limit_cycle_qvel_rmp_v320_from_scratch'):
+        # V273/V274 change graduation gates only; preserve the exact V272 schema.
+        proxy = dict(payload, args=dict(payload['args'],
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v272_height_margin'))
+        return env_config_from_checkpoint(proxy, args)
+    if payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v271_dr_tail_tolerance':
+        # V271 changes graduation gates only; its environment is exactly V270.
+        proxy = dict(payload, args=dict(payload['args'],
+            curriculum_profile='fixed_plane_limit_cycle_qvel_rmp_v270_angular_relaxation'))
+        return env_config_from_checkpoint(proxy, args)
     # Checkpoints store ``asdict(stage.cfg)`` without the concrete dataclass
     # type.  Reconstructing every payload as the legacy base class silently
     # discarded all fixed-contact/predictive fields and made newer actors
     # impossible to validate (or, worse, changed their environment contract).
-    if "fixed_plane_v159_adjacent_height_linear" in cfg_payload:
+    risk_fields = {'v247_startup_physical_weak_penalty_weight',
+                   'v247_late_physical_band_penalty_weight'}
+    from fixed_plane_v254_camera_noise import NOISE_FIELDS
+    from fixed_plane_v258_gaussian_force import FIELDS as V258_FIELDS
+    if (payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v272_height_margin'
+            or any(key.startswith('v272_') for key in cfg_payload)):
+        from fixed_plane_v272_height_margin import HeightMarginConfig, CHANGES, validate_config
+        if payload.get('args', {}).get('curriculum_profile') not in (
+                None, 'fixed_plane_limit_cycle_qvel_rmp_v272_height_margin'):
+            raise ValueError('V272 marker conflicts with checkpoint profile')
+        required = {f.name for f in fields(HeightMarginConfig)} - {f.name for f in fields(MjxFixedPlaneV159RewardConfig)}
+        required |= set(CHANGES)
+        if not required.issubset(cfg_payload) or any(
+                key in cfg_payload for key in ('v261_enabled', 'v262_enabled', 'v263_enabled', 'v268_enabled')):
+            raise ValueError('Incomplete or mixed V272 reward checkpoint schema')
+        config_type = HeightMarginConfig
+        allowed = {f.name for f in fields(config_type)}
+        validate_config(config_type(**{k:v for k,v in cfg_payload.items() if k in allowed}))
+    elif (payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v270_angular_relaxation'
+            or any(key.startswith('v270_') for key in cfg_payload)):
+        from fixed_plane_v270_angular_relaxation import AngularRelaxationConfig, CHANGES, validate_config
+        if payload.get('args', {}).get('curriculum_profile') not in (
+                None, 'fixed_plane_limit_cycle_qvel_rmp_v270_angular_relaxation'):
+            raise ValueError('V270 marker conflicts with checkpoint profile')
+        required = {f.name for f in fields(AngularRelaxationConfig)} - {f.name for f in fields(MjxFixedPlaneV159RewardConfig)}
+        required |= set(CHANGES)
+        if not required.issubset(cfg_payload) or any(
+                key in cfg_payload for key in ('v261_enabled', 'v262_enabled', 'v263_enabled', 'v268_enabled')):
+            raise ValueError('Incomplete or mixed V270 reward checkpoint schema')
+        config_type = AngularRelaxationConfig
+        allowed = {f.name for f in fields(config_type)}
+        validate_config(config_type(**{k:v for k,v in cfg_payload.items() if k in allowed}))
+    elif (payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v269_conditional_quality'
+            or any(key.startswith('v269_') for key in cfg_payload)):
+        from fixed_plane_v269_conditional_quality import ConditionalQualityConfig, CHANGES, validate_config
+        if payload.get('args', {}).get('curriculum_profile') not in (
+                None, 'fixed_plane_limit_cycle_qvel_rmp_v269_conditional_quality'):
+            raise ValueError('V269 marker conflicts with checkpoint profile')
+        required = {f.name for f in fields(ConditionalQualityConfig)} - {f.name for f in fields(MjxFixedPlaneV159RewardConfig)}
+        required |= set(CHANGES)
+        if not required.issubset(cfg_payload) or any(
+                key in cfg_payload for key in ('v261_enabled', 'v262_enabled', 'v263_enabled', 'v268_enabled')):
+            raise ValueError('Incomplete or mixed V269 reward checkpoint schema')
+        config_type = ConditionalQualityConfig
+        allowed = {f.name for f in fields(config_type)}
+        validate_config(config_type(**{k:v for k,v in cfg_payload.items() if k in allowed}))
+    elif (payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v268_temporal_balance'
+            or any(key.startswith('v268_') for key in cfg_payload)):
+        from fixed_plane_v268_temporal_balance import TemporalBalanceConfig, CHANGES, validate_config
+        required = {f.name for f in fields(TemporalBalanceConfig)} - {f.name for f in fields(MjxFixedPlaneV159RewardConfig)}
+        required |= set(CHANGES)
+        if not required.issubset(cfg_payload) or any(
+                key in cfg_payload for key in ('v261_enabled', 'v262_enabled', 'v263_enabled')):
+            raise ValueError('Incomplete or mixed V268 reward checkpoint schema')
+        config_type = TemporalBalanceConfig
+        allowed = {f.name for f in fields(config_type)}
+        validate_config(config_type(**{k:v for k,v in cfg_payload.items() if k in allowed}))
+    elif (payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v267_motion_alignment'
+            or any(key.startswith('v267_') for key in cfg_payload)):
+        from fixed_plane_v267_motion_alignment import MotionAlignmentConfig, CHANGES, validate_config
+        required = {f.name for f in fields(MotionAlignmentConfig)} - {f.name for f in fields(MjxFixedPlaneV159RewardConfig)}
+        required |= set(CHANGES)
+        if not required.issubset(cfg_payload) or any(
+                key in cfg_payload for key in ('v261_enabled', 'v262_enabled', 'v263_enabled')):
+            raise ValueError('Incomplete or mixed V267 reward checkpoint schema')
+        config_type = MotionAlignmentConfig
+        allowed = {f.name for f in fields(config_type)}
+        validate_config(config_type(**{k:v for k,v in cfg_payload.items() if k in allowed}))
+    elif (payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v266_value_scale'
+            or any(key.startswith('v266_') for key in cfg_payload)
+            or ('v265_enabled' in cfg_payload and 'fixed_plane_v167_global_reward_multiplier' in cfg_payload)):
+        from fixed_plane_v266_value_scale import ValueScaleConfig, CHANGES, validate_config
+        required = {f.name for f in fields(ValueScaleConfig)} - {f.name for f in fields(MjxFixedPlaneV159RewardConfig)}
+        required |= set(CHANGES)
+        if not required.issubset(cfg_payload) or any(
+                key in cfg_payload for key in ('v261_enabled', 'v262_enabled', 'v263_enabled')):
+            raise ValueError('Incomplete or mixed V266 reward checkpoint schema')
+        config_type = ValueScaleConfig
+        allowed = {f.name for f in fields(config_type)}
+        validate_config(config_type(**{k:v for k,v in cfg_payload.items() if k in allowed}))
+    elif (payload.get('args', {}).get('curriculum_profile') == 'fixed_plane_limit_cycle_qvel_rmp_v265_mild_variation'
+            or any(key.startswith('v265_') for key in cfg_payload)
+            or ('v264_enabled' in cfg_payload and 'fixed_plane_v196_late_action_variation_weight' in cfg_payload)):
+        from fixed_plane_v265_mild_variation import MildVariationConfig, CHANGES, validate_config
+        required = {f.name for f in fields(MildVariationConfig)} - {f.name for f in fields(MjxFixedPlaneV159RewardConfig)}
+        required |= set(CHANGES)
+        if not required.issubset(cfg_payload) or any(
+                key in cfg_payload for key in ('v261_enabled', 'v262_enabled', 'v263_enabled')):
+            raise ValueError('Incomplete or mixed V265 reward checkpoint schema')
+        config_type = MildVariationConfig
+        allowed = {f.name for f in fields(config_type)}
+        validate_config(config_type(**{k:v for k,v in cfg_payload.items() if k in allowed}))
+    elif any(key.startswith('v264_') for key in cfg_payload):
+        from fixed_plane_v264_variance_balance import VarianceBalanceConfig, CHANGES, validate_config
+        required = {f.name for f in fields(VarianceBalanceConfig)} - {f.name for f in fields(MjxFixedPlaneV159RewardConfig)}
+        required |= set(CHANGES)
+        if not required.issubset(cfg_payload) or any(
+                key in cfg_payload for key in ('v261_enabled', 'v262_enabled', 'v263_enabled')):
+            raise ValueError('Incomplete or mixed V264 reward checkpoint schema')
+        config_type = VarianceBalanceConfig
+        allowed = {f.name for f in fields(config_type)}
+        validate_config(config_type(**{k:v for k,v in cfg_payload.items() if k in allowed}))
+    elif any(key.startswith('v263_') for key in cfg_payload):
+        from fixed_plane_v263_tail_cost import TailCostConfig, validate_config
+        required = {f.name for f in fields(TailCostConfig)} - {f.name for f in fields(MjxFixedPlaneV159RewardConfig)}
+        required |= {'fixed_plane_v191_absolute_height_multiplier', 'fixed_plane_v191_margin_weight',
+                     'fixed_plane_v158_late_squared_vxy_weight', 'fixed_plane_v159_mean_center_penalty_weight',
+                     'fixed_plane_v156_adjacent_height_penalty_multiplier', 'termination_miss_penalty_base'}
+        if not required.issubset(cfg_payload):
+            raise ValueError('Incomplete V263 reward checkpoint schema')
+        config_type = TailCostConfig
+        allowed = {f.name for f in fields(config_type)}
+        validate_config(config_type(**{k:v for k,v in cfg_payload.items() if k in allowed}))
+    elif any(key.startswith('v262_') for key in cfg_payload):
+        from fixed_plane_v262_correction_balance import CorrectionBalanceConfig, validate_config
+        required = {f.name for f in fields(CorrectionBalanceConfig)} - {f.name for f in fields(MjxFixedPlaneV159RewardConfig)}
+        required |= {'fixed_plane_v191_absolute_height_multiplier', 'fixed_plane_v191_margin_weight',
+                     'fixed_plane_v158_late_squared_vxy_weight', 'fixed_plane_v159_mean_center_penalty_weight',
+                     'fixed_plane_v156_adjacent_height_penalty_multiplier'}
+        if not required.issubset(cfg_payload):
+            raise ValueError('Incomplete V262 reward checkpoint schema')
+        config_type = CorrectionBalanceConfig
+        allowed = {f.name for f in fields(config_type)}
+        validate_config(config_type(**{k:v for k,v in cfg_payload.items() if k in allowed}))
+    elif any(key.startswith('v261_') for key in cfg_payload):
+        from fixed_plane_v261_reward_balance import RewardBalanceConfig, validate_config
+        required = {f.name for f in fields(RewardBalanceConfig)} - {f.name for f in fields(MjxFixedPlaneV159RewardConfig)}
+        required |= {'fixed_plane_v191_absolute_height_multiplier', 'fixed_plane_v191_margin_weight',
+                     'fixed_plane_v158_late_squared_vxy_weight', 'fixed_plane_v159_mean_center_penalty_weight'}
+        if not required.issubset(cfg_payload):
+            raise ValueError('Incomplete V261 reward checkpoint schema')
+        config_type = RewardBalanceConfig
+        allowed = {f.name for f in fields(config_type)}
+        validate_config(config_type(**{k:v for k,v in cfg_payload.items() if k in allowed}))
+    elif any(key.startswith('v259_') for key in cfg_payload):
+        from fixed_plane_v259_reward_tuning import RewardTuningConfig, EXTRA_FIELDS, validate_config
+        required = {f.name for f in fields(RewardTuningConfig)} - {f.name for f in fields(MjxFixedPlaneV159RewardConfig)}
+        if not required.issubset(cfg_payload):
+            raise ValueError('Incomplete reward-only tuning checkpoint schema')
+        config_type = RewardTuningConfig
+        allowed = {f.name for f in fields(config_type)}
+        validate_config(config_type(**{k:v for k,v in cfg_payload.items() if k in allowed}))
+    elif V258_FIELDS.intersection(cfg_payload):
+        from fixed_plane_v258_gaussian_force import GaussianBoundedForceConfig, reward_contract
+        required = {f.name for f in fields(GaussianBoundedForceConfig)} - {f.name for f in fields(MjxFixedPlaneV159RewardConfig)}
+        # The pre-repair force schema predates these two default-off costs.
+        # Force/noise/workspace fields remain mandatory; mixed reward revisions
+        # must not silently inherit zero costs from missing payload fields.
+        reward_defaults = {'fixed_plane_v165_steady_band_violation_weight': 0.,
+                           'fixed_plane_v191_margin_weight': 0.}
+        required -= reward_defaults.keys()
+        if not required.issubset(cfg_payload) or 'v255_near_preparation_gain' in cfg_payload:
+            raise ValueError('Incomplete or mixed V258 Gaussian force checkpoint schema')
+        cfg_payload = {**reward_defaults, **cfg_payload}
+        reward_contract(cfg_payload)
+        config_type = GaussianBoundedForceConfig
+    elif 'v255_near_preparation_gain' in cfg_payload:
+        required = risk_fields | {'v249_first_apex_reward_margin_m',
+            'v251_startup_energy_band_enabled', 'v252_second_energy_band_margin_m',
+            'v252_third_energy_band_margin_m', 'v253_preimpact_energy_weight_per_s',
+            'v253_preimpact_energy_lead_s', 'v253_flight_xy_reward_weight_per_s',
+            'v255_near_preparation_gain'}
+        if not required.issubset(cfg_payload):
+            raise ValueError('Incomplete V255 near-corner reward checkpoint schema')
+        from fixed_plane_v255_corner import CornerRewardConfig
+        config_type = CornerRewardConfig
+    elif 'v256_enabled' in cfg_payload:
+        from fixed_plane_v256_workspace_force import WorkspaceForceConfig
+        required = {f.name for f in fields(WorkspaceForceConfig)} - {f.name for f in fields(MjxFixedPlaneV159RewardConfig)}
+        if not required.issubset(cfg_payload):
+            raise ValueError('Incomplete V256 workspace/force checkpoint schema')
+        config_type = WorkspaceForceConfig
+    elif set(NOISE_FIELDS).intersection(cfg_payload):
+        if not set(NOISE_FIELDS).issubset(cfg_payload):
+            raise ValueError("Incomplete V254 camera-position noise checkpoint schema")
+        from fixed_plane_v254_camera_noise import CameraPositionNoiseConfig
+        config_type = CameraPositionNoiseConfig
+    elif any(name in cfg_payload for name in (
+            'v253_preimpact_energy_weight_per_s', 'v253_preimpact_energy_lead_s',
+            'v253_flight_xy_reward_weight_per_s')):
+        required = risk_fields | {'v249_first_apex_reward_margin_m',
+            'v251_startup_energy_band_enabled', 'v252_second_energy_band_margin_m',
+            'v252_third_energy_band_margin_m', 'v253_preimpact_energy_weight_per_s',
+            'v253_preimpact_energy_lead_s', 'v253_flight_xy_reward_weight_per_s'}
+        if not required.issubset(cfg_payload):
+            raise ValueError('Incomplete V253 preparation-reward checkpoint schema')
+        from fixed_plane_v253_preimpact import PreparationRewardConfig
+        config_type = PreparationRewardConfig
+    elif ('v252_second_energy_band_margin_m' in cfg_payload
+            or 'v252_third_energy_band_margin_m' in cfg_payload):
+        required = risk_fields | {'v249_first_apex_reward_margin_m',
+            'v251_startup_energy_band_enabled', 'v252_second_energy_band_margin_m',
+            'v252_third_energy_band_margin_m'}
+        if not required.issubset(cfg_payload):
+            raise ValueError('Incomplete V252 startup-energy-reserve checkpoint schema')
+        from fixed_plane_v252_energy_reserve import EnergyReserveConfig
+        config_type = EnergyReserveConfig
+    elif 'v251_startup_energy_band_enabled' in cfg_payload:
+        if not (risk_fields | {'v249_first_apex_reward_margin_m'}).issubset(cfg_payload):
+            raise ValueError('Incomplete V251 startup-energy-band checkpoint schema')
+        from fixed_plane_v251_startup_energy_band import EnergyBandConfig
+        config_type = EnergyBandConfig
+    elif 'v249_first_apex_reward_margin_m' in cfg_payload:
+        if not risk_fields.issubset(cfg_payload):
+            raise ValueError('Incomplete V249 bootstrap-energy checkpoint schema')
+        from fixed_plane_v249_bootstrap_energy import BootstrapEnergyConfig
+        config_type = BootstrapEnergyConfig
+    elif risk_fields.intersection(cfg_payload):
+        if not risk_fields.issubset(cfg_payload):
+            raise ValueError('Incomplete V247 physical-risk checkpoint schema')
+        from fixed_plane_v247_physical_risk import PhysicalRiskConfig
+        config_type = PhysicalRiskConfig
+    elif (("v245_second_apex_reward_margin_m" in cfg_payload
+             or "v245_third_apex_reward_margin_m" in cfg_payload)
+            and "fixed_plane_v211_late_weak_penalty_weight" in cfg_payload):
+        from fixed_plane_v246_reward_consolidation import RewardConsolidationConfig
+        config_type = RewardConsolidationConfig
+    elif ("v245_second_apex_reward_margin_m" in cfg_payload
+            or "v245_third_apex_reward_margin_m" in cfg_payload):
+        from fixed_plane_v245_startup_apex_margin import StartupApexMarginConfig
+        config_type = StartupApexMarginConfig
+    elif "v242_startup_vz_outcome_only" in cfg_payload:
+        from fixed_plane_v242_startup_objectives import StartupObjectivesConfig
+        config_type = StartupObjectivesConfig
+    elif "v241_physical_apex_huber_weight" in cfg_payload:
+        from fixed_plane_v241_physical_outcome import PhysicalOutcomeConfig
+        config_type = PhysicalOutcomeConfig
+    elif "v240_extra_ball_xy_weight" in cfg_payload:
+        from fixed_plane_v240_release_balance import ReleaseBalanceConfig
+        config_type = ReleaseBalanceConfig
+    elif "v239_release_apex_weight" in cfg_payload:
+        from fixed_plane_v239_release_apex import ReleaseApexConfig
+        config_type = ReleaseApexConfig
+    elif "v237_release_shortfall_weight" in cfg_payload:
+        from fixed_plane_v237_release_margin import ReleaseMarginConfig
+        config_type = ReleaseMarginConfig
+    elif bool(cfg_payload.get("v236_launch_first", False)):
+        from fixed_plane_v236_launch_first import LaunchFirstConfig
+        config_type = LaunchFirstConfig
+    elif bool(cfg_payload.get("v234_reward_only", False)):
+        from fixed_plane_v234_reward_only import RewardOnlyConfig
+        config_type = RewardOnlyConfig
+    elif bool(cfg_payload.get("v231_nominal_reward_parity", False)):
+        from fixed_plane_v231_recovery_only import RecoveryOnlyRewardConfig
+        config_type = RecoveryOnlyRewardConfig
+    elif bool(cfg_payload.get("v226_enabled", False)):
+        from fixed_plane_v226_stability_recovery import StabilityRecoveryConfig
+        config_type = StabilityRecoveryConfig
+    elif bool(cfg_payload.get("v225_enabled", False)):
+        from fixed_plane_v225_near_side import NearSideRecoveryConfig
+        config_type = NearSideRecoveryConfig
+    elif bool(cfg_payload.get("v224_history_enabled", False)):
+        from fixed_plane_v224_history_recovery import HistoryRecoveryConfig
+        config_type = HistoryRecoveryConfig
+    elif "fixed_plane_v159_adjacent_height_linear" in cfg_payload:
         config_type = MjxFixedPlaneV159RewardConfig
     elif "fixed_plane_v158_late_squared_vxy_weight" in cfg_payload:
         config_type = MjxFixedPlaneV158RewardConfig

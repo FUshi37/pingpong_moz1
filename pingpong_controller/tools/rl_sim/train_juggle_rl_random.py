@@ -15,6 +15,7 @@ _RL_SIM_DIR = Path(__file__).resolve().parent
 if str(_RL_SIM_DIR) not in sys.path:
     sys.path.insert(0, str(_RL_SIM_DIR))
 
+from camera_calibration import D455_848_UNDISTORTED_PIXEL_MARGIN
 from rl_juggle_env_random import JuggleEnv, JuggleConfig
 
 try:
@@ -61,6 +62,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--ball-spawn-z-jitter", type=float, default=0.035, help="Ball spawn Z jitter (m)")
     p.add_argument("--ball-init-vxy-max", type=float, default=0.012, help="Ball initial XY velocity max (m/s)")
     p.add_argument("--ball-init-vz", type=float, default=-0.28, help="Ball initial Z velocity (m/s)")
+    p.add_argument("--ball-init-vz-jitter", type=float, default=0.0, help="Uniform jitter around ball initial Z velocity (m/s)")
     p.add_argument("--ball-obs-rate-hz", type=float, default=50.0)
     p.add_argument("--ball-obs-pos-noise-std", type=float, default=0.003)
     p.add_argument("--ball-obs-vel-noise-std", type=float, default=0.03)
@@ -116,7 +118,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--camera-box-penalty-weight", type=float, default=0.0)
     p.add_argument("--camera-visible-penalty-weight", type=float, default=0.0)
     p.add_argument("--camera-top-margin-penalty-weight", type=float, default=0.0)
-    p.add_argument("--camera-pixel-margin", type=float, default=80.0)
+    p.add_argument("--camera-pixel-margin", type=float, default=D455_848_UNDISTORTED_PIXEL_MARGIN)
     p.add_argument("--camera-min-depth", type=float, default=0.15)
     p.add_argument("--camera-max-depth", type=float, default=2.50)
     p.add_argument("--camera-box-half-width", type=float, default=0.35)
@@ -529,6 +531,7 @@ def main() -> None:
         ball_spawn_z_jitter=args.ball_spawn_z_jitter,
         ball_init_vxy_max=args.ball_init_vxy_max,
         ball_init_vz=args.ball_init_vz,
+        ball_init_vz_jitter=args.ball_init_vz_jitter,
         ball_obs_rate_hz=args.ball_obs_rate_hz,
         ball_obs_pos_noise_std=args.ball_obs_pos_noise_std,
         ball_obs_vel_noise_std=args.ball_obs_vel_noise_std,

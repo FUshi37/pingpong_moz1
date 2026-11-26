@@ -44,6 +44,10 @@ MAX_HOST_STOP_STREAK_SAMPLES = 10
 PRESSURE_SOME_AVG10_LIMIT = 10.0
 PRESSURE_FULL_AVG10_LIMIT = 5.0
 PRESSURE_STREAK_SAMPLES = 3
+WMJ_V1_PSI_SCOPE_BYTES = 8 * GIB
+# User-approved for all future WMJ-V1 tasks, 2026-11-12. Startup admission
+# and every independent capacity limit remain unchanged.
+WMJ_V1_PSI_HOST_AVAILABLE_BYTES = 8 * GIB
 SCOPE_STOP_STREAK_SAMPLES = 3
 SIGTERM_GRACE_S = 10.0
 SIGKILL_GRACE_S = 20.0
@@ -309,6 +313,21 @@ def memory_pressure_exceeded(
     )
 
 
+def psi_stop_eligible(
+    current_bytes: int,
+    available_bytes: int,
+    wmj_v1_conditional_psi: bool = False,
+    wmj_v1_fixed_critic_resume_psi: bool = False,
+) -> bool:
+    """Apply the user-approved WMJ headroom gate only when explicitly enabled."""
+    return (
+        not wmj_v1_conditional_psi
+        or current_bytes >= WMJ_V1_PSI_SCOPE_BYTES
+        or available_bytes <= (8 * GIB if wmj_v1_fixed_critic_resume_psi
+                               else WMJ_V1_PSI_HOST_AVAILABLE_BYTES)
+    )
+
+
 def pressure_reason(
     current_bytes: int,
     available_bytes: int,
@@ -321,6 +340,8 @@ def pressure_reason(
     scope_stop_bytes: int = SCOPE_STOP_BYTES,
     host_stop_available_bytes: int = HOST_STOP_AVAILABLE_BYTES,
     host_stop_streak_samples: int = HOST_STOP_STREAK_SAMPLES,
+    wmj_v1_conditional_psi: bool = False,
+    wmj_v1_fixed_critic_resume_psi: bool = False,
 ) -> str | None:
     """Choose a stop cause with room left before the kernel hard cap."""
     if (
@@ -339,6 +360,8 @@ def pressure_reason(
         memory_pressure is not None
         and memory_pressure_exceeded(memory_pressure)
         and pressure_streak >= PRESSURE_STREAK_SAMPLES
+        and psi_stop_eligible(current_bytes, available_bytes, wmj_v1_conditional_psi,
+                              wmj_v1_fixed_critic_resume_psi)
     ):
         return 'sustained_memory_pressure'
     return None
@@ -368,6 +391,8 @@ def supervise(
     limits: ScopeMemoryLimits = DEFAULT_SCOPE_MEMORY_LIMITS,
     host_stop_available_bytes: int = HOST_STOP_AVAILABLE_BYTES,
     host_stop_streak_samples: int = HOST_STOP_STREAK_SAMPLES,
+    wmj_v1_conditional_psi: bool = False,
+    wmj_v1_fixed_critic_resume_psi: bool = False,
 ) -> int:
     """Signal only our child process group; never find or kill other trainers."""
     path = scope_path()
@@ -377,6 +402,13 @@ def supervise(
         verify_scope(path, limits)
     with (log_dir / 'memory.jsonl').open('x', buffering=1) as stream:
         initial = memory_sample(path)
+        initial['psi_stop_policy'] = {
+            'mode': 'wmj_v1_conditional' if wmj_v1_conditional_psi else 'independent',
+            'scope_at_least_bytes': WMJ_V1_PSI_SCOPE_BYTES if wmj_v1_conditional_psi else None,
+            'host_available_at_most_bytes': (8 * GIB if wmj_v1_fixed_critic_resume_psi
+                else WMJ_V1_PSI_HOST_AVAILABLE_BYTES) if wmj_v1_conditional_psi else None,
+            'fixed_critic_resume_only': wmj_v1_fixed_critic_resume_psi,
+        }
         stream.write(json.dumps({'event': 'preflight', 'cgroup': str(path),
                                  'command': command, **initial}) + '\n')
         if initial['host_available_bytes'] < HOST_START_AVAILABLE_BYTES:
@@ -427,6 +459,15 @@ def supervise(
                 sample['scope_stop_streak'] = scope_stop_streak
                 sample['host_stop_streak'] = host_stop_streak
                 sample['memory_high_events_delta'] = high_delta
+                sample['psi_stop_eligible'] = psi_stop_eligible(
+                    sample['scope_current_bytes'], sample['host_available_bytes'],
+                    wmj_v1_conditional_psi,
+                    wmj_v1_fixed_critic_resume_psi,
+                )
+                sample['psi_warning_only'] = (
+                    memory_pressure_exceeded(pressure)
+                    and not sample['psi_stop_eligible']
+                )
                 reason = pressure_reason(
                     sample['scope_current_bytes'],
                     sample['host_available_bytes'],
@@ -438,6 +479,8 @@ def supervise(
                     scope_stop_bytes=limits.stop_bytes,
                     host_stop_available_bytes=host_stop_available_bytes,
                     host_stop_streak_samples=host_stop_streak_samples,
+                    wmj_v1_conditional_psi=wmj_v1_conditional_psi,
+                    wmj_v1_fixed_critic_resume_psi=wmj_v1_fixed_critic_resume_psi,
                 )
                 if stop_at is None and (reason or external_signal):
                     stop_at = time.monotonic()
@@ -578,6 +621,14 @@ def main() -> int:
     parser.add_argument('--memory-max-gib', type=float, default=12.0)
     parser.add_argument('--memory-stop-gib', type=float, default=9.5)
     parser.add_argument(
+        '--wmj-v1-conditional-psi', action='store_true',
+        help='WMJ-V1 only: gate PSI stops at scope >=8 GiB or host available <=8 GiB',
+    )
+    parser.add_argument(
+        '--wmj-v1-fixed-critic-resume-psi', action='store_true',
+        help='Approved fixed-data Critic resume only: use an 8 GiB host PSI gate',
+    )
+    parser.add_argument(
         '--host-stop-available-gib',
         type=float,
         default=HOST_STOP_AVAILABLE_BYTES / GIB,
@@ -614,6 +665,12 @@ def main() -> int:
             verify_scope(scope_path(), limits)
         return 0
     command = args.command[1:] if args.command[:1] == ['--'] else args.command
+    if args.wmj_v1_fixed_critic_resume_psi and (
+        not args.wmj_v1_conditional_psi or '--resume' not in command
+        or not any(command[i:i+2] == ['-m', 'world_model.train_fixed_critic']
+                   for i in range(len(command)-1))
+    ):
+        parser.error('fixed Critic PSI override requires its explicit resume command')
     if not command or args.log_dir is None:
         parser.error('--log-dir and a command after -- are required')
     if args.inside:
@@ -624,6 +681,8 @@ def main() -> int:
             limits,
             host_stop_available_bytes,
             args.host_stop_streak_samples,
+            args.wmj_v1_conditional_psi,
+            args.wmj_v1_fixed_critic_resume_psi,
         )
     args.log_dir.mkdir(parents=True, exist_ok=False)
     unit_base = f'pp-training-{os.getpid()}-{time.time_ns()}'
@@ -651,6 +710,12 @@ def main() -> int:
     ]
     forwarded_environment = training_child_environment(dict(os.environ))
     separator_index = systemd_command.index('--', systemd_command.index('--inside'))
+    if args.wmj_v1_conditional_psi:
+        systemd_command.insert(separator_index, '--wmj-v1-conditional-psi')
+        separator_index += 1
+    if args.wmj_v1_fixed_critic_resume_psi:
+        systemd_command.insert(separator_index, '--wmj-v1-fixed-critic-resume-psi')
+        separator_index += 1
     systemd_command[separator_index:separator_index] = [
         value
         for item in forwarded_environment

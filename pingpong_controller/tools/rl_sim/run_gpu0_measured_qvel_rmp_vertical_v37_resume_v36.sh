@@ -17,11 +17,18 @@ EXPECTED_RESUME_SHA256=${EXPECTED_RESUME_SHA256:-eb6cf8c1c71c5438aa3ef0eb60a1965
 RESUME_STAGE=${RESUME_STAGE:-rmp37_nonexecution_recovery_small_execution}
 NEW_BALL_MASS_MIN_KG=${NEW_BALL_MASS_MIN_KG:-0.0030}
 NEW_BALL_MASS_MAX_KG=${NEW_BALL_MASS_MAX_KG:-0.0040}
+EXPECTED_NEW_BALL_MASS_MIN_KG=${EXPECTED_NEW_BALL_MASS_MIN_KG:-0.0030}
+EXPECTED_NEW_BALL_MASS_MAX_KG=${EXPECTED_NEW_BALL_MASS_MAX_KG:-0.0040}
+BALL_MASS_MEASUREMENT_MANIFEST=${BALL_MASS_MEASUREMENT_MANIFEST:-}
 MAX_STAGES=${MAX_STAGES:-28}
+MAX_STAGES_LIMIT=${MAX_STAGES_LIMIT:-34}
 N_ENVS=${N_ENVS:-1024}
+N_STEPS=${N_STEPS:-128}
 MINIBATCH_SIZE=${MINIBATCH_SIZE:-16384}
 LEARNING_RATE=${LEARNING_RATE:-1.0e-4}
 UPDATE_EPOCHS=${UPDATE_EPOCHS:-3}
+GAMMA=${GAMMA:-0.9995}
+GAE_LAMBDA=${GAE_LAMBDA:-0.99}
 CLIP_RANGE=${CLIP_RANGE:-0.15}
 TARGET_KL=${TARGET_KL:-0.008}
 CONVERGENCE_WINDOW=${CONVERGENCE_WINDOW:-24}
@@ -38,9 +45,12 @@ TRANSACTION_PRIMARY_VALUE_NONREGRESSION=${TRANSACTION_PRIMARY_VALUE_NONREGRESSIO
 TRANSACTION_SECONDARY_GAP_TOLERANCE=${TRANSACTION_SECONDARY_GAP_TOLERANCE:-1.0e-12}
 TRANSACTION_MAX_ARM_QVEL_LIMIT_EXCEED_FRACTION=${TRANSACTION_MAX_ARM_QVEL_LIMIT_EXCEED_FRACTION:-1.0}
 TRANSACTION_MAX_ARM_QACC_LIMIT_EXCEED_FRACTION=${TRANSACTION_MAX_ARM_QACC_LIMIT_EXCEED_FRACTION:-1.0}
+ACTOR_ANCHOR_KL_COEF=${ACTOR_ANCHOR_KL_COEF:-0.0}
+ACTOR_ANCHOR_REFERENCE_CHECKPOINT=${ACTOR_ANCHOR_REFERENCE_CHECKPOINT:-}
 # Historical/default command contract: --max-stage-updates -1.
 MAX_STAGE_UPDATES=${MAX_STAGE_UPDATES:--1}
 LOCAL_OFFLINE_SMOKE=${LOCAL_OFFLINE_SMOKE:-NO}
+ALLOW_EXISTING_RUN_DIR=${ALLOW_EXISTING_RUN_DIR:-NO}
 LAUNCHER_AUDIT_PATH=${LAUNCHER_AUDIT_PATH:-$RL_SIM/run_gpu0_measured_qvel_rmp_vertical_v37_resume_v36.sh}
 
 RUN_SEED=${RUN_SEED:-20260822}
@@ -106,9 +116,38 @@ if [[ "$TRANSACTIONAL_MAIN_METRIC_GUARD" == YES ]]; then
     --transaction-max-arm-qvel-limit-exceed-fraction "$TRANSACTION_MAX_ARM_QVEL_LIMIT_EXCEED_FRACTION"
     --transaction-max-arm-qacc-limit-exceed-fraction "$TRANSACTION_MAX_ARM_QACC_LIMIT_EXCEED_FRACTION"
   )
+  if [[ -n "${TRANSACTION_EVAL_SEEDS:-}" ]]; then
+    read -r -a transaction_eval_seeds <<< "$TRANSACTION_EVAL_SEEDS"
+    TRANSACTION_ARGS+=(--transaction-eval-seeds "${transaction_eval_seeds[@]}")
+  fi
 elif [[ "$TRANSACTIONAL_MAIN_METRIC_GUARD" != NO ]]; then
   echo "TRANSACTIONAL_MAIN_METRIC_GUARD must be YES or NO" >&2
   exit 2
+fi
+ACTOR_ANCHOR_ARGS=()
+if [[ "$ACTOR_ANCHOR_KL_COEF" != 0.0 ]]; then
+  [[ -n "$ACTOR_ANCHOR_REFERENCE_CHECKPOINT" ]] || {
+    echo "nonzero ACTOR_ANCHOR_KL_COEF requires ACTOR_ANCHOR_REFERENCE_CHECKPOINT" >&2
+    exit 2
+  }
+  [[ -f "$ACTOR_ANCHOR_REFERENCE_CHECKPOINT" ]] || {
+    echo "missing actor anchor checkpoint: $ACTOR_ANCHOR_REFERENCE_CHECKPOINT" >&2
+    exit 2
+  }
+  ACTOR_ANCHOR_ARGS=(
+    --actor-anchor-kl-coef "$ACTOR_ANCHOR_KL_COEF"
+    --actor-anchor-reference-checkpoint "$ACTOR_ANCHOR_REFERENCE_CHECKPOINT"
+  )
+fi
+BALL_MASS_MEASUREMENT_ARGS=()
+if [[ -n "$BALL_MASS_MEASUREMENT_MANIFEST" ]]; then
+  [[ -f "$BALL_MASS_MEASUREMENT_MANIFEST" ]] || {
+    echo "missing ball-mass measurement manifest: $BALL_MASS_MEASUREMENT_MANIFEST" >&2
+    exit 2
+  }
+  BALL_MASS_MEASUREMENT_ARGS=(
+    --ball-mass-measurement-manifest "$BALL_MASS_MEASUREMENT_MANIFEST"
+  )
 fi
 
 [[ -x "$PYTHON_BIN" ]] || { echo "missing Python: $PYTHON_BIN" >&2; exit 2; }
@@ -123,23 +162,35 @@ for required_file in \
   }
 done
 [[ "$MAX_STAGES" =~ ^[0-9]+$ ]] || {
-  echo "MAX_STAGES must be an integer in 1..34" >&2
+  echo "MAX_STAGES must be an integer in 1..$MAX_STAGES_LIMIT" >&2
   exit 2
 }
-if ! (( MAX_STAGES >= 1 && MAX_STAGES <= 34 )); then
-  echo "MAX_STAGES must be in 1..34" >&2
+if ! (( MAX_STAGES >= 1 && MAX_STAGES <= MAX_STAGES_LIMIT )); then
+  echo "MAX_STAGES must be in 1..$MAX_STAGES_LIMIT" >&2
   exit 2
 fi
 [[ "$N_ENVS" == 128 || "$N_ENVS" == 512 || "$N_ENVS" == 1024 ]] || {
   echo "N_ENVS must be 128/512 (bounded trial) or 1024 (formal)" >&2
   exit 2
 }
+[[ "$N_STEPS" == 128 || "$N_STEPS" == 256 ]] || {
+  echo "N_STEPS must be 128 or 256" >&2
+  exit 2
+}
+if [[ "$N_STEPS" == 256 && "$N_ENVS" != 512 ]]; then
+  echo "N_STEPS=256 is restricted to the 512-environment long-credit trial" >&2
+  exit 2
+fi
 if [[ "$N_ENVS" == 128 && "$MINIBATCH_SIZE" != 2048 ]]; then
   echo "N_ENVS=128 requires MINIBATCH_SIZE=2048" >&2
   exit 2
 fi
-if [[ "$N_ENVS" == 512 && "$MINIBATCH_SIZE" != 8192 ]]; then
-  echo "N_ENVS=512 requires MINIBATCH_SIZE=8192" >&2
+expected_512_minibatch=8192
+if [[ "$N_STEPS" == 256 ]]; then
+  expected_512_minibatch=16384
+fi
+if [[ "$N_ENVS" == 512 && "$MINIBATCH_SIZE" != "$expected_512_minibatch" ]]; then
+  echo "N_ENVS=512,N_STEPS=$N_STEPS requires MINIBATCH_SIZE=$expected_512_minibatch" >&2
   exit 2
 fi
 if [[ "$N_ENVS" == 1024 && "$MINIBATCH_SIZE" != 16384 ]]; then
@@ -150,12 +201,12 @@ fi
   echo "ADVANCE_EVAL_N_ENVS must be 64 or 128" >&2
   exit 2
 }
-[[ "$NEW_BALL_MASS_MIN_KG" == 0.0030 ]] || {
-  echo "V37 fixes NEW_BALL_MASS_MIN_KG=0.0030" >&2
+[[ "$NEW_BALL_MASS_MIN_KG" == "$EXPECTED_NEW_BALL_MASS_MIN_KG" ]] || {
+  echo "profile fixes NEW_BALL_MASS_MIN_KG=$EXPECTED_NEW_BALL_MASS_MIN_KG" >&2
   exit 2
 }
-[[ "$NEW_BALL_MASS_MAX_KG" == 0.0040 ]] || {
-  echo "V37 fixes NEW_BALL_MASS_MAX_KG=0.0040" >&2
+[[ "$NEW_BALL_MASS_MAX_KG" == "$EXPECTED_NEW_BALL_MASS_MAX_KG" ]] || {
+  echo "profile fixes NEW_BALL_MASS_MAX_KG=$EXPECTED_NEW_BALL_MASS_MAX_KG" >&2
   exit 2
 }
 actual_resume_sha256=$(sha256sum "$RESUME_CHECKPOINT" | awk '{print $1}')
@@ -165,10 +216,28 @@ actual_resume_sha256=$(sha256sum "$RESUME_CHECKPOINT" | awk '{print $1}')
   echo "actual:   $actual_resume_sha256" >&2
   exit 2
 }
-[[ ! -e "$RUN_DIR" ]] || {
-  echo "refusing to overwrite output directory: $RUN_DIR" >&2
+if [[ -e "$RUN_DIR" ]]; then
+  if [[ "$ALLOW_EXISTING_RUN_DIR" != YES ]]; then
+    echo "refusing to overwrite output directory: $RUN_DIR" >&2
+    exit 2
+  fi
+  [[ -d "$RUN_DIR" ]] || {
+    echo "existing resume target is not a directory: $RUN_DIR" >&2
+    exit 2
+  }
+  run_dir_real=$(realpath "$RUN_DIR")
+  checkpoint_parent_real=$(realpath "$(dirname "$RESUME_CHECKPOINT")")
+  [[ "$checkpoint_parent_real" == "$run_dir_real" ]] || {
+    echo "existing-run resume checkpoint must be inside RUN_DIR" >&2
+    exit 2
+  }
+elif [[ "$ALLOW_EXISTING_RUN_DIR" == YES ]]; then
+  echo "existing-run resume requested but RUN_DIR does not exist: $RUN_DIR" >&2
   exit 2
-}
+elif [[ "$ALLOW_EXISTING_RUN_DIR" != NO ]]; then
+  echo "ALLOW_EXISTING_RUN_DIR must be YES or NO" >&2
+  exit 2
+fi
 
 actual_gpu_uuid=$(nvidia-smi -i 0 --query-gpu=uuid --format=csv,noheader | tr -d '[:space:]')
 [[ "$actual_gpu_uuid" == "$EXPECTED_GPU_UUID" ]] || {
@@ -208,6 +277,9 @@ sha256sum \
   "$LAUNCHER_AUDIT_PATH" \
   "$REPO_ROOT/AGENTS.md" \
   "$REPO_ROOT/TRAINING_CURRICULA.md"
+if [[ -n "$BALL_MASS_MEASUREMENT_MANIFEST" ]]; then
+  sha256sum "$BALL_MASS_MEASUREMENT_MANIFEST"
+fi
 echo "Resume source: $RESUME_CHECKPOINT"
 echo "Selection: $SOURCE_SELECTION_AUDIT"
 echo "$SOURCE_METRIC_AUDIT"
@@ -217,8 +289,10 @@ echo "$STAGE_20_AUDIT"
 echo "Stages 21-28: V36 RMP micro/full then PD/plant micro/full; other DR stays maximal."
 echo "Update limit: max_stage_updates=$MAX_STAGE_UPDATES; stages=$MAX_STAGES."
 echo "Parallel environments: $N_ENVS."
+echo "Rollout/credit: n_steps=$N_STEPS, gamma=$GAMMA, gae_lambda=$GAE_LAMBDA."
 echo "Minibatch size: $MINIBATCH_SIZE (eight minibatches per epoch)."
 echo "PPO: LR=$LEARNING_RATE, epochs=$UPDATE_EPOCHS, clip=$CLIP_RANGE, target_KL=$TARGET_KL."
+echo "Actor anchor: coef=$ACTOR_ANCHOR_KL_COEF reference=${ACTOR_ANCHOR_REFERENCE_CHECKPOINT:-disabled}."
 echo "Convergence: window=$CONVERGENCE_WINDOW, warmup=$STAGE_METRIC_WARMUP_UPDATES."
 echo "Advance validation environments: $ADVANCE_EVAL_N_ENVS."
 echo "Clear JAX caches between stages: $CLEAR_JAX_CACHES_BETWEEN_STAGES."
@@ -270,6 +344,7 @@ exec "$RL_SIM/run_with_host_memory_guard.sh" \
   --delay-ablation-preset baseline_current \
   --measured-ball-mass-range-kg \
     "$NEW_BALL_MASS_MIN_KG" "$NEW_BALL_MASS_MAX_KG" \
+  "${BALL_MASS_MEASUREMENT_ARGS[@]}" \
   --rmp-output-replay-report "$RMP_OUTPUT_REPLAY_REPORT" \
   --allow-experimental-rmp-dr-bypass \
   --right-arm-pd-profile recovered_rmp_rmpmd_v2 \
@@ -278,12 +353,12 @@ exec "$RL_SIM/run_with_host_memory_guard.sh" \
   --asymmetric-critic \
   --critic-command-history-steps 12 \
   --n-envs "$N_ENVS" \
-  --n-steps 128 \
+  --n-steps "$N_STEPS" \
   --minibatch-size "$MINIBATCH_SIZE" \
   --update-epochs "$UPDATE_EPOCHS" \
   --learning-rate "$LEARNING_RATE" \
-  --gamma 0.9995 \
-  --gae-lambda 0.99 \
+  --gamma "$GAMMA" \
+  --gae-lambda "$GAE_LAMBDA" \
   --time-limit-bootstrap \
   --clip-range "$CLIP_RANGE" \
   --target-kl "$TARGET_KL" \
@@ -292,6 +367,7 @@ exec "$RL_SIM/run_with_host_memory_guard.sh" \
   --vf-coef 0.5 \
   --max-grad-norm 0.5 \
   --hidden-dim 256 \
+  "${ACTOR_ANCHOR_ARGS[@]}" \
   "${TRANSACTION_ARGS[@]}" \
   --advance-mode converged \
   --convergence-window "$CONVERGENCE_WINDOW" \
