@@ -221,3 +221,53 @@ class StratifiedStartupProgress:
             fail_pre_hit5=pre5_fails,
             fail_early_hit5_20=early_fails,
         )
+
+
+class EarlyHitQualityTracker:
+    """Fast vectorized sliding-window tracker for hits 1-5, 6-15, and 16-30 stability.
+
+    Tracks exact contact center RMS (mm) and contact racket horizontal speed RMS (m/s)
+    both overall and on clean (no-wind) lanes so live training can be compared directly
+    against the V321 clean benchmark (1-5: 9.6mm / 0.062m/s; 6-15: 5.95mm / 0.040m/s).
+    """
+
+    BUCKETS = (("h1_5", 1, 5), ("h6_15", 6, 15), ("h16_30", 16, 30))
+
+    def __init__(self, window_updates: int = 16):
+        self.window = deque(maxlen=max(1, int(window_updates)))
+
+    def add(self, metrics: dict):
+        if "hit_event_count" not in metrics or "hit_count" not in metrics:
+            return
+        hit_evt = np.asarray(metrics["hit_event_count"]) > 0.5
+        if not np.any(hit_evt):
+            return
+        hits = np.rint(np.asarray(metrics["hit_count"])).astype(np.int32)
+        center = np.asarray(metrics["hit_contact_center_dist_sum"], dtype=np.float64)
+        vxy_sq = np.asarray(metrics.get("hit_racket_vxy_sq_sum", np.zeros_like(center)), dtype=np.float64)
+        is_clean = np.asarray(metrics["wind/mode"]) < 0.5
+
+        rec = {}
+        for name, lo, hi in self.BUCKETS:
+            m_all = hit_evt & (hits >= lo) & (hits <= hi)
+            m_cln = m_all & is_clean
+            for tag, m in ((name, m_all), (f"{name}_clean", m_cln)):
+                cnt = int(m.sum())
+                if cnt > 0:
+                    c_vals = center[m]
+                    rec[tag] = (cnt, float(np.sum(c_vals * c_vals)), float(np.sum(vxy_sq[m])))
+                else:
+                    rec[tag] = (0, 0.0, 0.0)
+        self.window.append(rec)
+
+    def summary(self) -> dict:
+        out = {}
+        for name, _, _ in self.BUCKETS:
+            for tag in (name, f"{name}_clean"):
+                cnt = sum(r.get(tag, (0, 0.0, 0.0))[0] for r in self.window)
+                csq = sum(r.get(tag, (0, 0.0, 0.0))[1] for r in self.window)
+                vsq = sum(r.get(tag, (0, 0.0, 0.0))[2] for r in self.window)
+                out[f"{tag}_n"] = cnt
+                out[f"{tag}_center_rms_mm"] = (math.sqrt(max(csq / cnt, 0.0)) * 1000.0) if cnt > 0 else 0.0
+                out[f"{tag}_vxy_rms_m_s"] = math.sqrt(max(vsq / cnt, 0.0)) if cnt > 0 else 0.0
+        return out

@@ -54,9 +54,10 @@ from weak_release_floor import FIELDS as RELEASE_FLOOR_FIELDS
 from feature_training import frozen_base_equal, assert_supported_actor
 from wind_features import WindFeatureEnv
 from stratified_rehearsal import (
-    StratifiedStartupRehearsalEnv, StratifiedStartupProgress,
+    StratifiedStartupRehearsalEnv, StratifiedStartupProgress, EarlyHitQualityTracker,
     masked_rollout, FIELDS as REHEARSAL_FIELDS,
 )
+from early_stability_reward import EarlyStabilityRewardEnv, EARLY_REWARD_FIELDS
 
 
 def save_json(path: Path, value: dict):
@@ -93,8 +94,8 @@ class BestAndLatestRetention:
                 ckpt.unlink(missing_ok=True)
 
 
-def load_u416_provisional(env, stack):
-    """Verify u416 MANIFEST hashes and restore full learner + 1024-env runner."""
+def load_u416_provisional(env, stack, *, load_runner: bool = True):
+    """Verify u416 MANIFEST hashes and restore learner (+ 1024-env runner when requested)."""
     manifest = json.loads((PROVISIONAL / "MANIFEST.json").read_text())
     model_path = PROVISIONAL / "model.pkl"
     zip_path = PROVISIONAL / "trainer_state.zip"
@@ -112,6 +113,15 @@ def load_u416_provisional(env, stack):
         jax.tree.map(jnp.asarray, saved["params"]),
         jax.tree.map(jnp.asarray, saved["opt"]),
     )
+
+    if not load_runner:
+        return (
+            learner_template,
+            None,
+            int(saved["actual_updates"]),
+            int(saved["step"]),
+            saved["initial_single_actor_digest"],
+        )
 
     inner_env = env.inner
     init_rng, key = jax.random.split(jax.random.PRNGKey(2026112101))
@@ -179,6 +189,7 @@ def build_train_functions(stack, env, args, plan):
         "polish/contact_face_deviation_max_deg",
         "observed_force/valid", "observed_force/age_s", "observed_force/error_sq_m2_s2",
         "single5/wind_angle_rad", "pose/outer_limit_deg",
+        "hit_racket_vxy_sq_sum",
         "reward/dynamics_outgoing", "reward/single5_outgoing_replace",
         "reward/single5_apex_precision", "reward/single5_center", "reward/total",
     )
@@ -188,13 +199,24 @@ def build_train_functions(stack, env, args, plan):
         + QUALITY_FIELDS + HEIGHT_FIELDS + REFERENCE_FIELDS
         + CONTACT_FIELDS + TARGETED_FIELDS + TIMING_FIELDS + PREVIEW_FIELDS
         + TERMINATION_FIELDS + PRECISION_FIELDS + RELEASE_FLOOR_FIELDS
-        + REHEARSAL_FIELDS + goal_fields + extra_fields
+        + REHEARSAL_FIELDS + EARLY_REWARD_FIELDS + goal_fields + extra_fields
     )
     captured["full_rollout_metric_names"] = tuple(dict.fromkeys(all_metrics))
     captured["time_limit_bootstrap"] = True
     captured["apply_every_minibatch"] = False
     captured["residual_l2_coef"] = 0.0
     captured["learning_rate"] = plan["ppo"]["learning_rate"]
+    captured["clip_range"] = plan["ppo"]["clip_range"]
+    captured["target_kl"] = plan["ppo"]["target_kl"]
+    captured["gamma"] = plan["ppo"]["gamma"]
+    captured["gae_lambda"] = plan["ppo"]["gae_lambda"]
+    captured["vf_coef"] = plan["ppo"]["vf_coef"]
+    captured["ent_coef"] = plan["ppo"]["ent_coef"]
+    captured["max_grad_norm"] = plan["ppo"]["max_grad_norm"]
+    captured["min_log_std"] = plan["ppo"]["min_log_std"]
+    captured["max_log_std"] = plan["ppo"]["max_log_std"]
+    captured["update_epochs"] = plan["ppo"]["update_epochs"]
+    captured["minibatch_size"] = plan["ppo"]["minibatch_size"]
     captured["actor_anchor_kl_coef"] = plan["ppo"]["actor_anchor_kl_coef"]
     captured["actor_anchor_replay_obs"] = None
     captured["actor_anchor_replay_kl_coef"] = 0.0
@@ -293,12 +315,17 @@ def main():
             stack.parent["args"][k] = _reloc(v)
         args = argparse.Namespace(**stack.parent["args"])
         vars(args).update({k: _reloc(v) for k, v in learner_settings_for_stack(stack).items()})
-        args.n_envs, args.n_steps, args.minibatch_size = 1024, 128, 16384
+        n_envs = int(plan.get("n_envs", 1024))
+        n_steps = int(plan.get("n_steps", 128))
+        minibatch_size = int(plan["ppo"].get("minibatch_size", 16384))
+        batch_size = n_envs * n_steps
+        max_minibatches = int(plan["ppo"].get("update_epochs", 4)) * max(1, batch_size // minibatch_size)
+        args.n_envs, args.n_steps, args.minibatch_size = n_envs, n_steps, minibatch_size
         args.seed = plan["seed"]
         args.wind_training_mix = stack.wind_training_mix
 
     install_pose_mode()
-    native = stack.env_class(stack.xml, n_envs=1024, cfg=stack.cfg)
+    native = stack.env_class(stack.xml, n_envs=n_envs, cfg=stack.cfg)
     env = XWindEnv(
         CaptureEnv(ActualContactEnv(native, balanced=False), enabled=False),
         half_angle_deg=plan["wind_domain"]["x_axis_half_angle_deg"],
@@ -319,6 +346,8 @@ def main():
     if "failure_reserve" in plan["reward_revision"]:
         env.targeted_failure_reserve = float(plan["reward_revision"]["failure_reserve"])
     env = WindFeatureEnv(env)
+    early_rew_cfg = plan.get("early_stability_reward", {})
+    env = EarlyStabilityRewardEnv(env, early_rew_cfg)
     rehearsal_cfg = plan["stratified_rehearsal"]
     env = StratifiedStartupRehearsalEnv(
         env,
@@ -330,20 +359,31 @@ def main():
     assert (env.obs_dim, env.critic_obs_dim, env.act_dim, env.max_steps) == (120, 453, 7, 240000)
     assert env.cfg.wind_config.max_speed_m_s == 1.6 and env.cfg.wind_config.wind_y_nonpositive
 
-    u416_learner, u416_inner_runner, completed, true_step, init_actor_digest = load_u416_provisional(env, stack)
+    perm_wind_only = bool(plan["feature_optimizer"]["permanent_wind_rows_only"])
+    u416_learner, u416_inner_runner, completed, true_step, init_actor_digest = load_u416_provisional(
+        env, stack, load_runner=(n_envs == 1024 and not opts.resume_model)
+    )
     if plan.get("parent_checkpoint") and not opts.resume_model:
         parent_ckpt_path = REPO / plan["parent_checkpoint"]
         with parent_ckpt_path.open("rb") as f:
             p_saved = pickle.load(f)
         assert_supported_actor(p_saved["params"])
-        assert bool(frozen_base_equal(jax.tree.map(jnp.asarray, p_saved["params"]), u416_learner.params)), "Parent checkpoint altered frozen 0:118 backbone!"
-        u416_learner = stack.ppo.TrainState(
-            jax.tree.map(jnp.asarray, p_saved["params"]),
-            jax.tree.map(jnp.asarray, p_saved["opt"]),
-        )
+        if perm_wind_only or plan["feature_optimizer"].get("verify_parent_frozen_base", True):
+            assert bool(frozen_base_equal(jax.tree.map(jnp.asarray, p_saved["params"]), u416_learner.params)), "Parent checkpoint altered frozen 0:118 backbone!"
+        p_params = jax.tree.map(jnp.asarray, p_saved["params"])
+        p_opt = jax.tree.map(jnp.asarray, p_saved["opt"])
+        if plan["feature_optimizer"].get("reset_actor_moments_on_start", False):
+            zero_pi = jax.tree.map(jnp.zeros_like, p_params["pi"])
+            p_opt = p_opt._replace(
+                m={**p_opt.m, "pi": zero_pi},
+                v={**p_opt.v, "pi": zero_pi},
+                actor_t=jnp.asarray(0, dtype=jnp.int32),
+            )
+            print("[wind-early] Reset actor Adam moments (m/v['pi']=0, actor_t=0) for clean full-actor unfreeze; critic moments & opt.t preserved.", flush=True)
+        u416_learner = stack.ppo.TrainState(p_params, p_opt)
         completed = int(p_saved["actual_updates"])
         true_step = int(p_saved["step"])
-        print(f"[wind-early] Loaded parent_checkpoint {parent_ckpt_path.name} (u{completed}, step={true_step}, opt.t={int(u416_learner.opt.t)})", flush=True)
+        print(f"[wind-early] Loaded parent_checkpoint {parent_ckpt_path.name} (u{completed}, step={true_step}, opt.t={int(u416_learner.opt.t)}, actor_t={int(u416_learner.opt.actor_t)})", flush=True)
     initial_learner_params = jax.tree.map(jnp.array, u416_learner.params)
     stack.single_actor_anchor_params = initial_learner_params
     stack.bootstrap_stage_anchor = initial_learner_params
@@ -366,7 +406,8 @@ def main():
         capacity=rehearsal_cfg["metric_capacity"],
         half_angle_deg=plan["wind_domain"]["x_axis_half_angle_deg"],
     )
-    console = LegacyWindConsole(1024, fields, 180.0)
+    console = LegacyWindConsole(n_envs, fields, 180.0)
+    early_quality = EarlyHitQualityTracker(window_updates=16)
     restored_hold = 0
 
     contract = dict(
@@ -377,8 +418,10 @@ def main():
         initial_single_actor_digest=init_actor_digest,
         actor_critic_action=[120, 453, 7],
         seed=plan["seed"],
-        n_envs=1024,
-        n_steps=128,
+        n_envs=n_envs,
+        n_steps=n_steps,
+        minibatch_size=minibatch_size,
+        early_stability_reward=early_rew_cfg,
         stage=15,
         plan_sha256=plan_sha,
         pose_limit_deg=5.0,
@@ -404,42 +447,53 @@ def main():
             jax.tree.map(jnp.asarray, resumed["opt"]),
         )
         init_rng, key = jax.random.split(jax.random.PRNGKey(plan["seed"]))
-        keys = jax.random.split(key, 1024)
+        keys = jax.random.split(key, n_envs)
         st0, ob0 = jax.eval_shape(env.reset, keys)
         co0 = jax.eval_shape(env.get_critic_obs, st0, ob0)
         r_tmpl = stack.ppo.RunnerState(
             st0, ob0, co0, init_rng,
-            jax.ShapeDtypeStruct((1024,), jnp.float32),
-            jax.ShapeDtypeStruct((1024,), jnp.int32),
+            jax.ShapeDtypeStruct((n_envs,), jnp.float32),
+            jax.ShapeDtypeStruct((n_envs,), jnp.int32),
         )
         learner, runner, aux, meta = load_snapshot(opts.resume_full, learner, r_tmpl, contract)
         progress, console = aux["progress"], aux["console"]
         startup_tracker = aux["startup_tracker"]
+        early_quality = aux.get("early_quality", early_quality)
         restored_hold = int(aux["hold"])
         completed, true_step = int(meta["actual_updates"]), int(meta["true_step"])
     else:
         learner = u416_learner
-        reset_keys = jax.random.split(jax.random.PRNGKey(plan["seed"] + 416), 1024)
+        init_rng, reset_key = jax.random.split(jax.random.PRNGKey(plan["seed"] + 416))
+        reset_keys = jax.random.split(reset_key, n_envs)
         fresh_state, fresh_obs = jax.jit(env.reset)(reset_keys)
         fresh_cobs = jax.jit(env.get_critic_obs)(fresh_state, fresh_obs)
-        u416_wrapped_state = env.wrap_state(u416_inner_runner.env_state, staggered=True)
+        if n_envs == 1024 and u416_inner_runner is not None:
+            u416_wrapped_state = env.wrap_state(u416_inner_runner.env_state, staggered=True)
+            role = env.role
 
-        role = env.role
+            def blend(fresh, old):
+                if hasattr(fresh, "shape") and fresh.ndim >= 1 and fresh.shape[0] == 1024:
+                    m = role.reshape((1024,) + (1,) * (fresh.ndim - 1))
+                    return jnp.where(m, fresh, old)
+                return old
 
-        def blend(fresh, old):
-            if hasattr(fresh, "shape") and fresh.ndim >= 1 and fresh.shape[0] == 1024:
-                m = role.reshape((1024,) + (1,) * (fresh.ndim - 1))
-                return jnp.where(m, fresh, old)
-            return old
-
-        mixed_state = jax.tree.map(blend, fresh_state, u416_wrapped_state)
-        mixed_obs = jnp.where(role[:, None], fresh_obs, u416_inner_runner.obs)
-        mixed_cobs = jnp.where(role[:, None], fresh_cobs, u416_inner_runner.critic_obs)
-        mixed_ret = jnp.where(role, 0.0, u416_inner_runner.running_return)
-        mixed_len = jnp.where(role, 0, u416_inner_runner.running_length)
-        runner = stack.ppo.RunnerState(
-            mixed_state, mixed_obs, mixed_cobs, u416_inner_runner.rng, mixed_ret, mixed_len
-        )
+            mixed_state = jax.tree.map(blend, fresh_state, u416_wrapped_state)
+            mixed_obs = jnp.where(role[:, None], fresh_obs, u416_inner_runner.obs)
+            mixed_cobs = jnp.where(role[:, None], fresh_cobs, u416_inner_runner.critic_obs)
+            mixed_ret = jnp.where(role, 0.0, u416_inner_runner.running_return)
+            mixed_len = jnp.where(role, 0, u416_inner_runner.running_length)
+            runner = stack.ppo.RunnerState(
+                mixed_state, mixed_obs, mixed_cobs, u416_inner_runner.rng, mixed_ret, mixed_len
+            )
+        else:
+            runner = stack.ppo.RunnerState(
+                fresh_state,
+                fresh_obs,
+                fresh_cobs,
+                init_rng,
+                jnp.zeros((n_envs,), dtype=jnp.float32),
+                jnp.zeros((n_envs,), dtype=jnp.int32),
+            )
 
     learner, runner = strong_arrays((learner, runner))
     release_caches()
@@ -541,7 +595,7 @@ def main():
                 path,
                 learner,
                 runner,
-                dict(progress=progress, console=console, startup_tracker=startup_tracker, hold=hold),
+                dict(progress=progress, console=console, startup_tracker=startup_tracker, early_quality=early_quality, hold=hold),
                 contract,
                 dict(actual_updates=completed, true_step=true_step, run_id=opts.run_id),
             )
@@ -553,7 +607,9 @@ def main():
             prune_owned_snapshots(opts.output, path)
 
     print(
-        f"[wind-early] Starting from u{completed} (step={true_step}, opt.t={int(learner.opt.t)}, "
+        f"[wind-early] Starting from u{completed} (n_envs={n_envs}, n_steps={n_steps}, mb={minibatch_size}, "
+        f"perm_wind_only={perm_wind_only}, early_rew={early_rew_cfg.get('enabled', False)}, "
+        f"step={true_step}, opt.t={int(learner.opt.t)}, "
         f"rehearsal={env.n_rehearsal}x{rehearsal_cfg['seconds']}s, long={env.n_long}x1200s, wandb={opts.wandb_mode})",
         flush=True,
     )
@@ -573,12 +629,16 @@ def main():
                 explained, variance = diagnostics(learner.params, runner, transitions)
                 new, loss = update(learner, runner, transitions)
 
-                assert bool(frozen_base_equal(new.params, initial_learner_params)), "Frozen 0:118 backbone changed!"
+                warmup_end_t = int(plan["learning_stability"]["critic_warmup_start_t"]) + int(plan["learning_stability"]["critic_only_minibatches"])
+                in_warmup = int(learner.opt.t) < warmup_end_t
+                if perm_wind_only or in_warmup:
+                    assert bool(frozen_base_equal(new.params, initial_learner_params)), "Frozen 0:118 backbone changed!"
+                assert bool(jnp.allclose(new.params["log_std"], initial_learner_params["log_std"], atol=1e-6)), "Fixed log_std drifted!"
                 loss = {k: float(v) for k, v in jax.device_get(loss).items()}
                 assert loss["learning_stability/sampled_max_step_kl"] <= plan["learning_stability"]["maximum_sampled_cohort_step_kl"] + 1e-7
                 assert all(np.isfinite(list(loss.values())))
                 minis = int(loss["ppo_minibatches_applied"])
-                assert 0 <= minis <= 32
+                assert 0 <= minis <= max_minibatches
                 assert int(new.opt.t) == int(learner.opt.t) + minis
                 assert_supported_actor(new.params)
 
@@ -604,11 +664,12 @@ def main():
                 startup_tracker.add(reh_metrics, reh_done, TERMINATION_FIELDS)
 
                 console.add(metrics, dones)
+                early_quality.add(metrics)
 
                 learner = new
                 session += 1
                 completed += 1
-                true_step += 131072
+                true_step += batch_size
                 committed = True
 
                 summaries = progress.summaries()
@@ -619,6 +680,15 @@ def main():
                 w_rows = np.asarray(jax.device_get(learner.params["pi"]["l1"]["w"][118:120]))
                 w_l2 = float(np.linalg.norm(w_rows))
                 w_max = float(np.max(np.abs(w_rows)))
+                bb_sq = 0.0
+                for lname, layer in learner.params["pi"].items():
+                    for pkey, pval in layer.items():
+                        diff = np.asarray(jax.device_get(pval - initial_learner_params["pi"][lname][pkey]))
+                        if lname == "l1" and pkey == "w":
+                            diff = diff[:118]
+                        bb_sq += float(np.sum(diff * diff))
+                bb_delta_l2 = float(np.sqrt(max(bb_sq, 0.0)))
+                early_q = early_quality.summary()
                 upd_sec = time.monotonic() - t_upd
 
                 status = dict(
@@ -635,6 +705,11 @@ def main():
                         "critic/return_target_variance": float(variance),
                         "wind_rows/l2_norm": w_l2,
                         "wind_rows/max_abs": w_max,
+                        "backbone/delta_l2_norm": bb_delta_l2,
+                        "reward/early_center_sum": float(np.sum(metrics["reward/early_center"])),
+                        "reward/early_hit_vxy_sum": float(np.sum(metrics["reward/early_hit_vxy"])),
+                        "reward/early_step_vxy_per_s": float(np.mean(metrics["reward/early_step_vxy"]) / 0.005),
+                        "reward/early_apex_sum": float(np.sum(metrics["reward/early_apex"])),
                         "perf/update_seconds": upd_sec,
                         "sampling/rehearsal_censors": int(cutoff.sum()),
                         "sampling/rehearsal_terminations": int(np.sum(np.asarray(reh_metrics["terminated"]) > 0.5)),
@@ -646,6 +721,7 @@ def main():
                         "learning_stability/critic_only_warmup": int(int(learner.opt.t) < int(plan["learning_stability"]["critic_warmup_start_t"]) + int(plan["learning_stability"]["critic_only_minibatches"])),
                     },
                     startup_rehearsal=startup_summary,
+                    early_hit_quality=early_q,
                     groups=summaries,
                     hold=hold,
                     final_gate=final_gate,
@@ -665,6 +741,9 @@ def main():
                 for k, v in startup_summary.items():
                     if isinstance(v, (int, float)):
                         flat["rehearsal20/" + k] = v
+                for k, v in early_q.items():
+                    if isinstance(v, (int, float)):
+                        flat["early_hits/" + k] = v
                 for pop, summ in summaries.items():
                     for hor in ("short30", "stage", "full1200"):
                         avail = summ[hor].get("n", 0) > 0
@@ -681,12 +760,15 @@ def main():
 
                 print(
                     f"u{completed:05d} | {upd_sec:5.1f}s | Adam+{minis:2d} | EV={float(explained):.4f} | "
-                    f"kl={loss['learning_stability/sampled_max_step_kl']:.5f}(s={loss['learning_stability/step_scale']:.2f}) | w118_L2={w_l2:.4f} | "
+                    f"kl={loss['learning_stability/sampled_max_step_kl']:.5f}(s={loss['learning_stability/step_scale']:.2f}) | "
+                    f"w118={w_l2:.4f} bb={bb_delta_l2:.4f} | "
                     f"reh20(n={startup_summary['n']:4d} surv={startup_summary['survival']*100:5.1f}% "
+                    f"clnP={startup_summary.get('clean_phys_survival',0)*100:5.1f}% "
                     f"peak={startup_summary.get('peak_survival',0)*100:5.1f}% "
                     f"negX={startup_summary.get('negx_peak_survival',0)*100:5.1f}% "
-                    f"dir08={startup_summary.get('dir08_survival',0)*100:5.1f}% "
-                    f"rzFail={startup_summary.get('fail_racket_z_fraction',0)*100:4.0f}%) | "
+                    f"dir08={startup_summary.get('dir08_survival',0)*100:5.1f}%) | "
+                    f"h1_5(c={early_q['h1_5_clean_center_rms_mm']:4.1f}mm v={early_q['h1_5_clean_vxy_rms_m_s']:.3f}) "
+                    f"h6_15(c={early_q['h6_15_clean_center_rms_mm']:4.1f}mm v={early_q['h6_15_clean_vxy_rms_m_s']:.3f}) | "
                     f"rehTerm={status['sampling/rehearsal_terminations']} longTerm={status['sampling/long_terminations']}",
                     flush=True,
                 )
@@ -703,19 +785,44 @@ def main():
                     float(startup_summary.get("survival", 0.0)),
                 )
                 if (startup_summary.get("n", 0) >= 1024 and clean_phys >= 0.995
-                        and dir08_band >= 0.99 and dir00_band >= 0.99):
+                        and dir08_band >= 0.985 and dir00_band >= 0.985):
                     peak_s = float(startup_summary.get("peak_survival", 0.0))
                     negx_s = float(startup_summary.get("negx_peak_survival", 0.0))
                     dir08_s = float(startup_summary.get("dir08_survival", 0.0))
-                    comp = round(0.40 * negx_s + 0.30 * peak_s + 0.30 * dir08_s, 4)
-                    cand_pareto = (comp, float(startup_summary.get("survival", 0.0)), dir08_s)
-                    if cand_pareto > best_pareto:
-                        best_pareto = cand_pareto
-                        bp = checkpoint("best_pareto")
-                        for old_bp in opts.output.glob("best_pareto_u*.pkl"):
-                            if old_bp.resolve() != bp.resolve():
-                                old_bp.unlink(missing_ok=True)
-                        print(f"  [BEST PARETO] saved {bp.name} comp={comp*100:.2f}% peak={peak_s*100:.1f}% negX={negx_s*100:.1f}% dir08={dir08_s*100:.1f}% dir08_band={dir08_band*100:.1f}% clean_phys={clean_phys*100:.1f}%", flush=True)
+                    if early_rew_cfg.get("enabled", False):
+                        if peak_s >= 0.95 and negx_s >= 0.93 and early_q["h6_15_clean_n"] >= 100 and early_q["h1_5_clean_n"] >= 50:
+                            c15 = early_q["h1_5_clean_center_rms_mm"]
+                            c615 = early_q["h6_15_clean_center_rms_mm"]
+                            v615 = early_q["h6_15_clean_vxy_rms_m_s"]
+                            stab_pen = (
+                                0.015 * max(c15 - 9.6, 0.0)
+                                + 0.025 * max(c615 - 6.0, 0.0)
+                                + 2.5 * max(v615 - 0.040, 0.0)
+                            )
+                            joint_score = round(0.40 * negx_s + 0.30 * peak_s + 0.30 * dir08_s - stab_pen, 4)
+                            cand_pareto = (joint_score, float(startup_summary.get("survival", 0.0)), -c615)
+                            if cand_pareto > best_pareto:
+                                best_pareto = cand_pareto
+                                bp = checkpoint("best_pareto")
+                                for old_bp in opts.output.glob("best_pareto_u*.pkl"):
+                                    if old_bp.resolve() != bp.resolve():
+                                        old_bp.unlink(missing_ok=True)
+                                print(
+                                    f"  [BEST PARETO] saved {bp.name} joint={joint_score:.4f} "
+                                    f"peak={peak_s*100:.1f}% negX={negx_s*100:.1f}% dir08={dir08_s*100:.1f}% "
+                                    f"h1_5_c={c15:.1f}mm h6_15_c={c615:.1f}mm h6_15_v={v615:.3f}m/s cleanP={clean_phys*100:.1f}%",
+                                    flush=True,
+                                )
+                    else:
+                        comp = round(0.40 * negx_s + 0.30 * peak_s + 0.30 * dir08_s, 4)
+                        cand_pareto = (comp, float(startup_summary.get("survival", 0.0)), dir08_s)
+                        if cand_pareto > best_pareto:
+                            best_pareto = cand_pareto
+                            bp = checkpoint("best_pareto")
+                            for old_bp in opts.output.glob("best_pareto_u*.pkl"):
+                                if old_bp.resolve() != bp.resolve():
+                                    old_bp.unlink(missing_ok=True)
+                            print(f"  [BEST PARETO] saved {bp.name} comp={comp*100:.2f}% peak={peak_s*100:.1f}% negX={negx_s*100:.1f}% dir08={dir08_s*100:.1f}% dir08_band={dir08_band*100:.1f}% clean_phys={clean_phys*100:.1f}%", flush=True)
                 if completed % periodic_every == 0:
                     checkpoint("periodic")
                 if completed in milestones:

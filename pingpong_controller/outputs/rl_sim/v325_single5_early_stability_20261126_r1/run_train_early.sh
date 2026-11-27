@@ -17,6 +17,7 @@ source "$HOME/envs/pingpong/bin/activate"
 set -u
 
 export CUDA_VISIBLE_DEVICES="$GPU_UUID"
+export XLA_PYTHON_CLIENT_PREALLOCATE="false"
 export PP_MEMORY_SCOPE_ACTIVE="YES"
 export WANDB_DIR="/dev/shm/wandb_${RUN_ID}"
 mkdir -p "$WANDB_DIR"
