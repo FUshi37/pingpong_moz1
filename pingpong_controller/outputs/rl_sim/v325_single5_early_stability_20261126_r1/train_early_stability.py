@@ -58,6 +58,7 @@ from stratified_rehearsal import (
     masked_rollout, FIELDS as REHEARSAL_FIELDS,
 )
 from early_stability_reward import EarlyStabilityRewardEnv, EARLY_REWARD_FIELDS
+from wide_onset import StratifiedWideOnsetEnv
 
 
 def save_json(path: Path, value: dict):
@@ -345,6 +346,18 @@ def main():
         env.targeted_variant = str(plan["reward_revision"]["targeted_variant"])
     if "failure_reserve" in plan["reward_revision"]:
         env.targeted_failure_reserve = float(plan["reward_revision"]["failure_reserve"])
+    onset_cfg = plan.get("onset", {})
+    if onset_cfg.get("mode") == "stratified_wide":
+        from stratified_rehearsal import stratified_rehearsal_mask
+        _reh_mask = stratified_rehearsal_mask(n_envs, fraction=plan["stratified_rehearsal"]["fraction"])
+        env.inner = StratifiedWideOnsetEnv(env.inner.inner, rehearsal_mask=_reh_mask, onset_cfg=onset_cfg, enabled=True)
+        print(
+            f"[wind-early] Enabled StratifiedWideOnsetEnv: early={onset_cfg.get('early_prob',0.2):.0%}"
+            f"[{onset_cfg.get('delay_steps_min',5)}..{onset_cfg.get('delay_steps_max',100)}], "
+            f"mid=[{onset_cfg.get('mid_delay_steps_min',500)}..{onset_cfg.get('mid_delay_steps_max',2000)}], "
+            f"late(long)=[{onset_cfg.get('late_delay_steps_min',2000)}..{onset_cfg.get('late_delay_steps_max',15000)}]",
+            flush=True,
+        )
     env = WindFeatureEnv(env)
     early_rew_cfg = plan.get("early_stability_reward", {})
     env = EarlyStabilityRewardEnv(env, early_rew_cfg)
@@ -534,7 +547,7 @@ def main():
         mode=opts.wandb_mode,
         dir=os.environ.get("WANDB_DIR", "/dev/shm/wandb_wind_early"),
         settings=wandb.Settings(x_disable_stats=True),
-        config=dict(contract, update_budget=opts.update_limit, migrated_host="192.168.13.134"),
+        config=dict(contract, update_budget=opts.update_limit, migrated_host=os.environ.get("MIGRATED_HOST", "192.168.14.52")),
     )
 
     stopped = [False]
@@ -617,7 +630,7 @@ def main():
     try:
         with (opts.output / "updates.jsonl").open("x") as stream, \
              (opts.output / "failure_events.jsonl").open("x") as event_stream:
-            while (opts.update_limit is None or completed < opts.update_limit) and not stopped[0]:
+            while (opts.update_limit is None or completed < opts.update_limit) and not stopped[0] and not (opts.output / "STOP").exists():
                 committed = False
                 t_upd = time.monotonic()
                 runner, transitions = collect(learner.params, runner)
@@ -839,7 +852,7 @@ def main():
                     )
                     break
 
-        checkpoint("interrupted" if stopped[0] else "bounded_final")
+        checkpoint("interrupted" if (stopped[0] or (opts.output / "STOP").exists()) else "bounded_final")
         retention.prune()
         recovery()
         assert direct_trace_calls[0] > 0

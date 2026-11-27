@@ -7,7 +7,8 @@
   "n_envs": 4096,
   "n_steps": 128,
   "allowed_gpu_uuids": [
-    "GPU-3b3e4ba6-dd29-09fe-ba9b-d8da127b3415"
+    "GPU-3b3e4ba6-dd29-09fe-ba9b-d8da127b3415",
+    "GPU-c1f60ed6-d54e-3759-983a-6be6c87fc0b4"
   ],
   "wandb": {
     "entity": "fushi37",

@@ -6,7 +6,8 @@
   "n_envs": 1024,
   "n_steps": 128,
   "allowed_gpu_uuids": [
-    "GPU-3b3e4ba6-dd29-09fe-ba9b-d8da127b3415"
+    "GPU-3b3e4ba6-dd29-09fe-ba9b-d8da127b3415",
+    "GPU-c1f60ed6-d54e-3759-983a-6be6c87fc0b4"
   ],
   "wandb": {
     "entity": "fushi37",
@@ -38,7 +39,10 @@
   },
   "feature_optimizer": {
     "warmup_accepted_minibatches": 512,
-    "feature_rows": [118, 119],
+    "feature_rows": [
+      118,
+      119
+    ],
     "feature_row_learning_rate_multiplier": 32.0,
     "feature_only_warmup": true,
     "actor_moments_restart_at_unfreeze": true,
@@ -86,5 +90,11 @@
     "wind_y_nonpositive": true,
     "x_axis_half_angle_deg": 45.0
   },
-  "phase_milestones": [480, 544, 672, 800, 1000]
+  "phase_milestones": [
+    480,
+    544,
+    672,
+    800,
+    1000
+  ]
 }
