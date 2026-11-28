@@ -1,0 +1,58 @@
+{
+  "model": "V325_s2r_u7447_det",
+  "checkpoint": "milestone_S09_D2_dr65_u00007447.pkl",
+  "seconds": 60.0,
+  "per_scenario": 128,
+  "scenarios": {
+    "RealExact_0w": {
+      "n_envs": 128,
+      "phys_60s_pct": 100.0,
+      "strict_60s_pct": 100.0,
+      "mean_duration_s": 60.0,
+      "mean_hits": 112.9,
+      "tilt_avg_deg": 2.73,
+      "tilt_max_deg": 5.18,
+      "center_rms_mm": 6.14
+    },
+    "RealHard_0w": {
+      "n_envs": 128,
+      "phys_60s_pct": 100.0,
+      "strict_60s_pct": 100.0,
+      "mean_duration_s": 60.0,
+      "mean_hits": 107.5,
+      "tilt_avg_deg": 2.75,
+      "tilt_max_deg": 5.18,
+      "center_rms_mm": 7.53
+    },
+    "RealSoft_0w": {
+      "n_envs": 128,
+      "phys_60s_pct": 100.0,
+      "strict_60s_pct": 100.0,
+      "mean_duration_s": 60.0,
+      "mean_hits": 82.8,
+      "tilt_avg_deg": 2.68,
+      "tilt_max_deg": 5.14,
+      "center_rms_mm": 4.92
+    },
+    "RealExact_W16_Const": {
+      "n_envs": 128,
+      "phys_60s_pct": 100.0,
+      "strict_60s_pct": 100.0,
+      "mean_duration_s": 60.0,
+      "mean_hits": 104.3,
+      "tilt_avg_deg": 2.68,
+      "tilt_max_deg": 5.47,
+      "center_rms_mm": 6.03
+    },
+    "RealExact_W16_Dyn": {
+      "n_envs": 128,
+      "phys_60s_pct": 100.0,
+      "strict_60s_pct": 100.0,
+      "mean_duration_s": 60.0,
+      "mean_hits": 110.8,
+      "tilt_avg_deg": 2.62,
+      "tilt_max_deg": 5.39,
+      "center_rms_mm": 6.61
+    }
+  }
+}
